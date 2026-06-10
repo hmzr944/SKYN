@@ -9,23 +9,43 @@ import requests
 
 BASE_URL = os.environ.get("EXPO_PUBLIC_BACKEND_URL", "https://skyn-glow-report.preview.emergentagent.com").rstrip("/")
 API = f"{BASE_URL}/api"
-TEST_AUTH_SECRET = os.environ.get("TEST_AUTH_SECRET", "")
-TEST_AUTH_HEADERS = {"X-Test-Auth-Secret": TEST_AUTH_SECRET}
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://axpyatbjvvoxjtwkrhwu.supabase.co").rstrip("/")
+SUPABASE_ANON_KEY = os.environ.get("SUPABASE_ANON_KEY", "")
+SUPABASE_SERVICE_ROLE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
 
 
 def _new_session(s: "requests.Session") -> dict:
-    """Mint a session via the test-only /auth/test/session backdoor."""
-    if not TEST_AUTH_SECRET:
-        pytest.skip("TEST_AUTH_SECRET not configured")
-    email = f"TEST_{uuid.uuid4().hex[:10]}@skyn.test"
+    """Provision a Supabase user via the Admin API and sign in to get an access token."""
+    if not SUPABASE_SERVICE_ROLE_KEY or not SUPABASE_ANON_KEY:
+        pytest.skip("SUPABASE_SERVICE_ROLE_KEY / SUPABASE_ANON_KEY not configured")
+    email = f"test_{uuid.uuid4().hex[:10]}@skyn.test"
+    password = uuid.uuid4().hex
+    admin_headers = {
+        "apikey": SUPABASE_SERVICE_ROLE_KEY,
+        "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
+    }
     r = s.post(
-        f"{API}/auth/test/session",
-        json={"email": email, "name": "TEST User"},
-        headers=TEST_AUTH_HEADERS,
+        f"{SUPABASE_URL}/auth/v1/admin/users",
+        json={"email": email, "password": password, "email_confirm": True,
+              "user_metadata": {"name": "TEST User"}},
+        headers=admin_headers,
         timeout=15,
     )
-    assert r.status_code == 200, f"Test session failed: {r.status_code} {r.text}"
-    return r.json()
+    assert r.status_code in (200, 201), f"Admin user creation failed: {r.status_code} {r.text}"
+    created = r.json()
+
+    r = s.post(
+        f"{SUPABASE_URL}/auth/v1/token?grant_type=password",
+        json={"email": email, "password": password},
+        headers={"apikey": SUPABASE_ANON_KEY},
+        timeout=15,
+    )
+    assert r.status_code == 200, f"Sign-in failed: {r.status_code} {r.text}"
+    token_data = r.json()
+    return {
+        "token": token_data["access_token"],
+        "user": {"user_id": created["id"], "email": email},
+    }
 
 FIXTURE_FACE = Path(__file__).parent / "fixtures_face.jpg"
 
@@ -54,10 +74,10 @@ def session():
 
 @pytest.fixture(scope="module")
 def auth():
-    """Create a session via the test-only auth backdoor and return token+user."""
+    """Provision a Supabase test user and return token+user."""
     s = requests.Session()
     data = _new_session(s)
-    return {"token": data["session_token"], "user": data["user"], "headers": {"Authorization": f"Bearer {data['session_token']}"}}
+    return {"token": data["token"], "user": data["user"], "headers": {"Authorization": f"Bearer {data['token']}"}}
 
 
 # -------- Health --------
@@ -73,33 +93,8 @@ class TestHealth:
 # -------- Auth --------
 class TestAuth:
     def test_test_session_creates_user(self, auth):
-        assert auth["token"].startswith("test_")
-        assert auth["user"]["email"].startswith("TEST_")
-        assert auth["user"]["user_id"].startswith("user_")
-
-    def test_apple_session_rejects_missing_identity_token(self, session):
-        r = session.post(
-            f"{API}/auth/apple/session",
-            json={"apple_user_id": f"TEST_apple_{uuid.uuid4().hex[:10]}"},
-            timeout=15,
-        )
-        assert r.status_code == 422  # missing required identity_token field
-
-    def test_apple_session_rejects_invalid_identity_token(self, session):
-        r = session.post(
-            f"{API}/auth/apple/session",
-            json={"apple_user_id": f"TEST_apple_{uuid.uuid4().hex[:10]}", "identity_token": "not.a.jwt"},
-            timeout=15,
-        )
-        assert r.status_code == 401
-
-    def test_test_session_requires_secret(self, session):
-        r = session.post(
-            f"{API}/auth/test/session",
-            json={"email": "nosecret@skyn.test"},
-            timeout=15,
-        )
-        assert r.status_code == 404
+        assert auth["user"]["email"].startswith("test_")
+        assert len(auth["user"]["user_id"]) > 0
 
     def test_auth_me_with_token(self, session, auth):
         r = session.get(f"{API}/auth/me", headers=auth["headers"], timeout=10)
@@ -113,15 +108,6 @@ class TestAuth:
     def test_auth_me_invalid_token(self, session):
         r = session.get(f"{API}/auth/me", headers={"Authorization": "Bearer invalid_token_xyz"}, timeout=10)
         assert r.status_code == 401
-
-    def test_logout_invalidates_session(self, session):
-        token = _new_session(session)["session_token"]
-        headers = {"Authorization": f"Bearer {token}"}
-        assert session.get(f"{API}/auth/me", headers=headers, timeout=10).status_code == 200
-        lo = session.post(f"{API}/auth/logout", headers=headers, timeout=10)
-        assert lo.status_code == 200
-        r2 = session.get(f"{API}/auth/me", headers=headers, timeout=10)
-        assert r2.status_code == 401
 
 
 # -------- Profile (NEW shape: age_range / environment / priority) --------
@@ -213,7 +199,7 @@ class TestReports:
         r = session.post(f"{API}/reports", headers=auth["headers"], json=payload, timeout=10)
         assert r.status_code == 200
         report_id = r.json()["id"]
-        other_headers = {"Authorization": f"Bearer {_new_session(session)['session_token']}"}
+        other_headers = {"Authorization": f"Bearer {_new_session(session)['token']}"}
         g = session.get(f"{API}/reports/{report_id}", headers=other_headers, timeout=10)
         assert g.status_code == 404
         lst = session.get(f"{API}/reports", headers=other_headers, timeout=10)

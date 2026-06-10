@@ -13,9 +13,18 @@ import * as ImagePicker from "expo-image-picker";
 import * as Haptics from "expo-haptics";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import Svg, { Ellipse, Defs, Mask, Rect, Circle } from "react-native-svg";
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withRepeat,
+  withTiming,
+  Easing,
+} from "react-native-reanimated";
 
 import { colors, fonts, spacing, radius } from "@/src/theme";
 import { storage } from "@/src/utils/storage";
+import { FadeIn } from "@/src/components/ui/FadeIn";
+import { AnimatedPressable } from "@/src/components/ui/AnimatedPressable";
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get("window");
 
@@ -32,6 +41,18 @@ export default function CameraScreen() {
   const [permission, requestPermission] = useCameraPermissions();
   const [ready, setReady] = useState(false);
   const cameraRef = useRef<CameraView>(null);
+
+  const pulse = useSharedValue(0);
+  useEffect(() => {
+    pulse.value = withRepeat(
+      withTiming(1, { duration: 1800, easing: Easing.inOut(Easing.sin) }),
+      -1,
+      true,
+    );
+  }, [pulse]);
+  const pulseStyle = useAnimatedStyle(() => ({
+    opacity: 0.55 + pulse.value * 0.45,
+  }));
 
   useEffect(() => {
     if (permission && !permission.granted && permission.canAskAgain) {
@@ -131,21 +152,19 @@ export default function CameraScreen() {
           <Rect
             width={SCREEN_W}
             height={SCREEN_H}
-            fill={colors.bg}
+            fill={colors.fg}
             opacity={0.78}
             mask="url(#ovalMask)"
           />
-          {/* Oval contour — 1px ecru stroke, sparse dash */}
+          {/* Oval contour — accent solid stroke */}
           <Ellipse
             cx={SCREEN_W / 2}
             cy={SCREEN_H / 2 - 40}
             rx={SCREEN_W * 0.36}
             ry={SCREEN_H * 0.26}
-            stroke={colors.fg}
-            strokeWidth={1}
-            strokeDasharray="3 8"
+            stroke={colors.accent}
+            strokeWidth={2}
             fill="transparent"
-            opacity={0.55}
           />
           {GRAIN_DOTS.map((g, i) => (
             <Circle
@@ -153,60 +172,82 @@ export default function CameraScreen() {
               cx={g.x * SCREEN_W}
               cy={g.y * SCREEN_H}
               r={g.r}
-              fill={colors.fg}
-              opacity={0.025}
+              fill={colors.white}
+              opacity={0.04}
             />
           ))}
         </Svg>
+
+        {/* Pulsing accent ring */}
+        <Animated.View style={[StyleSheet.absoluteFill, pulseStyle]} pointerEvents="none">
+          <Svg width={SCREEN_W} height={SCREEN_H}>
+            <Ellipse
+              cx={SCREEN_W / 2}
+              cy={SCREEN_H / 2 - 40}
+              rx={SCREEN_W * 0.36 + 6}
+              ry={SCREEN_H * 0.26 + 6}
+              stroke={colors.accent}
+              strokeWidth={1}
+              fill="transparent"
+            />
+          </Svg>
+        </Animated.View>
       </View>
 
       {/* Top bar */}
       <View style={styles.topBar} pointerEvents="box-none">
-        <TouchableOpacity
+        <AnimatedPressable
           testID="camera-close-btn"
           onPress={() => router.back()}
           style={styles.closeBtn}
+          scaleTo={0.9}
         >
           <Text style={styles.closeText}>✕</Text>
-        </TouchableOpacity>
+        </AnimatedPressable>
         <Text style={styles.topTitle}>Bilan</Text>
         <View style={{ width: 36 }} />
       </View>
 
       {/* Retake notice */}
       {retake === "no_face" ? (
-        <View style={styles.notice} testID="camera-retake-notice">
-          <Text style={styles.noticeText}>
-            Aucun visage détecté — placez votre visage dans l'ovale et reprenez la photo.
-          </Text>
-        </View>
+        <FadeIn distance={6}>
+          <View style={styles.notice} testID="camera-retake-notice">
+            <Text style={styles.noticeText}>
+              Aucun visage détecté — placez votre visage dans l'ovale et reprenez la photo.
+            </Text>
+          </View>
+        </FadeIn>
       ) : null}
 
       {/* Bottom controls */}
       <View style={styles.bottomBar} pointerEvents="box-none">
-        <Text style={styles.guide}>
-          {"Placez votre visage\nau centre de l'ovale."}
-        </Text>
+        <FadeIn distance={10}>
+          <Text style={styles.guide}>
+            {"Placez votre visage\nau centre de l'ovale."}
+          </Text>
+          <Text style={styles.conditions}>
+            Lumière naturelle · Distance 30 cm
+          </Text>
+        </FadeIn>
 
         <View style={styles.bottomRow}>
-          <TouchableOpacity
+          <AnimatedPressable
             testID="camera-gallery-btn"
             onPress={pickFromGallery}
             style={styles.galleryBtn}
-            activeOpacity={0.7}
           >
             <Text style={styles.galleryText}>GALERIE</Text>
-          </TouchableOpacity>
+          </AnimatedPressable>
 
-          <TouchableOpacity
+          <AnimatedPressable
             testID="camera-capture-btn"
-            activeOpacity={0.7}
             onPress={capture}
             style={styles.captureOuter}
             disabled={canUseCamera ? !ready : false}
+            scaleTo={0.92}
           >
             <View style={styles.captureInner} />
-          </TouchableOpacity>
+          </AnimatedPressable>
 
           <View style={{ width: 72 }} />
         </View>
@@ -218,16 +259,16 @@ export default function CameraScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.bg },
-  cameraWrap: { ...StyleSheet.absoluteFillObject, backgroundColor: colors.bg },
+  container: { flex: 1, backgroundColor: colors.fg },
+  cameraWrap: { ...StyleSheet.absoluteFillObject, backgroundColor: colors.fg },
   placeholder: {
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#111111",
+    backgroundColor: "#13110D",
   },
   placeholderText: {
     fontFamily: fonts.body,
-    color: colors.fgMuted,
+    color: "rgba(255,255,255,0.7)",
     fontSize: 14,
     textAlign: "center",
     paddingHorizontal: spacing.xl,
@@ -236,14 +277,14 @@ const styles = StyleSheet.create({
   permBtn: {
     marginTop: spacing.l,
     borderWidth: 1,
-    borderColor: colors.borderActive,
+    borderColor: colors.accent,
     paddingHorizontal: 28,
     paddingVertical: 12,
     borderRadius: radius.pill,
   },
   permBtnText: {
     fontFamily: fonts.bodyMedium,
-    color: colors.fg,
+    color: colors.accent,
     letterSpacing: 2,
     fontSize: 12,
     textTransform: "uppercase",
@@ -255,11 +296,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.xl,
     paddingTop: spacing.s,
   },
-  closeBtn: { padding: 4, width: 36 },
-  closeText: { color: colors.fg, fontSize: 20, fontFamily: fonts.body },
+  closeBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255,255,255,0.14)",
+  },
+  closeText: { color: colors.white, fontSize: 16, fontFamily: fonts.body },
   topTitle: {
     fontFamily: fonts.bodyMedium,
-    color: colors.fg,
+    color: colors.white,
     letterSpacing: 3,
     fontSize: 11,
     textTransform: "uppercase",
@@ -270,15 +318,15 @@ const styles = StyleSheet.create({
     left: spacing.xl,
     right: spacing.xl,
     borderWidth: 1,
-    borderColor: colors.borderMid,
+    borderColor: colors.accent,
     paddingVertical: 12,
     paddingHorizontal: spacing.m,
-    backgroundColor: colors.fgFaint,
+    backgroundColor: "rgba(45,31,26,0.85)",
     borderRadius: radius.sm,
   },
   noticeText: {
     fontFamily: fonts.body,
-    color: colors.fg,
+    color: colors.white,
     fontSize: 12,
     lineHeight: 18,
     letterSpacing: 0.3,
@@ -292,13 +340,21 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   guide: {
-    fontFamily: fonts.headingItalic,
-    color: colors.fg,
+    fontFamily: fonts.heading,
+    color: colors.white,
     fontSize: 18,
     textAlign: "center",
-    marginBottom: spacing.l,
+    marginBottom: spacing.s,
     lineHeight: 26,
-    opacity: 0.9,
+    opacity: 0.95,
+  },
+  conditions: {
+    fontFamily: fonts.body,
+    color: colors.white,
+    fontSize: 12,
+    textAlign: "center",
+    marginBottom: spacing.l,
+    opacity: 0.6,
   },
   bottomRow: {
     flexDirection: "row",
@@ -311,14 +367,14 @@ const styles = StyleSheet.create({
     width: 72,
     paddingVertical: 12,
     borderWidth: 1,
-    borderColor: colors.borderSubtle,
+    borderColor: "rgba(255,255,255,0.25)",
     borderRadius: radius.pill,
     alignItems: "center",
-    backgroundColor: "rgba(20, 18, 16, 0.7)",
+    backgroundColor: "rgba(255,255,255,0.08)",
   },
   galleryText: {
     fontFamily: fonts.bodyMedium,
-    color: colors.fg,
+    color: colors.white,
     fontSize: 9,
     letterSpacing: 2,
   },
@@ -326,8 +382,8 @@ const styles = StyleSheet.create({
     width: 80,
     height: 80,
     borderRadius: 40,
-    borderWidth: 1,
-    borderColor: colors.fg,
+    borderWidth: 2,
+    borderColor: colors.accent,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -335,12 +391,12 @@ const styles = StyleSheet.create({
     width: 62,
     height: 62,
     borderRadius: 31,
-    backgroundColor: colors.fg,
+    backgroundColor: colors.accent,
   },
   hint: {
     marginTop: spacing.m,
     fontFamily: fonts.body,
-    color: colors.fgMuted,
+    color: "rgba(255,255,255,0.6)",
     fontSize: 10,
     letterSpacing: 2,
     textTransform: "uppercase",

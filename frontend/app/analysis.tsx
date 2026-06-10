@@ -10,16 +10,17 @@ import Animated, {
   withTiming,
   Easing,
 } from "react-native-reanimated";
-import Svg, { Circle, Ellipse, Line } from "react-native-svg";
+import Svg, { Circle, Ellipse, Line, Path } from "react-native-svg";
 
 import { colors, fonts, spacing } from "@/src/theme";
 import { api, queuePendingReport } from "@/src/services/api";
 import { pushReportToSupabase } from "@/src/services/supabase";
 import { storage } from "@/src/utils/storage";
 import { useAuth } from "@/src/contexts/AuthContext";
+import { FadeIn } from "@/src/components/ui/FadeIn";
 
 const { width: SCREEN_W } = Dimensions.get("window");
-const FRAME = SCREEN_W * 0.78;
+const FRAME = SCREEN_W * 0.58;
 
 const PHASES = [
   "Scan de surface",
@@ -27,6 +28,8 @@ const PHASES = [
   "Analyse des micro-patterns",
   "Génération du rapport",
 ];
+
+const STEP_LABELS = ["SURFACE", "ZONES", "PATTERNS", "RAPPORT"];
 
 type Detection = { type: string; x: number; y: number; confidence: number; radius: number };
 
@@ -191,13 +194,59 @@ export default function AnalysisScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={["top", "bottom"]}>
-      <View style={styles.header}>
-        <Text style={styles.eyebrow}>ANALYSE EN COURS</Text>
-        <Text style={styles.phaseText} testID={`analysis-phase-${phase}`}>
-          {PHASES[phase]}
-        </Text>
-      </View>
+      <FadeIn distance={10}>
+        <View style={styles.header}>
+          <Text style={styles.eyebrow}>ANALYSE EN COURS</Text>
+          <Text style={styles.phaseText} testID={`analysis-phase-${phase}`}>
+            {PHASES[phase]}
+          </Text>
+        </View>
+      </FadeIn>
 
+      <View style={styles.body}>
+      <FadeIn delay={80} distance={12}>
+        <View style={styles.stepsList}>
+          {STEP_LABELS.map((label, i) => {
+            const done = i < phase;
+            const active = i === phase;
+            return (
+              <View key={label} style={styles.stepRow}>
+                <View
+                  style={[
+                    styles.stepDot,
+                    done && styles.stepDotDone,
+                    active && styles.stepDotActive,
+                  ]}
+                >
+                  {done ? (
+                    <Svg width={10} height={10} viewBox="0 0 10 10">
+                      <Path
+                        d="M2 5 L4.2 7.2 L8 2.5"
+                        stroke={colors.onLime}
+                        strokeWidth={1.5}
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        fill="none"
+                      />
+                    </Svg>
+                  ) : null}
+                </View>
+                <Text
+                  style={[
+                    styles.stepLabel,
+                    done && styles.stepLabelDone,
+                    active && styles.stepLabelActive,
+                  ]}
+                >
+                  {label}
+                </Text>
+              </View>
+            );
+          })}
+        </View>
+      </FadeIn>
+
+      <FadeIn delay={120} distance={20}>
       <View style={[styles.frame, { width: FRAME, height: FRAME }]}>
         {imageB64 ? (
           <Image
@@ -216,8 +265,8 @@ export default function AnalysisScreen() {
             cy={FRAME / 2}
             rx={FRAME * 0.42}
             ry={FRAME * 0.48}
-            stroke={colors.fg}
-            strokeWidth={1}
+            stroke={colors.accent}
+            strokeWidth={1.5}
             strokeDasharray="3 6"
             fill="transparent"
           />
@@ -232,11 +281,11 @@ export default function AnalysisScreen() {
         {phase === 1 ? (
           <Animated.View style={[StyleSheet.absoluteFill, thermalStyle]} pointerEvents="none">
             <Svg width={FRAME} height={FRAME}>
-              <Line x1={FRAME * 0.3} y1={FRAME * 0.32} x2={FRAME * 0.7} y2={FRAME * 0.32} stroke={colors.fg} strokeWidth={1} />
-              <Line x1={FRAME * 0.5} y1={FRAME * 0.32} x2={FRAME * 0.5} y2={FRAME * 0.62} stroke={colors.fg} strokeWidth={1} />
-              <Line x1={FRAME * 0.42} y1={FRAME * 0.78} x2={FRAME * 0.58} y2={FRAME * 0.78} stroke={colors.fg} strokeWidth={1} />
-              <Ellipse cx={FRAME * 0.3} cy={FRAME * 0.58} rx={FRAME * 0.1} ry={FRAME * 0.08} stroke={colors.fg} strokeWidth={1} fill="transparent" />
-              <Ellipse cx={FRAME * 0.7} cy={FRAME * 0.58} rx={FRAME * 0.1} ry={FRAME * 0.08} stroke={colors.fg} strokeWidth={1} fill="transparent" />
+              <Line x1={FRAME * 0.3} y1={FRAME * 0.32} x2={FRAME * 0.7} y2={FRAME * 0.32} stroke={colors.accent} strokeWidth={1} />
+              <Line x1={FRAME * 0.5} y1={FRAME * 0.32} x2={FRAME * 0.5} y2={FRAME * 0.62} stroke={colors.accent} strokeWidth={1} />
+              <Line x1={FRAME * 0.42} y1={FRAME * 0.78} x2={FRAME * 0.58} y2={FRAME * 0.78} stroke={colors.accent} strokeWidth={1} />
+              <Ellipse cx={FRAME * 0.3} cy={FRAME * 0.58} rx={FRAME * 0.1} ry={FRAME * 0.08} stroke={colors.accent} strokeWidth={1} fill="transparent" />
+              <Ellipse cx={FRAME * 0.7} cy={FRAME * 0.58} rx={FRAME * 0.1} ry={FRAME * 0.08} stroke={colors.accent} strokeWidth={1} fill="transparent" />
             </Svg>
           </Animated.View>
         ) : null}
@@ -259,8 +308,8 @@ export default function AnalysisScreen() {
                 const r = Math.max(6, (d.radius || 0.04) * FRAME * 1.4);
                 return (
                   <React.Fragment key={i}>
-                    <Circle cx={cx} cy={cy} r={r} stroke={colors.fg} strokeWidth={1} fill="transparent" />
-                    <Circle cx={cx} cy={cy} r={1.5} fill={colors.fg} />
+                    <Circle cx={cx} cy={cy} r={r} stroke={colors.accent} strokeWidth={1} fill="transparent" />
+                    <Circle cx={cx} cy={cy} r={1.5} fill={colors.accent} />
                   </React.Fragment>
                 );
               })}
@@ -273,6 +322,8 @@ export default function AnalysisScreen() {
             <Text style={styles.compileText}>Compilation…</Text>
           </Animated.View>
         ) : null}
+      </View>
+      </FadeIn>
       </View>
 
       <View style={styles.footer}>
@@ -302,6 +353,39 @@ const styles = StyleSheet.create({
     paddingTop: spacing.xl,
   },
   header: { alignItems: "center", paddingTop: spacing.l },
+  body: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.l,
+    paddingHorizontal: spacing.l,
+  },
+  stepsList: { gap: spacing.l },
+  stepRow: { flexDirection: "row", alignItems: "center", gap: spacing.s },
+  stepDot: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    borderWidth: 1.5,
+    borderColor: "rgba(45,31,26,0.2)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  stepDotActive: {
+    borderColor: colors.accent,
+    backgroundColor: colors.accent,
+  },
+  stepDotDone: {
+    borderColor: colors.lime,
+    backgroundColor: colors.lime,
+  },
+  stepLabel: {
+    fontFamily: fonts.bodyMedium,
+    color: "rgba(45,31,26,0.2)",
+    fontSize: 11,
+    letterSpacing: 2,
+  },
+  stepLabelActive: { color: colors.accent },
+  stepLabelDone: { color: colors.fg },
   eyebrow: {
     fontFamily: fonts.bodyMedium,
     color: colors.fgMuted,
@@ -324,21 +408,21 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.borderSubtle,
   },
-  bwImage: { opacity: 0.55 },
-  bwTint: { backgroundColor: "rgba(13,13,13,0.4)" },
-  placeholder: { backgroundColor: "#161616" },
+  bwImage: { opacity: 0.6 },
+  bwTint: { backgroundColor: "rgba(45,31,26,0.25)" },
+  placeholder: { backgroundColor: colors.surfaceSunken },
   scanLine: { position: "absolute", left: 0, right: 0, top: 0, alignItems: "center" },
-  scanLineBar: { width: "94%", height: 1, backgroundColor: colors.fg, opacity: 0.95 },
+  scanLineBar: { width: "94%", height: 2, backgroundColor: colors.accent, opacity: 0.95 },
   compile: { position: "absolute" },
   compileText: {
-    fontFamily: fonts.headingItalic,
+    fontFamily: fonts.heading,
     color: colors.fg,
     fontSize: 20,
     letterSpacing: 1,
   },
   footer: { width: "100%", paddingHorizontal: spacing.xl, paddingBottom: spacing.xl, alignItems: "center" },
-  progressTrack: { width: "100%", height: 1, backgroundColor: colors.borderSubtle },
-  progressFill: { height: 1, backgroundColor: colors.fg },
+  progressTrack: { width: "100%", height: 2, backgroundColor: colors.borderSubtle, borderRadius: 1 },
+  progressFill: { height: 2, backgroundColor: colors.accent, borderRadius: 1 },
   progressLabel: {
     fontFamily: fonts.body,
     color: colors.fgMuted,
@@ -347,5 +431,5 @@ const styles = StyleSheet.create({
     marginTop: spacing.m,
     textTransform: "uppercase",
   },
-  blackOut: { ...StyleSheet.absoluteFillObject, backgroundColor: "#000" },
+  blackOut: { ...StyleSheet.absoluteFillObject, backgroundColor: colors.bg },
 });

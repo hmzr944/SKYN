@@ -11,7 +11,7 @@ import uuid
 import base64
 import json
 import re
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 import httpx
 from jose import jwt as jose_jwt
 
@@ -23,19 +23,14 @@ client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
 EMERGENT_LLM_KEY = os.environ.get("EMERGENT_LLM_KEY", "")
-APPLE_BUNDLE_ID = os.environ.get("APPLE_BUNDLE_ID", "")
 CORS_ORIGINS = [o.strip() for o in os.environ.get("CORS_ORIGINS", "").split(",") if o.strip()]
-# Only set in test/CI environments — enables POST /api/auth/test/session,
-# a backdoor to mint sessions without going through Google/Apple. Leave unset
-# in production: the endpoint 404s when this is empty.
-TEST_AUTH_SECRET = os.environ.get("TEST_AUTH_SECRET", "")
 
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
 
-EMERGENT_SESSION_DATA_URL = "https://demobackend.emergentagent.com/auth/v1/env/oauth/session-data"
-APPLE_KEYS_URL = "https://appleid.apple.com/auth/keys"
-APPLE_ISSUER = "https://appleid.apple.com"
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://axpyatbjvvoxjtwkrhwu.supabase.co").rstrip("/")
+SUPABASE_JWKS_URL = f"{SUPABASE_URL}/auth/v1/.well-known/jwks.json"
+SUPABASE_ISSUER = f"{SUPABASE_URL}/auth/v1"
 
 
 # ============ Models ============
@@ -47,27 +42,13 @@ class User(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
-class SessionExchangeRequest(BaseModel):
-    session_id: str
-
-
-class AppleSignInRequest(BaseModel):
-    identity_token: str
-    apple_user_id: str
-    email: Optional[str] = None
-    full_name: Optional[str] = None
-
-
-class AuthResponse(BaseModel):
-    session_token: str
-    user: User
-
-
 class Profile(BaseModel):
     user_id: str
     age_range: Optional[str] = None       # "<25" | "25-40" | "40-60" | "60+"
     environment: Optional[str] = None     # "Urbain" | "Sec" | "Humide" | "Variable"
     priority: Optional[str] = None        # "Éclat" | "Ridules" | "Imperfections" | "Sensibilité"
+    skin_type: Optional[str] = None       # "Normale" | "Mixte" | "Grasse" | "Sèche"
+    goals: List[str] = Field(default_factory=list)  # "Hydratation" | "Anti-âge" | "Éclat" | "Pores"
     onboarded: bool = False
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -76,6 +57,8 @@ class ProfileUpdate(BaseModel):
     age_range: Optional[str] = None
     environment: Optional[str] = None
     priority: Optional[str] = None
+    skin_type: Optional[str] = None
+    goals: Optional[List[str]] = None
     onboarded: Optional[bool] = None
 
 
@@ -146,90 +129,76 @@ class RecommendationsResponse(BaseModel):
 
 
 # ============ Auth helpers ============
-async def get_current_user(authorization: Optional[str] = Header(None)) -> User:
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    token = authorization.split(" ", 1)[1].strip()
-    session = await db.user_sessions.find_one({"session_token": token}, {"_id": 0})
-    if not session:
-        raise HTTPException(status_code=401, detail="Invalid session")
-    exp = session.get("expires_at")
-    if exp is not None and exp.tzinfo is None:
-        exp = exp.replace(tzinfo=timezone.utc)
-    if exp and exp < datetime.now(timezone.utc):
-        raise HTTPException(status_code=401, detail="Session expired")
-    user_doc = await db.users.find_one({"user_id": session["user_id"]}, {"_id": 0})
-    if not user_doc:
-        raise HTTPException(status_code=401, detail="User not found")
-    return User(**user_doc)
+# In-memory cache of Supabase's JWKS (public keys used to sign access tokens).
+_jwks_cache: dict = {"keys": [], "fetched_at": 0.0}
+_JWKS_CACHE_TTL_SECONDS = 600
 
 
-async def verify_apple_identity_token(identity_token: str, apple_user_id: str) -> dict:
-    """Validate the Apple-issued identityToken: signature (against Apple's JWKS),
-    issuer, audience (bundle id) and subject (must match the apple_user_id the
-    client claims to be)."""
+async def _get_jwks(force: bool = False) -> List[dict]:
+    now = datetime.now(timezone.utc).timestamp()
+    if force or not _jwks_cache["keys"] or now - _jwks_cache["fetched_at"] > _JWKS_CACHE_TTL_SECONDS:
+        async with httpx.AsyncClient(timeout=10.0) as http:
+            try:
+                resp = await http.get(SUPABASE_JWKS_URL)
+            except httpx.HTTPError as e:
+                raise HTTPException(status_code=502, detail=f"Unable to reach Supabase: {e}")
+        if resp.status_code != 200:
+            raise HTTPException(status_code=502, detail="Unable to fetch Supabase signing keys")
+        _jwks_cache["keys"] = resp.json().get("keys", [])
+        _jwks_cache["fetched_at"] = now
+    return _jwks_cache["keys"]
+
+
+async def verify_supabase_jwt(token: str) -> dict:
+    """Validate a Supabase Auth access token against the project's JWKS."""
     try:
-        unverified_header = jose_jwt.get_unverified_header(identity_token)
+        unverified_header = jose_jwt.get_unverified_header(token)
     except Exception:
-        raise HTTPException(status_code=401, detail="Invalid Apple identity token")
+        raise HTTPException(status_code=401, detail="Invalid token")
 
-    async with httpx.AsyncClient(timeout=10.0) as http:
-        try:
-            resp = await http.get(APPLE_KEYS_URL)
-        except httpx.HTTPError as e:
-            raise HTTPException(status_code=502, detail=f"Unable to reach Apple: {e}")
-    if resp.status_code != 200:
-        raise HTTPException(status_code=502, detail="Unable to fetch Apple signing keys")
-
-    key = next(
-        (k for k in resp.json().get("keys", []) if k.get("kid") == unverified_header.get("kid")),
-        None,
-    )
+    kid = unverified_header.get("kid")
+    keys = await _get_jwks()
+    key = next((k for k in keys if k.get("kid") == kid), None)
     if not key:
-        raise HTTPException(status_code=401, detail="Apple signing key not found")
+        keys = await _get_jwks(force=True)
+        key = next((k for k in keys if k.get("kid") == kid), None)
+    if not key:
+        raise HTTPException(status_code=401, detail="Signing key not found")
 
     try:
         claims = jose_jwt.decode(
-            identity_token,
+            token,
             key,
-            algorithms=[unverified_header.get("alg", "RS256")],
-            audience=APPLE_BUNDLE_ID or None,
-            issuer=APPLE_ISSUER,
-            options={"verify_aud": bool(APPLE_BUNDLE_ID)},
+            algorithms=[unverified_header.get("alg", "ES256")],
+            audience="authenticated",
+            issuer=SUPABASE_ISSUER,
         )
     except Exception as e:
-        raise HTTPException(status_code=401, detail=f"Apple identity token verification failed: {e}")
-
-    if claims.get("sub") != apple_user_id:
-        raise HTTPException(status_code=401, detail="Apple identity token subject mismatch")
+        raise HTTPException(status_code=401, detail=f"Token verification failed: {e}")
 
     return claims
 
 
-async def upsert_user_and_session(email: str, name: str, picture: Optional[str], session_token: str) -> User:
-    existing = await db.users.find_one({"email": email}, {"_id": 0})
-    if existing:
-        user = User(**existing)
-    else:
-        user = User(
-            user_id=f"user_{uuid.uuid4().hex[:12]}",
-            email=email,
-            name=name,
-            picture=picture,
-        )
-        await db.users.insert_one(user.model_dump())
+async def get_current_user(authorization: Optional[str] = Header(None)) -> User:
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    token = authorization.split(" ", 1)[1].strip()
+    claims = await verify_supabase_jwt(token)
 
-    expires_at = datetime.now(timezone.utc) + timedelta(days=7)
-    await db.user_sessions.update_one(
-        {"session_token": session_token},
-        {"$set": {
-            "session_token": session_token,
-            "user_id": user.user_id,
-            "expires_at": expires_at,
-            "created_at": datetime.now(timezone.utc),
-        }},
-        upsert=True,
-    )
+    user_id = claims.get("sub")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    user_doc = await db.users.find_one({"user_id": user_id}, {"_id": 0})
+    if user_doc:
+        return User(**user_doc)
+
+    email = claims.get("email", "")
+    metadata = claims.get("user_metadata", {}) or {}
+    name = metadata.get("full_name") or metadata.get("name") or (email.split("@")[0] if email else "User")
+    picture = metadata.get("avatar_url") or metadata.get("picture")
+    user = User(user_id=user_id, email=email, name=name, picture=picture)
+    await db.users.insert_one(user.model_dump())
     return user
 
 
@@ -252,67 +221,9 @@ async def root():
     return {"name": "SKYN API", "status": "ok"}
 
 
-@api_router.post("/auth/google/session", response_model=AuthResponse)
-async def google_session_exchange(payload: SessionExchangeRequest):
-    async with httpx.AsyncClient(timeout=15.0) as http:
-        try:
-            resp = await http.get(
-                EMERGENT_SESSION_DATA_URL,
-                headers={"X-Session-ID": payload.session_id},
-            )
-        except httpx.HTTPError as e:
-            raise HTTPException(status_code=502, detail=f"Auth provider unreachable: {e}")
-    if resp.status_code != 200:
-        raise HTTPException(status_code=401, detail="Invalid session_id")
-    data = resp.json()
-    session_token = data.get("session_token")
-    email = data.get("email")
-    name = data.get("name") or (email.split("@")[0] if email else "User")
-    picture = data.get("picture")
-    if not session_token or not email:
-        raise HTTPException(status_code=502, detail="Invalid response from auth provider")
-    user = await upsert_user_and_session(email, name, picture, session_token)
-    return AuthResponse(session_token=session_token, user=user)
-
-
-@api_router.post("/auth/apple/session", response_model=AuthResponse)
-async def apple_session(payload: AppleSignInRequest):
-    claims = await verify_apple_identity_token(payload.identity_token, payload.apple_user_id)
-    email = claims.get("email") or payload.email or f"{payload.apple_user_id}@privaterelay.apple.local"
-    name = payload.full_name or email.split("@")[0]
-    session_token = f"apple_{uuid.uuid4().hex}"
-    user = await upsert_user_and_session(email, name, None, session_token)
-    return AuthResponse(session_token=session_token, user=user)
-
-
-class TestSessionRequest(BaseModel):
-    email: str
-    name: Optional[str] = None
-
-
-@api_router.post("/auth/test/session", response_model=AuthResponse)
-async def test_session(payload: TestSessionRequest, x_test_auth_secret: Optional[str] = Header(None)):
-    """Test/CI-only login backdoor. 404s unless TEST_AUTH_SECRET is configured
-    and the matching X-Test-Auth-Secret header is sent."""
-    if not TEST_AUTH_SECRET or x_test_auth_secret != TEST_AUTH_SECRET:
-        raise HTTPException(status_code=404, detail="Not found")
-    name = payload.name or payload.email.split("@")[0]
-    session_token = f"test_{uuid.uuid4().hex}"
-    user = await upsert_user_and_session(payload.email, name, None, session_token)
-    return AuthResponse(session_token=session_token, user=user)
-
-
 @api_router.get("/auth/me", response_model=User)
 async def auth_me(authorization: Optional[str] = Header(None)):
     return await get_current_user(authorization)
-
-
-@api_router.post("/auth/logout")
-async def logout(authorization: Optional[str] = Header(None)):
-    if authorization and authorization.startswith("Bearer "):
-        token = authorization.split(" ", 1)[1].strip()
-        await db.user_sessions.delete_one({"session_token": token})
-    return {"ok": True}
 
 
 @api_router.get("/profile", response_model=Profile)
@@ -515,9 +426,6 @@ async def startup_indexes():
     try:
         await db.users.create_index("email", unique=True)
         await db.users.create_index("user_id", unique=True)
-        await db.user_sessions.create_index("session_token", unique=True)
-        await db.user_sessions.create_index("user_id")
-        await db.user_sessions.create_index("expires_at", expireAfterSeconds=0)
         await db.reports.create_index([("user_id", 1), ("created_at", -1)])
         await db.profiles.create_index("user_id", unique=True)
         logger.info("MongoDB indexes ensured.")

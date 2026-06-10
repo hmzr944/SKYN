@@ -1,37 +1,31 @@
 import { storage } from "@/src/utils/storage";
+import { supabase } from "@/src/services/supabase";
 
 const BASE = process.env.EXPO_PUBLIC_BACKEND_URL;
-const TOKEN_KEY = "skyn_session_token";
 const PENDING_REPORTS_KEY = "skyn_pending_reports";
 
 async function authHeader(): Promise<Record<string, string>> {
-  const token = await storage.secureGet(TOKEN_KEY, "");
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
   return token ? { Authorization: `Bearer ${token}` } : {};
-}
-
-export async function setToken(token: string) {
-  await storage.secureSet(TOKEN_KEY, token);
-}
-
-export async function clearToken() {
-  await storage.secureRemove(TOKEN_KEY);
-}
-
-export async function getToken(): Promise<string | null> {
-  const t = await storage.secureGet(TOKEN_KEY, "");
-  return t ? (t as string) : null;
 }
 
 async function request<T>(
   path: string,
   init: RequestInit = {},
 ): Promise<T> {
-  const headers: Record<string, string> = {
+  const buildHeaders = async (): Promise<Record<string, string>> => ({
     "Content-Type": "application/json",
     ...(await authHeader()),
     ...((init.headers as Record<string, string>) || {}),
-  };
-  const res = await fetch(`${BASE}${path}`, { ...init, headers });
+  });
+
+  let res = await fetch(`${BASE}${path}`, { ...init, headers: await buildHeaders() });
+  if (res.status === 401) {
+    await supabase.auth.refreshSession();
+    res = await fetch(`${BASE}${path}`, { ...init, headers: await buildHeaders() });
+  }
+
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`${res.status}: ${text || res.statusText}`);
@@ -40,23 +34,7 @@ async function request<T>(
 }
 
 export const api = {
-  googleSession: (session_id: string) =>
-    request<{ session_token: string; user: any }>("/api/auth/google/session", {
-      method: "POST",
-      body: JSON.stringify({ session_id }),
-    }),
-  appleSession: (
-    identity_token: string,
-    apple_user_id: string,
-    email?: string,
-    full_name?: string,
-  ) =>
-    request<{ session_token: string; user: any }>("/api/auth/apple/session", {
-      method: "POST",
-      body: JSON.stringify({ identity_token, apple_user_id, email, full_name }),
-    }),
   me: () => request<any>("/api/auth/me"),
-  logout: () => request<{ ok: boolean }>("/api/auth/logout", { method: "POST" }),
   getProfile: () => request<any>("/api/profile"),
   updateProfile: (data: any) =>
     request<any>("/api/profile", { method: "PUT", body: JSON.stringify(data) }),

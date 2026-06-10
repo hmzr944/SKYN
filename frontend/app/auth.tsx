@@ -1,207 +1,114 @@
-import { useCallback, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   View,
   Text,
   StyleSheet,
-  TouchableOpacity,
-  Platform,
   ActivityIndicator,
-  Modal,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import * as WebBrowser from "expo-web-browser";
-import * as Linking from "expo-linking";
 import * as Haptics from "expo-haptics";
-import * as AppleAuthentication from "expo-apple-authentication";
 import { useRouter } from "expo-router";
+import { LinearGradient } from "expo-linear-gradient";
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withRepeat,
+  withTiming,
+  Easing,
+} from "react-native-reanimated";
 
-import { colors, fonts, spacing, radius } from "@/src/theme";
-import { api } from "@/src/services/api";
-import { useAuth } from "@/src/contexts/AuthContext";
+import { colors, fonts, spacing, radius, shadow } from "@/src/theme";
+import { AnimatedPressable } from "@/src/components/ui/AnimatedPressable";
+import { FadeIn } from "@/src/components/ui/FadeIn";
 
 export default function AuthScreen() {
   const router = useRouter();
-  const { signInWithSessionToken } = useAuth();
-  const [busy, setBusy] = useState<"google" | "apple" | null>(null);
-  const [sheetVisible, setSheetVisible] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [starting, setStarting] = useState(false);
 
-  const openProviderSheet = () => {
+  const blobT = useSharedValue(0);
+  useEffect(() => {
+    blobT.value = withRepeat(
+      withTiming(1, { duration: 6000, easing: Easing.inOut(Easing.sin) }),
+      -1,
+      true,
+    );
+  }, [blobT]);
+  const blobStyleA = useAnimatedStyle(() => ({
+    transform: [
+      { translateY: blobT.value * -18 },
+      { scale: 1 + blobT.value * 0.06 },
+    ],
+  }));
+  const blobStyleB = useAnimatedStyle(() => ({
+    transform: [
+      { translateY: blobT.value * 16 },
+      { scale: 1 - blobT.value * 0.05 },
+    ],
+  }));
+
+  const startOnboarding = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    setError(null);
-    setSheetVisible(true);
+    setStarting(true);
+    router.replace("/onboarding");
   };
-
-  const closeSheet = () => setSheetVisible(false);
-
-  const handleGoogle = useCallback(async () => {
-    setSheetVisible(false);
-    setError(null);
-    setBusy("google");
-    try {
-      const redirectUrl =
-        Platform.OS === "web"
-          ? window.location.origin + "/"
-          : Linking.createURL("auth");
-      const authUrl = `https://auth.emergentagent.com/?redirect=${encodeURIComponent(
-        redirectUrl,
-      )}`;
-
-      if (Platform.OS === "web") {
-        window.location.href = authUrl;
-        return;
-      }
-
-      const result = await WebBrowser.openAuthSessionAsync(authUrl, redirectUrl);
-      if (result.type !== "success" || !result.url) {
-        setBusy(null);
-        return;
-      }
-      const url = result.url;
-      const sidMatch = url.match(/[?#&]session_id=([^&]+)/);
-      const sessionId = sidMatch?.[1];
-      if (!sessionId) {
-        setError("Aucune session reçue.");
-        setBusy(null);
-        return;
-      }
-      const data = await api.googleSession(sessionId);
-      await signInWithSessionToken(data.session_token);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      router.replace("/profile-setup");
-    } catch (e: any) {
-      setError(e?.message || "Connexion impossible.");
-      setBusy(null);
-    }
-  }, [router, signInWithSessionToken]);
-
-  const handleApple = useCallback(async () => {
-    setSheetVisible(false);
-    setError(null);
-    setBusy("apple");
-    try {
-      const credential = await AppleAuthentication.signInAsync({
-        requestedScopes: [
-          AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
-          AppleAuthentication.AppleAuthenticationScope.EMAIL,
-        ],
-      });
-      const fullName = credential.fullName
-        ? [credential.fullName.givenName, credential.fullName.familyName]
-            .filter(Boolean)
-            .join(" ")
-        : undefined;
-      if (!credential.identityToken) {
-        setError("Connexion Apple indisponible sur cet appareil.");
-        setBusy(null);
-        return;
-      }
-      const data = await api.appleSession(
-        credential.identityToken,
-        credential.user,
-        credential.email || undefined,
-        fullName,
-      );
-      await signInWithSessionToken(data.session_token);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      router.replace("/profile-setup");
-    } catch (e: any) {
-      if (e?.code === "ERR_REQUEST_CANCELED") {
-        setBusy(null);
-        return;
-      }
-      setError("Connexion Apple indisponible sur cet appareil.");
-      setBusy(null);
-    }
-  }, [router, signInWithSessionToken]);
 
   return (
     <SafeAreaView style={styles.container} edges={["top", "bottom"]}>
+      {/* Decorative animated blobs */}
+      <Animated.View style={[styles.blob, styles.blobA, blobStyleA]} pointerEvents="none">
+        <LinearGradient
+          colors={[colors.accent, "rgba(255,107,74,0)"]}
+          style={styles.blobFill}
+          start={{ x: 0.3, y: 0.2 }}
+          end={{ x: 1, y: 1 }}
+        />
+      </Animated.View>
+      <Animated.View style={[styles.blob, styles.blobB, blobStyleB]} pointerEvents="none">
+        <LinearGradient
+          colors={[colors.lime, "rgba(200,240,74,0)"]}
+          style={styles.blobFill}
+          start={{ x: 0.2, y: 0.2 }}
+          end={{ x: 1, y: 1 }}
+        />
+      </Animated.View>
+
       {/* Hero */}
       <View style={styles.hero}>
-        <Text style={styles.logo}>SKYN</Text>
-        <View style={styles.hairline} />
-        <Text style={styles.tagline}>L'analyse cutanée éditoriale</Text>
+        <FadeIn delay={80} distance={18}>
+          <Text style={styles.logo}>SKYN</Text>
+        </FadeIn>
+        <FadeIn delay={200}>
+          <View style={styles.hairline} />
+        </FadeIn>
+        <FadeIn delay={260}>
+          <Text style={styles.tagline}>{"L'analyse cutanée éditoriale"}</Text>
+        </FadeIn>
       </View>
 
       {/* Actions */}
       <View style={styles.actions}>
-        {error ? (
-          <View style={styles.errorBadge}>
-            <Text style={styles.error} testID="auth-error">
-              {error}
-            </Text>
-          </View>
-        ) : null}
+        <FadeIn delay={360}>
+          <AnimatedPressable
+            testID="auth-main-button"
+            style={[styles.primaryBtn, starting && styles.primaryBtnDisabled]}
+            onPress={startOnboarding}
+            disabled={starting}
+          >
+            {starting ? (
+              <ActivityIndicator color={colors.onAccent} />
+            ) : (
+              <Text style={styles.primaryBtnText}>Commencer</Text>
+            )}
+          </AnimatedPressable>
+        </FadeIn>
 
-        <TouchableOpacity
-          testID="auth-main-button"
-          style={styles.primaryBtn}
-          activeOpacity={0.8}
-          onPress={openProviderSheet}
-          disabled={busy !== null}
-        >
-          {busy ? (
-            <ActivityIndicator color={colors.bg} />
-          ) : (
-            <Text style={styles.primaryBtnText}>Commencer l'analyse</Text>
-          )}
-        </TouchableOpacity>
-
-        <Text style={styles.gdpr} testID="auth-gdpr">
-          En continuant, vous créez votre dossier cutané chiffré. Vos photos
-          sont analysées puis immédiatement supprimées.
-        </Text>
+        <FadeIn delay={440}>
+          <Text style={styles.gdpr} testID="auth-gdpr">
+            En continuant, vous créez votre dossier cutané chiffré. Vos photos
+            sont analysées puis immédiatement supprimées.
+          </Text>
+        </FadeIn>
       </View>
-
-      {/* Provider Sheet */}
-      <Modal
-        visible={sheetVisible}
-        transparent
-        animationType="slide"
-        onRequestClose={closeSheet}
-      >
-        <TouchableOpacity
-          style={styles.backdrop}
-          activeOpacity={1}
-          onPress={closeSheet}
-          testID="auth-sheet-backdrop"
-        >
-          <View style={styles.sheet}>
-            <View style={styles.sheetHandle} />
-            <Text style={styles.sheetTitle}>Se connecter</Text>
-            <Text style={styles.sheetSubtitle}>
-              Choisissez un fournisseur d'identité
-            </Text>
-
-            <TouchableOpacity
-              testID="auth-google-button"
-              style={styles.sheetBtn}
-              activeOpacity={0.75}
-              onPress={handleGoogle}
-            >
-              <Text style={styles.sheetBtnText}>Continuer avec Google</Text>
-            </TouchableOpacity>
-
-            {Platform.OS === "ios" ? (
-              <TouchableOpacity
-                testID="auth-apple-button"
-                style={[styles.sheetBtn, styles.sheetBtnOutline]}
-                activeOpacity={0.75}
-                onPress={handleApple}
-              >
-                <Text style={[styles.sheetBtnText, styles.sheetBtnTextOutline]}>
-                  Continuer avec Apple
-                </Text>
-              </TouchableOpacity>
-            ) : null}
-
-            <TouchableOpacity onPress={closeSheet} style={styles.cancel}>
-              <Text style={styles.cancelText}>Annuler</Text>
-            </TouchableOpacity>
-          </View>
-        </TouchableOpacity>
-      </Modal>
     </SafeAreaView>
   );
 }
@@ -212,26 +119,36 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bg,
     paddingHorizontal: spacing.xl,
     justifyContent: "space-between",
+    overflow: "hidden",
   },
+  blob: {
+    position: "absolute",
+    borderRadius: 999,
+    overflow: "hidden",
+  },
+  blobFill: { flex: 1, borderRadius: 999 },
+  blobA: { width: 280, height: 280, top: -80, right: -90, opacity: 0.35 },
+  blobB: { width: 240, height: 240, bottom: 60, left: -100, opacity: 0.3 },
   hero: {
     marginTop: spacing.xxxl + spacing.xxl,
     alignItems: "center",
   },
   logo: {
-    fontFamily: fonts.heading,
-    fontSize: 108,
+    fontFamily: fonts.logo,
+    fontSize: 88,
     color: colors.fg,
-    letterSpacing: 12,
+    letterSpacing: 14,
   },
   hairline: {
     width: 48,
-    height: 1,
-    backgroundColor: colors.borderMid,
+    height: 2,
+    backgroundColor: colors.accent,
+    borderRadius: 1,
     marginTop: spacing.l,
     marginBottom: spacing.m,
   },
   tagline: {
-    fontFamily: fonts.headingItalic,
+    fontFamily: fonts.body,
     fontSize: 15,
     color: colors.fgMuted,
     letterSpacing: 0.5,
@@ -240,31 +157,18 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.l,
     gap: spacing.m,
   },
-  errorBadge: {
-    borderWidth: 1,
-    borderColor: colors.borderMid,
-    borderRadius: radius.sm,
-    paddingVertical: spacing.s,
-    paddingHorizontal: spacing.m,
-    backgroundColor: colors.fgFaint,
-  },
-  error: {
-    fontFamily: fonts.body,
-    color: colors.fg,
-    fontSize: 12,
-    letterSpacing: 0.5,
-    textAlign: "center",
-  },
   primaryBtn: {
-    backgroundColor: colors.fg,
+    backgroundColor: colors.accent,
     paddingVertical: 20,
     alignItems: "center",
     borderRadius: radius.pill,
+    ...shadow.button,
   },
+  primaryBtnDisabled: { opacity: 0.6 },
   primaryBtnText: {
-    fontFamily: fonts.bodyMedium,
-    color: colors.bg,
-    fontSize: 13,
+    fontFamily: fonts.headingMedium,
+    color: colors.onAccent,
+    fontSize: 12,
     letterSpacing: 2,
     textTransform: "uppercase",
   },
@@ -275,76 +179,5 @@ const styles = StyleSheet.create({
     lineHeight: 17,
     textAlign: "center",
     paddingHorizontal: spacing.s,
-  },
-  backdrop: {
-    flex: 1,
-    backgroundColor: colors.overlay,
-    justifyContent: "flex-end",
-  },
-  sheet: {
-    backgroundColor: colors.surfaceRaised,
-    borderTopWidth: 1,
-    borderTopColor: colors.borderSubtle,
-    borderTopLeftRadius: radius.lg,
-    borderTopRightRadius: radius.lg,
-    paddingHorizontal: spacing.xl,
-    paddingTop: spacing.m,
-    paddingBottom: spacing.xl + 16,
-  },
-  sheetHandle: {
-    width: 36,
-    height: 3,
-    backgroundColor: colors.borderActive,
-    opacity: 0.25,
-    alignSelf: "center",
-    borderRadius: 2,
-    marginBottom: spacing.xl,
-  },
-  sheetTitle: {
-    fontFamily: fonts.heading,
-    color: colors.fg,
-    fontSize: 28,
-    letterSpacing: -0.5,
-    marginBottom: spacing.xs,
-  },
-  sheetSubtitle: {
-    fontFamily: fonts.body,
-    color: colors.fgMuted,
-    fontSize: 13,
-    marginBottom: spacing.l,
-  },
-  sheetBtn: {
-    backgroundColor: colors.fg,
-    paddingVertical: 17,
-    alignItems: "center",
-    borderRadius: radius.pill,
-    marginBottom: spacing.m,
-  },
-  sheetBtnText: {
-    fontFamily: fonts.bodyMedium,
-    color: colors.bg,
-    fontSize: 13,
-    letterSpacing: 1.8,
-    textTransform: "uppercase",
-  },
-  sheetBtnOutline: {
-    backgroundColor: "transparent",
-    borderWidth: 1,
-    borderColor: colors.borderActive,
-  },
-  sheetBtnTextOutline: {
-    color: colors.fg,
-  },
-  cancel: {
-    paddingVertical: 14,
-    alignItems: "center",
-    marginTop: spacing.xs,
-  },
-  cancelText: {
-    fontFamily: fonts.body,
-    color: colors.fgMuted,
-    fontSize: 12,
-    letterSpacing: 2,
-    textTransform: "uppercase",
   },
 });

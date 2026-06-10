@@ -22,14 +22,16 @@ import Animated, {
 } from "react-native-reanimated";
 import * as Haptics from "expo-haptics";
 
-import { colors, fonts, spacing, radius } from "@/src/theme";
+import { colors, fonts, spacing, radius, shadow } from "@/src/theme";
 import { api } from "@/src/services/api";
 import { storage } from "@/src/utils/storage";
+import { FadeIn } from "@/src/components/ui/FadeIn";
+import { AnimatedPressable } from "@/src/components/ui/AnimatedPressable";
 
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 const { width: SCREEN_W } = Dimensions.get("window");
 const RING = Math.min(SCREEN_W - spacing.xl * 2, 240);
-const STROKE = 1.5;
+const STROKE = 6;
 const R = (RING - STROKE) / 2;
 const CIRC = 2 * Math.PI * R;
 
@@ -68,7 +70,7 @@ function ScoreRing({ value }: { value: number }) {
           cx={RING / 2}
           cy={RING / 2}
           r={R}
-          stroke={colors.fg}
+          stroke={colors.accent}
           strokeWidth={STROKE}
           fill="transparent"
           strokeDasharray={`${CIRC} ${CIRC}`}
@@ -109,6 +111,12 @@ function MetricCell({
   }));
   return (
     <Animated.View style={[styles.metricCell, styles[variant], aStyle]}>
+      <View
+        style={[
+          styles.metricDot,
+          { backgroundColor: value > 70 ? colors.lime : colors.accent },
+        ]}
+      />
       <Text style={styles.metricLabel}>{label}</Text>
       <Text style={styles.metricValue}>{value}</Text>
     </Animated.View>
@@ -199,31 +207,39 @@ export default function ReportScreen() {
       </View>
 
       <ScrollView contentContainerStyle={styles.scroll}>
-        <Text style={styles.dateTop}>
-          {new Date(report.created_at).toLocaleDateString("fr-FR", {
-            day: "2-digit",
-            month: "long",
-            year: "numeric",
-          })}
-        </Text>
+        <FadeIn>
+          <Text style={styles.dateTop}>
+            {new Date(report.created_at).toLocaleDateString("fr-FR", {
+              day: "2-digit",
+              month: "long",
+              year: "numeric",
+            })}
+          </Text>
+        </FadeIn>
 
         {lowLight ? (
-          <View style={styles.lowLightBanner} testID="report-low-light-notice">
-            <Text style={styles.lowLightText}>
-              Luminosité faible détectée lors de la prise de vue — pour un bilan plus précis, refaites le test dans un environnement bien éclairé.
-            </Text>
-          </View>
+          <FadeIn distance={6}>
+            <View style={styles.lowLightBanner} testID="report-low-light-notice">
+              <Text style={styles.lowLightText}>
+                Luminosité faible détectée lors de la prise de vue — pour un bilan plus précis, refaites le test dans un environnement bien éclairé.
+              </Text>
+            </View>
+          </FadeIn>
         ) : null}
 
         {report.diagnosis ? (
-          <Text style={styles.diagnosis} testID="report-diagnosis">
-            {report.diagnosis}
-          </Text>
+          <FadeIn delay={60}>
+            <Text style={styles.diagnosis} testID="report-diagnosis">
+              {report.diagnosis}
+            </Text>
+          </FadeIn>
         ) : null}
 
-        <View style={styles.ringWrap}>
-          <ScoreRing value={report.global_score} />
-        </View>
+        <FadeIn delay={100} distance={20}>
+          <View style={styles.ringWrap}>
+            <ScoreRing value={report.global_score} />
+          </View>
+        </FadeIn>
 
         {/* Asymmetric metric grid */}
         <View style={styles.gridWrap}>
@@ -252,30 +268,29 @@ export default function ReportScreen() {
         </View>
 
         {/* Recommendations trigger */}
-        <TouchableOpacity
+        <AnimatedPressable
           testID="report-recos-toggle"
-          activeOpacity={0.8}
           style={styles.recoTrigger}
           onPress={toggleSheet}
+          scaleTo={0.98}
         >
           <Text style={styles.recoTriggerText}>
             {sheetOpen ? "Masquer les recommandations" : "Voir les recommandations"}
           </Text>
           <Text style={styles.recoArrow}>{sheetOpen ? "↓" : "↑"}</Text>
-        </TouchableOpacity>
+        </AnimatedPressable>
 
         <View style={{ height: 120 }} />
       </ScrollView>
 
       {/* Finish button */}
-      <TouchableOpacity
+      <AnimatedPressable
         testID="report-finish-btn"
         style={styles.finishBtn}
-        activeOpacity={0.85}
         onPress={handleFinish}
       >
         <Text style={styles.finishText}>Terminer et Sauvegarder</Text>
-      </TouchableOpacity>
+      </AnimatedPressable>
 
       {/* Recommendations sheet */}
       <Animated.View
@@ -288,19 +303,22 @@ export default function ReportScreen() {
         <Text style={styles.sheetTitle}>Recommandations</Text>
         <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
           {(report.recommendations || []).map((r: string, i: number) => (
-            <View key={i} style={styles.recoItem} testID={`reco-item-${i}`}>
-              <Text style={styles.recoIdx}>0{i + 1}</Text>
-              <Text style={styles.recoText}>{r}</Text>
-            </View>
+            <FadeIn key={i} delay={i * 60} distance={8}>
+              <View style={styles.recoItem} testID={`reco-item-${i}`}>
+                <Text style={styles.recoIdx}>0{i + 1}</Text>
+                <Text style={styles.recoText}>{r}</Text>
+              </View>
+            </FadeIn>
           ))}
         </ScrollView>
-        <TouchableOpacity
+        <AnimatedPressable
           onPress={toggleSheet}
           style={styles.sheetClose}
           testID="report-sheet-close"
+          scaleTo={0.96}
         >
           <Text style={styles.sheetCloseText}>Fermer</Text>
-        </TouchableOpacity>
+        </AnimatedPressable>
       </Animated.View>
     </SafeAreaView>
   );
@@ -354,7 +372,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.s,
   },
   diagnosis: {
-    fontFamily: fonts.headingItalic,
+    fontFamily: fonts.heading,
     color: colors.fg,
     fontSize: 18,
     textAlign: "center",
@@ -370,7 +388,7 @@ const styles = StyleSheet.create({
     borderColor: colors.borderMid,
     paddingVertical: 12,
     paddingHorizontal: spacing.m,
-    backgroundColor: colors.fgFaint,
+    backgroundColor: colors.accentSofter,
     borderRadius: radius.sm,
   },
   lowLightText: {
@@ -418,6 +436,15 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     padding: spacing.m,
     justifyContent: "space-between",
+    ...shadow.card,
+  },
+  metricDot: {
+    position: "absolute",
+    top: spacing.m,
+    right: spacing.m,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
   },
   tall: { flex: 1, minHeight: 200 },
   small: { flex: 1, minHeight: 96 },
@@ -430,7 +457,7 @@ const styles = StyleSheet.create({
   },
   metricValue: {
     fontFamily: fonts.heading,
-    color: colors.fg,
+    color: colors.accent,
     fontSize: 48,
     letterSpacing: -1,
   },
@@ -458,14 +485,16 @@ const styles = StyleSheet.create({
     bottom: 28,
     left: spacing.xl,
     right: spacing.xl,
-    backgroundColor: colors.fg,
+    backgroundColor: colors.bg,
     paddingVertical: 18,
     alignItems: "center",
     borderRadius: radius.pill,
+    borderWidth: 1.5,
+    borderColor: colors.accent,
   },
   finishText: {
-    fontFamily: fonts.bodyMedium,
-    color: colors.bg,
+    fontFamily: fonts.headingMedium,
+    color: colors.accent,
     fontSize: 13,
     letterSpacing: 2,
     textTransform: "uppercase",
@@ -484,13 +513,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.xl,
     paddingTop: spacing.m,
     paddingBottom: spacing.l,
+    ...shadow.raised,
   },
   sheetHandleWrap: { alignItems: "center", marginBottom: spacing.m },
   handleBar: {
     width: 36,
-    height: 3,
-    backgroundColor: colors.fg,
-    opacity: 0.25,
+    height: 4,
+    backgroundColor: colors.borderMid,
     borderRadius: 2,
   },
   sheetTitle: {
@@ -509,9 +538,11 @@ const styles = StyleSheet.create({
   },
   recoIdx: {
     fontFamily: fonts.heading,
-    color: colors.fgMuted,
-    fontSize: 14,
-    width: 28,
+    color: colors.accent,
+    opacity: 0.2,
+    fontSize: 32,
+    width: 40,
+    lineHeight: 36,
   },
   recoText: {
     flex: 1,
@@ -525,13 +556,13 @@ const styles = StyleSheet.create({
     alignSelf: "center",
     paddingVertical: 12,
     paddingHorizontal: 32,
-    borderWidth: 1,
-    borderColor: colors.borderActive,
+    borderWidth: 1.5,
+    borderColor: colors.accent,
     borderRadius: radius.pill,
   },
   sheetCloseText: {
-    fontFamily: fonts.bodyMedium,
-    color: colors.fg,
+    fontFamily: fonts.headingMedium,
+    color: colors.accent,
     fontSize: 11,
     letterSpacing: 2,
     textTransform: "uppercase",

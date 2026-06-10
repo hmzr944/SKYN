@@ -4,50 +4,40 @@ import { useEffect } from "react";
 import { StatusBar } from "expo-status-bar";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
-import {
-  useFonts as usePlayfair,
-  PlayfairDisplay_400Regular,
-  PlayfairDisplay_400Regular_Italic,
-} from "@expo-google-fonts/playfair-display";
-import {
-  useFonts as useDMSans,
-  DMSans_400Regular,
-  DMSans_500Medium,
-} from "@expo-google-fonts/dm-sans";
+import { useFonts } from "expo-font";
 
 import { useIconFonts } from "@/src/hooks/use-icon-fonts";
 import { AuthProvider } from "@/src/contexts/AuthContext";
+import { colors } from "@/src/theme";
 
 SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
   const [iconsLoaded, iconsError] = useIconFonts();
-  const [playfairLoaded] = usePlayfair({
-    PlayfairDisplay_400Regular,
-    PlayfairDisplay_400Regular_Italic,
-  });
-  const [dmSansLoaded] = useDMSans({
-    DMSans_400Regular,
-    DMSans_500Medium,
+  const [fontsLoaded, fontsError] = useFonts({
+    ClashDisplay_500Medium: require("@/assets/fonts/ClashDisplay-Medium.ttf"),
+    ClashDisplay_600SemiBold: require("@/assets/fonts/ClashDisplay-SemiBold.ttf"),
+    GeneralSans_400Regular: require("@/assets/fonts/GeneralSans-Regular.ttf"),
+    GeneralSans_500Medium: require("@/assets/fonts/GeneralSans-Medium.ttf"),
   });
 
   useEffect(() => {
-    if ((iconsLoaded || iconsError) && playfairLoaded && dmSansLoaded) {
+    if ((iconsLoaded || iconsError) && (fontsLoaded || fontsError)) {
       SplashScreen.hideAsync();
     }
-  }, [iconsLoaded, iconsError, playfairLoaded, dmSansLoaded]);
+  }, [iconsLoaded, iconsError, fontsLoaded, fontsError]);
 
-  if ((!iconsLoaded && !iconsError) || !playfairLoaded || !dmSansLoaded) return null;
+  if ((!iconsLoaded && !iconsError) || (!fontsLoaded && !fontsError)) return null;
 
   return (
-    <GestureHandlerRootView style={{ flex: 1, backgroundColor: "#0D0D0D" }}>
+    <GestureHandlerRootView style={{ flex: 1, backgroundColor: colors.bg }}>
       <SafeAreaProvider>
         <AuthProvider>
-          <StatusBar style="light" />
+          <StatusBar style="dark" />
           <Stack
             screenOptions={{
               headerShown: false,
-              contentStyle: { backgroundColor: "#0D0D0D" },
+              contentStyle: { backgroundColor: colors.bg },
               animation: "fade",
               animationDuration: 400,
             }}

@@ -1,31 +1,67 @@
 import { useEffect } from "react";
-import { View, Text, ActivityIndicator, StyleSheet } from "react-native";
+import { View, Text, StyleSheet } from "react-native";
 import { useRouter } from "expo-router";
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withDelay,
+  withTiming,
+  withSequence,
+  Easing,
+} from "react-native-reanimated";
 
 import { useAuth } from "@/src/contexts/AuthContext";
 import { colors, fonts } from "@/src/theme";
+import { FadeIn } from "@/src/components/ui/FadeIn";
 
 export default function Index() {
   const router = useRouter();
   const { loading, user, profile } = useAuth();
 
+  const dotScale = useSharedValue(0);
+  const dotOpacity = useSharedValue(0);
+
+  useEffect(() => {
+    dotOpacity.value = withDelay(500, withTiming(1, { duration: 200 }));
+    dotScale.value = withDelay(
+      500,
+      withSequence(
+        withTiming(1.6, { duration: 350, easing: Easing.out(Easing.ease) }),
+        withTiming(1, { duration: 250, easing: Easing.inOut(Easing.ease) }),
+      ),
+    );
+  }, [dotOpacity, dotScale]);
+
+  const dotStyle = useAnimatedStyle(() => ({
+    opacity: dotOpacity.value,
+    transform: [{ scale: dotScale.value }],
+  }));
+
   useEffect(() => {
     if (loading) return;
-    if (!user) {
-      router.replace("/auth");
-    } else if (!profile?.onboarded) {
-      router.replace("/profile-setup");
-    } else {
-      router.replace("/dashboard");
-    }
+    let cancelled = false;
+    const t = setTimeout(async () => {
+      if (!user) {
+        if (cancelled) return;
+        router.replace("/auth");
+      } else if (!profile?.onboarded) {
+        router.replace("/profile-setup");
+      } else {
+        router.replace("/dashboard");
+      }
+    }, 1200);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
   }, [loading, user, profile, router]);
 
   return (
     <View style={styles.container} testID="splash-screen">
-      <Text style={styles.logo}>SKYN</Text>
-      <View style={styles.divider} />
-      <Text style={styles.tagline}>{"L'analyse cutanée éditoriale"}</Text>
-      <ActivityIndicator color={colors.fg} style={styles.spinner} />
+      <FadeIn distance={18}>
+        <Text style={styles.logo}>SKYN</Text>
+      </FadeIn>
+      <Animated.View style={[styles.dot, dotStyle]} />
     </View>
   );
 }
@@ -33,28 +69,22 @@ export default function Index() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.bg,
+    backgroundColor: colors.accent,
     alignItems: "center",
     justifyContent: "center",
   },
   logo: {
-    fontFamily: fonts.heading,
-    fontSize: 56,
-    color: colors.fg,
-    letterSpacing: 8,
+    fontFamily: fonts.logo,
+    fontSize: 64,
+    color: colors.onAccent,
+    letterSpacing: 14,
+    fontWeight: "600",
   },
-  divider: {
-    width: 40,
-    height: 1,
-    backgroundColor: colors.borderSubtle,
-    marginVertical: 20,
+  dot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: colors.lime,
+    marginTop: 24,
   },
-  tagline: {
-    fontFamily: fonts.body,
-    fontSize: 13,
-    color: colors.fgMuted,
-    letterSpacing: 2,
-    textTransform: "uppercase",
-  },
-  spinner: { marginTop: 48 },
 });
