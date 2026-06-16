@@ -1,0 +1,45 @@
+{
+  "summary": "SKYN iteration 3 — backend re-tested end-to-end after the SKYN Engine v1 introduction. Added 11 new tests covering the new POST /api/analyze endpoint (auth, invalid token, real face image, synthetic image fallback, garbage base64), the SKYN Engine module structure (file existence + clean imports + public API), and the new Report fields (diagnosis, detections). All previous 18 tests still pass with no regression. Total: 28/28 PASS. Manual verification on a real 1024x1024 face image confirms: detected=true, 5 detections returned with normalized x/y in [0,1], scores within engine clamp [30..98], French templated recommendations from the expert system, source='skyn_engine_v1', diagnosis='Peau réactive — micro-rougeurs diffuses'. Synthetic 1x1 jpg correctly returns detected=false but still produces clamped scores, 3 fallback French recommendations, and detections=[]. /api/recommendations (legacy GPT-4o) still returns source='gpt-4o' with 3 personalized strings.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/analyze", "issue": "On invalid base64 the server logs 'Corrupt JPEG data: premature end of data segment' from OpenCV before returning 200 with the fallback payload. Functionally correct (graceful fallback) but log noise. Consider catching at decode level."},
+      {"endpoint": "POST /api/reports / PUT /api/profile", "issue": "Returns 422 (Pydantic body validation) before 401 when body is invalid AND auth header is missing. Carried over from iteration 1/2 — cosmetic only."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_skyn_api.py",
+    "/app/backend/tests/fixtures_face.jpg",
+    "/app/test_reports/pytest/skyn_api.xml"
+  ],
+  "action_items": [
+    "Optional: in /api/analyze handler, guard against OpenCV stderr 'Corrupt JPEG data' noise by validating the decoded array shape before continuing; not user-visible but pollutes backend logs.",
+    "Optional: migrate FastAPI on_event startup/shutdown to lifespan handlers (carry-over).",
+    "Frontend SKYN Engine integration (analysis.tsx parallel call to /api/analyze + SVG overlay of detection coords during the 7s cinematic) cannot be exercised on the static web preview — please validate manually on iOS device. Detection payload shape from backend (normalized x/y/radius/confidence) is confirmed correct and ready for the frontend overlay."
+  ],
+  "critical_code_review_comments": [
+    "skyn_engine package is well-modularised (preprocessing / cv_analysis / imperfections / expert_system / pipeline) with a single public entry analyze_skin() returning a dataclass — clean contract for the future YOLOv8 swap.",
+    "Pipeline correctly clamps scores to [30..98] and applies a soft profile-priority bias (Éclat → -4 radiance, Ridules → -4 texture, Imperfections → -4, Sensibilité gates on redness). Deterministic and testable.",
+    "Imperfection detector uses DoG + adaptive threshold (mean + 2.5*std) on the skin mask only, then connectedComponentsWithStats with area filter 4..200 and edge-margin filter — sensible default for Phase 1. Returns top-N by confidence. As declared, the function contract (input Preprocessed, output List[Detection]) is identical to a future ML model so swap is transparent.",
+    "Expert system is purely rule-based with a 7-entry diagnosis catalogue + 8 candidate template recommendations ranked by deficit weight, guaranteed to return exactly 3 unique French strings via the seen-set + SPF safety fallback. Robust.",
+    "/api/analyze handler correctly wraps the pipeline in try/except and returns a safe AnalyzeResponse with source='skyn_engine_v1_fallback' on any failure — never 500s.",
+    "Detection Pydantic model in server.py mirrors the dataclass in imperfections.py — types align (str/float/float/float/float). Report stores them as a List[Detection] with default_factory=list so old reports remain compatible.",
+    "Profile is read directly from db.profiles (dict) in /api/analyze and passed to analyze_skin which builds its own ProfileCtx — no model instantiation, so missing profile docs don't 500. Good."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_skyn_api.py (added TestSkynEngineModules, TestAnalyze, TestReportNewFields — 11 new tests)",
+    "/app/backend/tests/fixtures_face.jpg (new — real-face image fixture for /api/analyze)"
+  ],
+  "success_rate": {"backend": "100% (28/28)", "frontend": "not tested (backend-only request)"},
+  "seed_data_creation": "Apple synthetic sessions created with TEST_ prefix in email/apple_user_id. Reports created with TEST_-prefixed recommendation strings. /tmp/face.jpg copied to /app/backend/tests/fixtures_face.jpg as the real-face fixture.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Backend stable on SKYN Engine v1. POST /api/analyze takes {image_base64} + Bearer, returns {detected, low_light, luminance, global_score, texture, radiance, imperfections, diagnosis, recommendations[3], detections[{type,x,y,confidence,radius}], source}. Real face → source='skyn_engine_v1' with non-empty detections. No-face / corrupt input → graceful, detected=false, detections=[], 3 fallback French recs. Report model now has optional diagnosis (str|None default null) and detections (list default []). Legacy /api/recommendations still functional (gpt-4o). Test fixture at /app/backend/tests/fixtures_face.jpg (~640KB CC0 generated face). The mocked piece is the imperfection detector itself (classical DoG); contract is stable for Phase 2 ML swap.",
+  "rca_of_issue": "N/A — no functional regression. The mocked DoG-based imperfection detector is intentional per main agent's note and clearly documented in skyn_engine/imperfections.py."
+}

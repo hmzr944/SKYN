@@ -1,0 +1,40 @@
+{
+  "summary": "SKYN iteration 2 — backend & frontend re-tested against the new spec. Updated pytest suite to the new profile shape (age_range/environment/priority) and new report shape (no hydration/elasticity). Added 4 tests for the NEW endpoint POST /api/recommendations covering 401, invalid token, exactly-3-strings response, and GPT-4o source confirmation. All 18/18 backend tests PASS. Manual re-confirmation: /api/recommendations returns source='gpt-4o' with 3 personalized French strings. Frontend web preview: /auth screen displays the single 'SE CONNECTER VIA GOOGLE / APPLE' CTA (testID auth-main-button), exact GDPR copy (testID auth-gdpr), Playfair Display + DM Sans loaded, auth-google-button is hidden on the initial screen and appears only inside the bottom-sheet modal after tapping the main CTA. Apple button correctly hidden on web (iOS-only). Strict bicolor #0D0D0D / #E8D5C0 visually respected.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/reports / PUT /api/profile", "issue": "Returns 422 (Pydantic body validation) before 401 when called with invalid body and no auth header. Cosmetic — when body is valid and no auth, correctly returns 401. Carried over from iteration 1."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/auth", "issues": ["Computed style audit detected one off-palette value rgb(242,242,242) on a non-visible underlying DIV (likely react-native-web root reset). Not user-visible in the rendered screen (screenshot confirms strict bicolor). Non-blocking — main agent can leave as-is or set body backgroundColor to #0D0D0D explicitly."]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_skyn_api.py",
+    "/app/test_reports/pytest/skyn_api.xml"
+  ],
+  "action_items": [
+    "Optional: set explicit html/body { background:#0D0D0D } in web entry to eliminate the underlying rgb(242,242,242) default (purely cosmetic, not user-visible).",
+    "Camera (expo-camera), 7s cinematic analysis, dashboard chart, profile-setup horizontal swipe and offline AsyncStorage sync still cannot be exercised on the static web preview — please validate manually on iOS device / simulator before release."
+  ],
+  "critical_code_review_comments": [
+    "server.py POST /api/recommendations correctly: (1) authenticates via Bearer, (2) strips data: prefix and caps base64 at ~3MB, (3) uses LlmChat + ImageContent + UserMessage from emergentintegrations with gpt-4o, (4) parses {recommendations:[…]} JSON via regex with strict validation, (5) deterministic French fallback when LLM key missing or any exception occurs. Solid.",
+    "Report and Profile Pydantic models cleanly dropped legacy fields (hydration/elasticity, age/feeling/goal). MongoDB writes go through model_dump so legacy keys are not persisted on new docs.",
+    "auth.tsx correctly hides auth-google-button until the bottom-sheet modal opens (Modal visible state) and gates auth-apple-button on Platform.OS === 'ios' only — matches spec exactly.",
+    "FastAPI on_event startup/shutdown is deprecated (carry-over from iter 1) — migrate to lifespan handlers when convenient."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_skyn_api.py (rewritten for new profile/report shape + new /recommendations tests)"
+  ],
+  "success_rate": {"backend": "100% (18/18)", "frontend": "100% on testable web surface (auth screen). Camera/analysis/dashboard/profile-setup require native device."},
+  "seed_data_creation": "Apple synthetic sessions created with TEST_ prefix in email/apple_user_id. Reports created with TEST_-prefixed recommendation strings. No production data touched.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Backend stable. Profile uses age_range/environment/priority (strings). Reports use texture/radiance/imperfections/global_score/recommendations (no hydration/elasticity). New endpoint POST /api/recommendations needs Bearer auth + {image_base64, global_score, texture, radiance, imperfections} and returns {recommendations:[3 strings], source:'gpt-4o'|'fallback'}. GPT-4o currently functional. Auth screen testIDs: auth-main-button (opens modal), auth-gdpr, auth-sheet-backdrop, auth-google-button (modal-only), auth-apple-button (iOS-only). Use /api/auth/apple/session with TEST_ apple_user_id to obtain Bearer token bypassing OAuth.",
+  "rca_of_issue": "N/A — no functional regressions detected."
+}

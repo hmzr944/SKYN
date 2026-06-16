@@ -1,0 +1,168 @@
+{
+  "theme_and_archetype": {
+    "theme": "DARK",
+    "archetype": "5 (Luxury Editorial Medical)",
+    "description": "A cross between a high-end scientific journal and a minimalist beauty magazine. Extremely fluid, highly polished, zero glassmorphism, zero futurism. Strict bicolor palette."
+  },
+  "colors": {
+    "background": "#0D0D0D",
+    "foreground": "#E8D5C0",
+    "variations": {
+      "text_primary": "#E8D5C0",
+      "text_secondary": "rgba(232, 213, 192, 0.6)",
+      "border_subtle": "rgba(232, 213, 192, 0.15)",
+      "border_active": "#E8D5C0",
+      "overlay": "rgba(13, 13, 13, 0.8)",
+      "chart_line": "#E8D5C0"
+    },
+    "forbidden_colors": [
+      "red",
+      "green",
+      "blue",
+      "any color other than #0D0D0D and #E8D5C0"
+    ],
+    "rule": "Only opacity variations of the two base colors are allowed."
+  },
+  "typography": {
+    "fonts": {
+      "heading": "Playfair Display",
+      "body": "DM Sans"
+    },
+    "hierarchy": {
+      "h1": {
+        "family": "Playfair Display",
+        "size": "40px",
+        "weight": "400",
+        "tracking": "-0.02em",
+        "lineHeight": "1.1"
+      },
+      "h2": {
+        "family": "Playfair Display",
+        "size": "32px",
+        "weight": "400",
+        "tracking": "-0.01em",
+        "lineHeight": "1.2"
+      },
+      "h3": {
+        "family": "Playfair Display",
+        "size": "24px",
+        "weight": "400",
+        "lineHeight": "1.3"
+      },
+      "body_large": {
+        "family": "DM Sans",
+        "size": "18px",
+        "weight": "400",
+        "lineHeight": "1.5"
+      },
+      "body": {
+        "family": "DM Sans",
+        "size": "15px",
+        "weight": "400",
+        "lineHeight": "1.5"
+      },
+      "caption": {
+        "family": "DM Sans",
+        "size": "12px",
+        "weight": "500",
+        "tracking": "0.1em",
+        "transform": "uppercase"
+      }
+    }
+  },
+  "spacing_and_layout": {
+    "philosophy": "Generous spacing. Let the typography and minimal lines breathe.",
+    "containers": "Flat panels. No rounded corners beyond very subtle 2px or 4px (or perfectly round 999px for pills/ovals). Zero drop shadows.",
+    "borders": "Fine 1px solid lines using rgba(232, 213, 192, 0.15). Used to separate sections asymmetrically or frame content.",
+    "grids": "Asymmetric grids for data representation (e.g., Report Screen)."
+  },
+  "motion_and_haptics": {
+    "animations": "Fluid, unhurried, graceful. Use react-native-reanimated for all transitions.",
+    "haptics": "expo-haptics is MANDATORY. Use 'impactLight' for swipes/minor actions, 'impactMedium' for button presses, and 'notificationSuccess' upon completing the 4-phase analysis.",
+    "phases": "Animations should feel clinical yet magical. E.g., a slow horizontal scanning line, fading SVG circles for micro-patterns."
+  },
+  "screens": {
+    "AuthScreen": {
+      "layout": "Splash + Auth combined. Large Playfair typography for SKYN logo. Bottom sheet or simple buttons for Magic Link, Apple, Google.",
+      "footer": "GDPR warning in tiny uppercase DM Sans at the very bottom.",
+      "components": [
+        "LogoHero",
+        "AuthButtons",
+        "GDPRText"
+      ]
+    },
+    "ProfileSetupScreen": {
+      "interaction": "Horizontal swipe-based pagination (1 question per screen).",
+      "questions": [
+        "Age",
+        "Current Feeling",
+        "Goal"
+      ],
+      "layout": "Centered large typography for the question. Clean large input or list items.",
+      "haptics": "Trigger on every swipe."
+    },
+    "DashboardScreen": {
+      "layout": "Hub screen. Top: Large typography greeting. Middle: SVG curve chart showing skin score evolution. Bottom: Minimalist history list.",
+      "cta": "Central 'Nouveau Bilan' (New Scan) button, styled as a delicate pill or circle with a 1px border.",
+      "components": [
+        "Header",
+        "ScoreChartSVG",
+        "HistoryList",
+        "ScanCTA"
+      ]
+    },
+    "CameraScreen": {
+      "layout": "Fullscreen camera view. A delicate, fine oval overlay in the center to guide the face.",
+      "ui": "Pitch black #0D0D0D sections outside the oval (using a mask). Minimalist capture button (just a thin circle outline).",
+      "components": [
+        "CameraFeed",
+        "FaceOvalMask",
+        "CaptureButton"
+      ]
+    },
+    "AnalysisScreen": {
+      "state": "4 animated phases post-capture.",
+      "phases": [
+        "1. Surface scan: Fine sweeping line across the face image.",
+        "2. Thermal mapping: Abstract subtle fading opacities (using the bicolor palette).",
+        "3. Micro-patterns: Animated SVG circles appearing on targeted areas.",
+        "4. Report compilation: Typography shuffling and settling."
+      ],
+      "vibe": "Medical precision. No glowing neon. Use only #E8D5C0 with varying opacities."
+    },
+    "ReportScreen": {
+      "layout": "Top: Global Score (0-100) inside a large, slow-animating SVG circle.",
+      "grid": "Asymmetric grid below for Texture, Radiance, and Imperfections.",
+      "bottom_sheet": "Recommendations panel sliding up from the bottom with elegant typography.",
+      "components": [
+        "ScoreCircle",
+        "MetricsGrid",
+        "RecommendationSheet"
+      ]
+    }
+  },
+  "icons_and_assets": {
+    "icon_library": "lucide-react-native",
+    "icon_style": "Thin stroke width (1px or 1.5px max). Color: #E8D5C0."
+  },
+  "image_urls": {
+    "splash_background": {
+      "url": "https://images.unsplash.com/photo-1585314062340-f1a5a7c9328d?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2Njl8MHwxfHNlYXJjaHwyfHxtaW5pbWFsaXN0JTIwbHV4dXJ5JTIwc2tpbiUyMHRleHR1cmUlMjBkYXJrfGVufDB8fHx8MTc4MDkyMTgzMXww&ixlib=rb-4.1.0&q=85",
+      "description": "Dark textured background for splash or auth, apply heavy opacity overlay of #0D0D0D."
+    },
+    "camera_placeholder": {
+      "url": "https://images.unsplash.com/photo-1774897795863-679e3a2826a7?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1MDZ8MHwxfHNlYXJjaHwxfHxtaW5pbWFsaXN0JTIwYmVhdXR5JTIwcG9ydHJhaXQlMjBkYXJrJTIwYmFja2dyb3VuZHxlbnwwfHx8fDE3ODA5MjE4MzF8MA&ixlib=rb-4.1.0&q=85",
+      "description": "Placeholder for the user's face during analysis screen if camera is not active."
+    }
+  },
+  "instructions_to_main_agent": [
+    "Use React Native + Expo for mobile development.",
+    "Do NOT use web-only libraries like Tailwind (unless using NativeWind) or Shadcn-web; use proper React Native UI styling, typically StyleSheet or NativeWind if configured.",
+    "Use 'react-native-svg' for all charts, curves, and the circular score indicator.",
+    "Use 'react-native-reanimated' for high-performance fluid animations across screens.",
+    "Use 'expo-haptics' extensively to give the app a tactile, premium feel.",
+    "Strictly adhere to the #0D0D0D and #E8D5C0 color palette. NO GRADIENTS with other colors. NO SHADOWS.",
+    "Ensure the Playfair Display and DM Sans fonts are properly loaded via 'expo-font' before rendering the app.",
+    "Every touchable element must have a 'testID' attribute for testing. Do not use 'data-testid' as it is a web property, use 'testID' instead."
+  ]
+}
