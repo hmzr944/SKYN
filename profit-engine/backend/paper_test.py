@@ -35,7 +35,7 @@ from rich import box
 from config import AppConfig
 from engine.analysis.indicators import compute_all, _ema
 from engine.analysis.signals import score_signal
-from engine.strategy.regime_detector import detect_regime, Regime
+from engine.strategy.regime_detector import detect_regime, Regime, _adx as _compute_adx
 from engine.strategy.strategy_router import _PARAMS
 from engine.execution.leverage_manager import LeverageManager
 
@@ -48,8 +48,8 @@ console = Console()
 SYMBOLS_YF = [
     "BTC-USD", "ETH-USD", "SOL-USD",
     "BNB-USD", "AVAX-USD", "ADA-USD", "LINK-USD",
-    "XRP-USD", "DOT-USD", "ATOM-USD", "UNI-USD", "LTC-USD",
-]
+    "XRP-USD", "DOT-USD", "ATOM-USD", "LTC-USD",
+]  # UNI-USD delisted from yfinance — skipped
 SYMBOL_NAMES = {
     "BTC-USD":  "BTC/USDT",
     "ETH-USD":  "ETH/USDT",
@@ -61,7 +61,6 @@ SYMBOL_NAMES = {
     "XRP-USD":  "XRP/USDT",
     "DOT-USD":  "DOT/USDT",
     "ATOM-USD": "ATOM/USDT",
-    "UNI-USD":  "UNI/USDT",
     "LTC-USD":  "LTC/USDT",
 }
 
@@ -72,10 +71,16 @@ PERIOD           = "2y"
 WARMUP           = 210        # barres warmup (besoin de EMA200)
 COMMISSION       = 0.0004     # Binance futures taker 0.04%
 SLIPPAGE         = 0.0005     # 0.05%
-RISK_PER_TRADE   = 0.02       # 2% de l'equity par trade
-TRAIL_MULT       = 0.8
-DAILY_LOSS_LIMIT = 0.10       # -10% → pause trading le jour
+RISK_PER_TRADE   = 0.05       # 5%/trade
+TRAIL_MULT       = 0.6        # trailing plus serré
+DAILY_LOSS_LIMIT = 0.12       # -12% → pause trading le jour
 CURRENCY         = "€"
+
+# Paramètres Turbo Trend
+SL_MULT_TREND    = 1.2        # 1.2 ATR stop
+TP_RR_TREND      = 2.5        # 2.5:1 R:R
+MIN_SCORE_PULLBACK = 70       # score minimum pour entrée rebond EMA9
+PULLBACK_BONUS   = 15         # bonus score sur rebond EMA9 confirmé
 
 
 # ---------------------------------------------------------------------------
@@ -179,6 +184,95 @@ def _timing_check(action: str, row) -> float:
     return boost
 
 
+def _ema9_pullback_check(
+    df: pd.DataFrame, i: int, regime_val: str, adx_val: float
+) -> Tuple[bool, Optional[str]]:
+    """
+    Pattern "wick-to-EMA9" — rebond / rejet sur la dynamique EMA9.
+
+    Bull : la mèche basse touche l'EMA9, la bougie clôture AU-DESSUS
+           avec volume et corps forts → momentum reprend.
+    Bear : symétrique.
+
+    Conditions strictes : ADX > 25, volume > 1.2×, corps > 40%,
+    EMA9 montant, RSI en zone neutre (38-65).
+    """
+    if i < 2:
+        return False, None
+
+    if adx_val < 25:
+        return False, None
+
+    last = df.iloc[i]
+
+    try:
+        price     = float(last["close"])
+        ema9      = float(last.get("ema9",  0) or 0)
+        ema21     = float(last.get("ema21", 0) or 0)
+        ema50     = float(last.get("ema50", 0) or 0)
+        open_p    = float(last["open"])
+        high_p    = float(last["high"])
+        low_p     = float(last["low"])
+        vol_ratio = float(last.get("vol_ratio", 1.0) or 1.0)
+        rsi_raw   = last.get("rsi")
+        rsi       = float(rsi_raw) if (rsi_raw is not None and not pd.isna(rsi_raw)) else 50.0
+    except (TypeError, ValueError, KeyError):
+        return False, None
+
+    if ema9 <= 0 or ema21 <= 0 or ema50 <= 0:
+        return False, None
+
+    body = abs(price - open_p)
+    rng  = high_p - low_p
+    body_pct = body / rng if rng > 0 else 0
+
+    ema9_5 = float(df.iloc[max(0, i - 5)].get("ema9", ema9) or ema9)
+
+    if regime_val == "bull_trend":
+        if not (ema9 > ema21 > 0):                    # structure EMA haussière
+            return False, None
+        if low_p > ema9 * 1.002:                      # mèche basse doit toucher l'EMA9
+            return False, None
+        if price <= open_p:                            # bougie haussière obligatoire
+            return False, None
+        if price <= ema9:                              # clôture au-dessus de l'EMA9
+            return False, None
+        if price > ema9 * 1.02:                       # entrée de qualité près de l'EMA9
+            return False, None
+        if rsi < 38 or rsi > 62:                      # zone neutre strict — pas d'extrême
+            return False, None
+        if vol_ratio < 1.2:                            # expansion volume
+            return False, None
+        if body_pct < 0.40:                            # bougie directionnelle forte
+            return False, None
+        if ema9 < ema9_5 * 1.001:                     # EMA9 nettement montante
+            return False, None
+        return True, "BUY"
+
+    elif regime_val == "bear_trend":
+        if not (ema9 < ema21) or ema9 <= 0:           # structure EMA baissière
+            return False, None
+        if high_p < ema9 * 0.998:                     # mèche haute doit toucher l'EMA9
+            return False, None
+        if price >= open_p:                            # bougie baissière obligatoire
+            return False, None
+        if price >= ema9:                              # clôture en-dessous de l'EMA9
+            return False, None
+        if price < ema9 * 0.98:                       # pas trop éloigné
+            return False, None
+        if rsi < 38 or rsi > 62:                      # zone neutre strict
+            return False, None
+        if vol_ratio < 1.2:
+            return False, None
+        if body_pct < 0.40:
+            return False, None
+        if ema9 > ema9_5 * 0.999:                     # EMA9 nettement baissière
+            return False, None
+        return True, "SELL"
+
+    return False, None
+
+
 # ---------------------------------------------------------------------------
 # Trade dataclass
 # ---------------------------------------------------------------------------
@@ -202,6 +296,8 @@ class PaperTrade:
     mtf_aligned: bool
     filter_boost: float
     candles_held: int
+    entry_ts: object = None
+    is_pullback: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -220,6 +316,32 @@ class PaperTrader:
         # Calcul d'indicateurs une seule fois
         df = compute_all(df_raw.copy(), cfg.strategy)
         df_daily = resample_daily(df)
+
+        # Precompute ADX once O(n) — évite O(n²) si appelé dans la boucle
+        adx_series, di_p_series, di_m_series = _compute_adx(df)
+
+        def _fast_regime(idx: int) -> Regime:
+            """Lookup O(1) du régime à la barre idx via ADX précompilé."""
+            row    = df.iloc[idx]
+            price  = float(row.get("close", 1) or 1)
+            ema50  = float(row.get("ema50",  price) or price)
+            ema200 = float(row.get("ema200", price) or price)
+            atr_v  = float(row.get("atr", price * 0.01) or price * 0.01)
+            atr_pct = atr_v / price * 100 if price > 0 else 1.0
+            adx_v  = float(adx_series.iloc[idx])  if not np.isnan(adx_series.iloc[idx])  else 20.0
+            di_p_v = float(di_p_series.iloc[idx]) if not np.isnan(di_p_series.iloc[idx]) else 0.0
+            di_m_v = float(di_m_series.iloc[idx]) if not np.isnan(di_m_series.iloc[idx]) else 0.0
+            if atr_pct > 3.5:
+                return Regime.HIGH_VOL
+            if adx_v > 20:
+                if di_p_v > di_m_v and price > ema50 and ema50 > ema200:
+                    return Regime.BULL_TREND
+                if di_m_v > di_p_v and price < ema50 and ema50 < ema200:
+                    return Regime.BEAR_TREND
+            return Regime.RANGING
+
+        # Cache MTF par date+action — recalcul au max 1×/jour par direction
+        mtf_cache: Dict[str, tuple] = {}
 
         trades: List[PaperTrade] = []
         n = len(df)
@@ -313,6 +435,8 @@ class PaperTrader:
                         mtf_aligned=pos["mtf_aligned"],
                         filter_boost=pos["filter_boost"],
                         candles_held=i - pos["idx"],
+                        entry_ts=pos.get("entry_ts"),
+                        is_pullback=pos.get("is_pullback", False),
                     ))
                     in_pos = False; partial_taken = False
                     continue
@@ -321,93 +445,106 @@ class PaperTrader:
             if in_pos or halted or cash < 0.5:
                 continue
 
-            curr_df = df.iloc[:i + 1]
+            # 1. Régime O(1) — precomputed ADX, pas de slice
+            try:
+                regime = _fast_regime(i)
+                p      = _PARAMS[regime]
+            except Exception:
+                continue
 
+            # Seulement BULL/BEAR_TREND : les autres régimes sont exclus
+            if regime not in (Regime.BULL_TREND, Regime.BEAR_TREND):
+                continue
+
+            # 2. Rebond EMA9 — signal indépendant, fonctionne même sur HOLD
+            adx_i = float(adx_series.iloc[i]) if not np.isnan(adx_series.iloc[i]) else 0.0
+            is_pullback, pb_action = _ema9_pullback_check(df, i, regime.value, adx_i)
+
+            # 3. Signal multi-facteurs (sur slice pour éviter look-ahead)
+            curr_df = df.iloc[:i + 1]
             try:
                 base_sig = score_signal(curr_df, prod_sym, cfg)
             except Exception:
                 continue
-            if base_sig.action == "HOLD":
-                continue
 
-            # Régime
-            try:
-                reg = detect_regime(curr_df)
-                p   = _PARAMS[reg.regime]
-            except Exception:
-                continue
+            # 4. Action effective et score de base
+            # Cas A : signal multi-facteur confirmé dans la bonne direction
+            # Cas B : rebond EMA9 seul (signal HOLD mais pattern valid)
+            # Cas C : signal ET rebond → bonus cumulé
+            if base_sig.action != "HOLD" and base_sig.action == pb_action:
+                # Cas C — double confirmation
+                eff_action = base_sig.action
+                adj = base_sig.score + PULLBACK_BONUS
+                is_pullback = True
+            elif base_sig.action != "HOLD":
+                # Cas A — signal seul (pullback absent ou direction différente)
+                eff_action = base_sig.action
+                adj = base_sig.score
+                is_pullback = False
+            elif is_pullback and pb_action:
+                # Cas B — rebond EMA9 seul, score synthétique
+                eff_action = pb_action
+                adj = 62.0 + PULLBACK_BONUS   # 80pts de base
+            else:
+                continue   # HOLD sans pullback → ignorer
 
-            # Ajustement score selon régime
-            adj = base_sig.score
-            if reg.regime == Regime.BULL_TREND:
-                if base_sig.action == "BUY":
+            # 5. Ajustement régime
+            if regime == Regime.BULL_TREND:
+                if eff_action == "BUY":
                     adj = min(adj + p.get("buy_bonus", 0), 100)
-                elif base_sig.action == "SELL":
+                else:
                     adj = max(adj - p.get("sell_penalty", 0), 0)
-            elif reg.regime == Regime.BEAR_TREND:
-                if base_sig.action == "SELL":
+            elif regime == Regime.BEAR_TREND:
+                if eff_action == "SELL":
                     adj = min(adj + p.get("sell_bonus", 0), 100)
-                elif base_sig.action == "BUY":
+                else:
                     adj = max(adj - p.get("buy_penalty", 0), 0)
-            elif reg.regime == Regime.BREAKOUT:
-                if not reg.vol_surge:
-                    adj = max(adj - 25, 0)
-                elif reg.trend_direction == "up" and base_sig.action == "BUY":
-                    adj = min(adj + p.get("buy_bonus", 0), 100)
-                elif reg.trend_direction == "down" and base_sig.action == "SELL":
-                    adj = min(adj + p.get("sell_bonus", 0), 100)
-            elif reg.regime == Regime.HIGH_VOL:
-                adj *= 0.5
-            elif reg.regime == Regime.RANGING:
-                bb_pct = float(row.get("bb_pct", 0.5) or 0.5)
-                at_extreme = (base_sig.action == "BUY" and bb_pct < 0.15) or \
-                             (base_sig.action == "SELL" and bb_pct > 0.85)
-                if not at_extreme:
-                    adj = max(adj - 35, 0)
 
-            if adj < p["min_score"]:
+            # 6. Score minimum
+            min_score_eff = MIN_SCORE_PULLBACK if is_pullback else p["min_score"]
+            if adj < min_score_eff:
                 continue
 
-            # Gate régime — BREAKOUT exclu (0% win rate confirmé), HIGH_VOL et RANGING exclus
-            if reg.regime in (Regime.HIGH_VOL, Regime.RANGING, Regime.BREAKOUT):
-                continue
-
-            # Filtre macro EMA200 — ne pas trader contre la tendance longue
+            # 7. Filtre macro EMA200
             ema200_val = float(row.get("ema200") or row["close"])
             macro_buf  = ema200_val * 0.05
-            if base_sig.action == "BUY"  and float(row["close"]) < ema200_val - macro_buf:
+            if eff_action == "BUY"  and float(row["close"]) < ema200_val - macro_buf:
                 continue
-            if base_sig.action == "SELL" and float(row["close"]) > ema200_val + macro_buf:
+            if eff_action == "SELL" and float(row["close"]) > ema200_val + macro_buf:
                 continue
 
-            # MTF daily
-            mtf_boost, mtf_aligned, _ = _mtf_check(base_sig.action, df_daily, ts)
+            # 8. MTF daily (cached par date+direction — 1 calcul max/jour)
+            mtf_key = f"{eff_action}_{str(ts)[:10]}"
+            if mtf_key not in mtf_cache:
+                mtf_cache[mtf_key] = _mtf_check(eff_action, df_daily, ts)
+            mtf_boost, mtf_aligned, _ = mtf_cache[mtf_key]
             filter_boost = mtf_boost
 
-            # Hard block si MTF contredit
-            n_daily_past = len(df_daily[df_daily.index.normalize() <= pd.Timestamp(ts).normalize()])
-            if n_daily_past >= 50 and mtf_boost <= -20:
+            # Exiger alignement daily positif — filtre le plus discriminant
+            if not mtf_aligned:
                 continue
 
-            # Timing
-            filter_boost += _timing_check(base_sig.action, row)
-            if filter_boost < -15.0:
+            # 9. Timing (VWAP, doji, RSI)
+            filter_boost += _timing_check(eff_action, row)
+            boost_threshold = -20.0 if is_pullback else -15.0
+            if filter_boost < boost_threshold:
                 continue
 
             final_score = round(min(max(adj + filter_boost, 0), 100), 1)
-            if final_score < 52:
+            min_final = 45 if is_pullback else 52
+            if final_score < min_final:
                 continue
 
-            # Calcul position
-            sl_mult = p["sl_mult"]
-            tp_rr   = p["tp_rr"]
-            max_lev = p["max_leverage"]
+            # 10. Calcul position
+            sl_mult = SL_MULT_TREND   # 1.2 ATR pour BULL/BEAR_TREND
+            tp_rr   = TP_RR_TREND     # 2:1
+            max_lev = min(p["max_leverage"], 3)
 
-            lev     = min(self.lev_mgr.get_leverage(final_score, "HIGH"), max_lev, 3)  # max 3x — les 5x ont tous perdu
+            lev     = min(self.lev_mgr.get_leverage(final_score, "HIGH"), max_lev)
             sl_dist = atr_v * sl_mult
             tp_dist = sl_dist * tp_rr
 
-            if base_sig.action == "BUY":
+            if eff_action == "BUY":
                 entry_p    = price * (1 + SLIPPAGE)
                 sl, tp     = entry_p - sl_dist, entry_p + tp_dist
                 partial_tp = entry_p + (tp - entry_p) * 0.5
@@ -447,10 +584,12 @@ class PaperTrader:
                 "trail": float("nan"),
                 "leverage": lev, "score": final_score,
                 "idx": i,
-                "regime": reg.regime.value,
+                "regime": regime.value,
                 "strategy": p["name"],
                 "mtf_aligned": mtf_aligned,
                 "filter_boost": filter_boost,
+                "entry_ts": ts,
+                "is_pullback": is_pullback,
             }
 
         # Fermeture position ouverte en fin de données
@@ -476,6 +615,8 @@ class PaperTrader:
                 mtf_aligned=pos["mtf_aligned"],
                 filter_boost=pos["filter_boost"],
                 candles_held=n - 1 - pos["idx"],
+                entry_ts=pos.get("entry_ts"),
+                is_pullback=pos.get("is_pullback", False),
             ))
         return trades
 
@@ -719,6 +860,64 @@ def print_report(all_trades: List[PaperTrade]):
         t4.add_row(el.get(r, r), str(cnt), f"{cnt/tot*100:.0f}%", f"[{nc}]{net:+.2f}€[/{nc}]")
     console.print(t4)
     console.print()
+
+    # ---- Pullback stats ----------------------------------------------
+    pb_trades = [t for t in all_trades if t.is_pullback]
+    pb_wins   = [t for t in pb_trades if t.pnl_eur > 0]
+    reg_trades = [t for t in all_trades if not t.is_pullback]
+    reg_wins   = [t for t in reg_trades if t.pnl_eur > 0]
+    pb_wr  = len(pb_wins)  / len(pb_trades)  * 100 if pb_trades  else 0.0
+    reg_wr = len(reg_wins) / len(reg_trades) * 100 if reg_trades else 0.0
+    tpb = Table(title="Pullback EMA9 vs Signaux Classiques", box=box.SIMPLE)
+    tpb.add_column("Type"); tpb.add_column("Trades", justify="right")
+    tpb.add_column("Win%", justify="right"); tpb.add_column("Net (€)", justify="right")
+    pb_net  = sum(t.pnl_eur for t in pb_trades)
+    reg_net = sum(t.pnl_eur for t in reg_trades)
+    for lbl, lst, wr, net in [
+        ("Rebond EMA9", pb_trades, pb_wr, pb_net),
+        ("Signal classique", reg_trades, reg_wr, reg_net),
+    ]:
+        c = "green" if net > 0 else "red"
+        cw = "green" if wr >= 55 else "yellow" if wr >= 45 else "red"
+        tpb.add_row(lbl, str(len(lst)), f"[{cw}]{wr:.0f}%[/{cw}]", f"[{c}]{net:+.2f}€[/{c}]")
+    console.print(tpb)
+    console.print()
+
+    # ---- Breakdown mensuel -------------------------------------------
+    monthly: Dict[str, list] = {}
+    for t in all_trades:
+        if t.entry_ts is not None:
+            key = str(t.entry_ts)[:7]
+            monthly.setdefault(key, []).append(t)
+
+    if monthly:
+        tm = Table(title="Breakdown Mensuel — P&L par Mois", box=box.ROUNDED, border_style="cyan")
+        tm.add_column("Mois",   style="bold")
+        tm.add_column("Trades", justify="right")
+        tm.add_column("Win%",   justify="right")
+        tm.add_column("Net €",  justify="right")
+        tm.add_column("Ret%",   justify="right")
+        tm.add_column("Pullbacks", justify="right")
+        running_eq = INITIAL_CAPITAL
+        for key in sorted(monthly.keys()):
+            mt = monthly[key]
+            mp  = sum(t.pnl_eur for t in mt)
+            mw  = sum(1 for t in mt if t.pnl_eur > 0)
+            wr  = mw / len(mt) * 100 if mt else 0
+            ret = mp / running_eq * 100 if running_eq > 0 else 0
+            running_eq += mp
+            pb_cnt = sum(1 for t in mt if t.is_pullback)
+            c  = "green" if mp > 0 else "red"
+            cw = "green" if wr >= 55 else "yellow" if wr >= 45 else "red"
+            tm.add_row(
+                key, str(len(mt)),
+                f"[{cw}]{wr:.0f}%[/{cw}]",
+                f"[{c}]{mp:+.2f}€[/{c}]",
+                f"[{c}]{ret:+.1f}%[/{c}]",
+                str(pb_cnt),
+            )
+        console.print(tm)
+        console.print()
 
     # ---- Top / Worst trades ------------------------------------------
     sorted_t = sorted(all_trades, key=lambda x: x.pnl_eur, reverse=True)
