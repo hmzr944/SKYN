@@ -1,0 +1,43 @@
+{
+  "_meta": {
+    "optimized": true,
+    "optimizer": "aggressive_leveraged",
+    "composite_score": -999.0,
+    "total_return_pct": 4.202,
+    "leveraged_return_pct": 4.202,
+    "avg_leverage": 1.75,
+    "sharpe_ratio": 0.9757,
+    "win_rate": 100.0,
+    "profit_factor": 99.0,
+    "max_drawdown_pct": 0.311,
+    "total_trades": 4,
+    "liquidations": 0,
+    "daily_loss_stops": 0,
+    "wf_consistency_pct": 75.0
+  },
+  "strategy": {
+    "min_score_buy": 55,
+    "min_score_sell": 55,
+    "rsi_oversold": 25,
+    "rsi_overbought": 65,
+    "bb_std": 1.8
+  },
+  "risk": {
+    "stop_loss_atr_mult": 0.5,
+    "take_profit_rr": 1.5,
+    "risk_per_trade_pct": 0.02
+  },
+  "leverage": {
+    "enabled": true,
+    "mode": "cross",
+    "score_to_leverage": {
+      "60": 2,
+      "70": 3,
+      "80": 5,
+      "90": 8
+    },
+    "max_leverage": 10,
+    "max_positions": 3,
+    "daily_loss_limit_pct": 0.1
+  }
+}
