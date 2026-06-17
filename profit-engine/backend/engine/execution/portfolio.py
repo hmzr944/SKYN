@@ -1,5 +1,5 @@
-from dataclasses import dataclass, field
-from datetime import datetime
+from dataclasses import dataclass
+from datetime import datetime, date
 from typing import Dict, List, Optional
 
 
@@ -14,6 +14,12 @@ class Position:
     entry_time: str
     trailing_stop: Optional[float] = None
     asset_type: str = "crypto"
+    leverage: int = 1
+    margin_required: float = 0.0
+    liquidation_price: float = 0.0
+    last_funding_time: Optional[str] = None
+    partial_tp: float = 0.0       # price to take 50% profit
+    partial_taken: bool = False    # already took partial TP
 
 
 @dataclass
@@ -28,6 +34,7 @@ class Trade:
     entry_time: str
     exit_time: str
     exit_reason: str
+    leverage: int = 1
 
 
 class Portfolio:
@@ -37,11 +44,16 @@ class Portfolio:
         self.positions: Dict[str, Position] = {}
         self.closed_trades: List[Trade] = []
         self._peak = initial_capital
+        self._day_start_equity = initial_capital
+        self._day_date = date.today()
 
     @property
     def equity(self) -> float:
-        positions_value = sum(p.entry_price * p.quantity for p in self.positions.values())
-        return self.cash + positions_value
+        locked = sum(
+            (p.margin_required if p.margin_required > 0 else p.entry_price * p.quantity)
+            for p in self.positions.values()
+        )
+        return self.cash + locked
 
     @property
     def total_pnl(self) -> float:
@@ -63,20 +75,44 @@ class Portfolio:
         self._peak = max(self._peak, eq)
         return (self._peak - eq) / self._peak
 
+    def _refresh_day(self):
+        today = date.today()
+        if today != self._day_date:
+            self._day_start_equity = self.equity
+            self._day_date = today
+
+    @property
+    def daily_pnl_pct(self) -> float:
+        self._refresh_day()
+        if self._day_start_equity <= 0:
+            return 0.0
+        return (self.equity - self._day_start_equity) / self._day_start_equity * 100
+
     def open_position(self, symbol: str, side: str, price: float,
                       quantity: float, sl: float, tp: float,
-                      asset_type: str = "crypto") -> bool:
+                      asset_type: str = "crypto",
+                      leverage: int = 1,
+                      margin_required: float = 0.0,
+                      liquidation_price: float = 0.0,
+                      partial_tp: float = 0.0) -> bool:
         if symbol in self.positions:
             return False
-        cost = price * quantity
-        if cost > self.cash:
+        if margin_required <= 0:
+            margin_required = price * quantity / max(leverage, 1)
+        if margin_required > self.cash:
             return False
-        self.cash -= cost
+        self.cash -= margin_required
         self.positions[symbol] = Position(
             symbol=symbol, side=side, entry_price=price,
             quantity=quantity, stop_loss=sl, take_profit=tp,
             entry_time=datetime.utcnow().isoformat(),
             asset_type=asset_type,
+            leverage=leverage,
+            margin_required=margin_required,
+            liquidation_price=liquidation_price,
+            last_funding_time=datetime.utcnow().isoformat(),
+            partial_tp=partial_tp,
+            partial_taken=False,
         )
         return True
 
@@ -84,10 +120,12 @@ class Portfolio:
         pos = self.positions.pop(symbol, None)
         if not pos:
             return None
-        self.cash += price * pos.quantity
         pnl = (price - pos.entry_price) * pos.quantity if pos.side == "long" \
               else (pos.entry_price - price) * pos.quantity
-        pnl_pct = pnl / (pos.entry_price * pos.quantity) * 100
+        # Return margin + realized PnL (pnl is negative on loss)
+        self.cash += pos.margin_required + pnl
+        margin_basis = pos.margin_required if pos.margin_required > 0 else pos.entry_price * pos.quantity
+        pnl_pct = pnl / margin_basis * 100
         trade = Trade(
             symbol=symbol, side=pos.side,
             entry_price=pos.entry_price, exit_price=price,
@@ -96,9 +134,25 @@ class Portfolio:
             entry_time=pos.entry_time,
             exit_time=datetime.utcnow().isoformat(),
             exit_reason=reason,
+            leverage=pos.leverage,
         )
         self.closed_trades.append(trade)
         return trade
+
+    def deduct_funding(self, symbol: str) -> float:
+        """Deduct ~0.01%/8h Binance funding rate for open futures positions."""
+        pos = self.positions.get(symbol)
+        if not pos or pos.leverage <= 1 or pos.asset_type != "crypto":
+            return 0.0
+        now = datetime.utcnow()
+        if pos.last_funding_time:
+            last = datetime.fromisoformat(pos.last_funding_time)
+            if (now - last).total_seconds() < 28800:  # 8 hours
+                return 0.0
+        funding = pos.entry_price * pos.quantity * 0.0001
+        self.cash -= funding
+        pos.last_funding_time = now.isoformat()
+        return funding
 
     def update_trailing_stop(self, symbol: str, price: float, atr_val: float, mult: float):
         pos = self.positions.get(symbol)
@@ -113,10 +167,46 @@ class Portfolio:
             if pos.trailing_stop is None or level < pos.trailing_stop:
                 pos.trailing_stop = level
 
+    def partial_close(self, symbol: str, price: float) -> Optional[Trade]:
+        """Close 50% of position at partial TP, move stop to breakeven."""
+        pos = self.positions.get(symbol)
+        if not pos or pos.partial_taken:
+            return None
+        half_qty = pos.quantity / 2
+        pnl = (price - pos.entry_price) * half_qty if pos.side == "long" \
+              else (pos.entry_price - price) * half_qty
+        # Return half the margin + pnl
+        returned_margin = pos.margin_required / 2
+        self.cash += returned_margin + pnl
+        # Update position: half qty, half margin, move SL to breakeven
+        pos.quantity -= half_qty
+        pos.margin_required -= returned_margin
+        pos.stop_loss = pos.entry_price  # breakeven stop
+        pos.partial_taken = True
+        margin_basis = returned_margin if returned_margin > 0 else pos.entry_price * half_qty
+        pnl_pct = pnl / margin_basis * 100
+        trade = Trade(
+            symbol=symbol, side=pos.side,
+            entry_price=pos.entry_price, exit_price=price,
+            quantity=half_qty, pnl=round(pnl, 4),
+            pnl_pct=round(pnl_pct, 2),
+            entry_time=pos.entry_time,
+            exit_time=datetime.utcnow().isoformat(),
+            exit_reason="partial_tp",
+            leverage=pos.leverage,
+        )
+        self.closed_trades.append(trade)
+        return trade
+
     def check_exits(self, symbol: str, price: float) -> Optional[str]:
         pos = self.positions.get(symbol)
         if not pos:
             return None
+        # Partial TP check — must come before full TP
+        if pos.partial_tp > 0 and not pos.partial_taken:
+            if (pos.side == "long" and price >= pos.partial_tp) or \
+               (pos.side == "short" and price <= pos.partial_tp):
+                return "partial_tp"
         if pos.side == "long":
             if price <= pos.stop_loss:
                 return "stop_loss"
@@ -144,4 +234,5 @@ class Portfolio:
             "win_rate": round(self.win_rate, 2),
             "open_positions": len(self.positions),
             "closed_trades": len(self.closed_trades),
+            "daily_pnl_pct": round(self.daily_pnl_pct, 2),
         }

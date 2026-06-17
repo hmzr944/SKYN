@@ -1,3 +1,12 @@
+export interface RegimeInfo {
+  regime: 'bull_trend' | 'bear_trend' | 'ranging' | 'breakout' | 'high_volatility';
+  strategy: string;
+  adx: number;
+  atr_pct: number;
+  trend: 'up' | 'down' | 'neutral';
+  vol_surge: boolean;
+}
+
 export interface Signal {
   symbol: string;
   action: 'BUY' | 'SELL' | 'HOLD';
@@ -8,6 +17,10 @@ export interface Signal {
   suggested_sl: number;
   suggested_tp: number;
   timestamp: string;
+  regime?: string;
+  strategy?: string;
+  adx?: number;
+  atr_pct?: number;
 }
 
 export interface Position {
@@ -21,6 +34,9 @@ export interface Position {
   unrealized_pnl: number;
   entry_time: string;
   asset_type: 'crypto' | 'etf';
+  leverage: number;
+  margin_required: number;
+  liquidation_price: number;
 }
 
 export interface Trade {
@@ -34,6 +50,7 @@ export interface Trade {
   entry_time: string;
   exit_time: string;
   exit_reason: string;
+  leverage: number;
 }
 
 export interface PortfolioStats {
@@ -46,12 +63,14 @@ export interface PortfolioStats {
   win_rate: number;
   open_positions: number;
   closed_trades: number;
+  daily_pnl_pct: number;
 }
 
 export interface BotState {
   running: boolean;
   portfolio: PortfolioStats;
   signals: Signal[];
+  regimes: Record<string, RegimeInfo>;
   positions: Record<string, Position>;
   closed_trades: Trade[];
 }
