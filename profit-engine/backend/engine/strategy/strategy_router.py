@@ -43,29 +43,32 @@ class RouteResult:
 
 _PARAMS = {
     Regime.BULL_TREND: dict(
-        sl_mult=1.5, tp_rr=3.5, max_leverage=5,
-        buy_bonus=18, sell_penalty=25,
-        min_score=62, name="Momentum Haussier",
+        sl_mult=1.8, tp_rr=3.5, max_leverage=5,
+        buy_bonus=18, sell_penalty=30,
+        min_score=65, name="Momentum Haussier",
     ),
     Regime.BEAR_TREND: dict(
-        sl_mult=1.5, tp_rr=3.0, max_leverage=3,
-        buy_penalty=25, sell_bonus=18,
-        min_score=62, name="Momentum Baissier",
+        sl_mult=1.8, tp_rr=3.0, max_leverage=3,
+        buy_penalty=30, sell_bonus=18,
+        min_score=65, name="Momentum Baissier",
     ),
     Regime.RANGING: dict(
-        sl_mult=0.8, tp_rr=1.8, max_leverage=2,
+        # Wide stops for mean reversion — noise level is high in sideways markets.
+        # Tight TP: price rarely runs far in a ranging band.
+        sl_mult=2.5, tp_rr=1.2, max_leverage=2,
         buy_bonus=0, sell_bonus=0,
-        min_score=65, name="Mean Reversion",
+        min_score=75, name="Mean Reversion",
     ),
     Regime.BREAKOUT: dict(
-        sl_mult=1.0, tp_rr=3.0, max_leverage=5,
-        buy_bonus=12, sell_bonus=12,
-        min_score=60, name="Breakout",
+        # Breakouts need room to breathe — first attempt often fails.
+        sl_mult=2.0, tp_rr=2.5, max_leverage=4,
+        buy_bonus=10, sell_bonus=10,
+        min_score=75, name="Breakout",
     ),
     Regime.HIGH_VOL: dict(
-        sl_mult=2.0, tp_rr=2.0, max_leverage=1,
+        sl_mult=2.5, tp_rr=2.0, max_leverage=1,
         buy_bonus=0, sell_bonus=0,
-        min_score=80, name="Défensif",
+        min_score=85, name="Défensif",
     ),
 }
 
@@ -87,9 +90,13 @@ class StrategyRouter:
         # Base signal from existing multi-factor scorer
         base_signal = score_signal(df, symbol, cfg)
 
+        # Extract last-bar context for regime-specific gating
+        last = df.iloc[-1]
+        bb_pct = float(last.get("bb_pct", 0.5) or 0.5)
+
         # Adjust scores based on regime
         adj_score, adj_action, adj_reasons = self._adjust(
-            base_signal, regime_result, p
+            base_signal, regime_result, p, bb_pct
         )
 
         # Rebuild signal with adjusted values
@@ -123,11 +130,10 @@ class StrategyRouter:
 
     # ------------------------------------------------------------------
 
-    def _adjust(self, sig: Signal, regime: RegimeResult, p: dict):
+    def _adjust(self, sig: Signal, regime: RegimeResult, p: dict, bb_pct: float = 0.5):
         buy_score  = sig.score if sig.action == "BUY"  else 0.0
         sell_score = sig.score if sig.action == "SELL" else 0.0
         if sig.action == "HOLD":
-            # reconstruct raw scores from reasons
             buy_score  = sig.score * 0.5
             sell_score = sig.score * 0.5
 
@@ -145,16 +151,30 @@ class StrategyRouter:
             reasons.append(f"[{p['name']}] +{p.get('sell_bonus', 0)}pts short")
 
         elif regime.regime == Regime.BREAKOUT:
-            # Direction of breakout follows trend_direction
-            if regime.trend_direction == "up":
+            # Only boost if actual volume surge is confirmed
+            if not regime.vol_surge:
+                buy_score  = max(buy_score  - 25, 0)
+                sell_score = max(sell_score - 25, 0)
+                reasons.append(f"[{p['name']}] Volume insuffisant — pénalité -25")
+            elif regime.trend_direction == "up":
                 buy_score  = min(buy_score  + p.get("buy_bonus", 0), 100)
-                reasons.append(f"[{p['name']}] Volume {regime.regime.value} haussier")
+                reasons.append(f"[{p['name']}] Volume breakout haussier +{p.get('buy_bonus', 0)}")
             else:
                 sell_score = min(sell_score + p.get("sell_bonus", 0), 100)
-                reasons.append(f"[{p['name']}] Volume {regime.regime.value} baissier")
+                reasons.append(f"[{p['name']}] Volume breakout baissier +{p.get('sell_bonus', 0)}")
 
         elif regime.regime == Regime.RANGING:
-            reasons.append(f"[{p['name']}] ADX={regime.adx:.0f} — oscillation")
+            # Mean reversion ONLY works at BB extremes — gate aggressively
+            at_lower_band = bb_pct < 0.15
+            at_upper_band = bb_pct > 0.85
+            if sig.action == "BUY" and not at_lower_band:
+                buy_score = max(buy_score - 35, 0)  # heavy penalty — not oversold enough
+                reasons.append(f"[{p['name']}] BB={bb_pct:.2f} — pas à l'extrême bas (-35)")
+            elif sig.action == "SELL" and not at_upper_band:
+                sell_score = max(sell_score - 35, 0)
+                reasons.append(f"[{p['name']}] BB={bb_pct:.2f} — pas à l'extrême haut (-35)")
+            else:
+                reasons.append(f"[{p['name']}] ADX={regime.adx:.0f} BB={bb_pct:.2f} — oscillation extrême")
 
         elif regime.regime == Regime.HIGH_VOL:
             # Suppress everything — threshold is very high

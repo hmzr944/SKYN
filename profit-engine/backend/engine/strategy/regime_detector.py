@@ -102,8 +102,8 @@ def detect_regime(df: pd.DataFrame) -> RegimeResult:
     if atr_pct > 3.5:
         return RegimeResult(Regime.HIGH_VOL, min(atr_pct * 20, 100), adx_val, atr_pct, trend_dir, vol_surge)
 
-    # 2. Strong trend
-    if adx_val > 25:
+    # 2. Strong trend — lowered to ADX > 22 to capture more valid trends
+    if adx_val > 22:
         if di_plus > di_minus and trend_up:
             strength = min(adx_val * 2, 100)
             return RegimeResult(Regime.BULL_TREND, strength, adx_val, atr_pct, "up", vol_surge)
@@ -111,11 +111,13 @@ def detect_regime(df: pd.DataFrame) -> RegimeResult:
             strength = min(adx_val * 2, 100)
             return RegimeResult(Regime.BEAR_TREND, strength, adx_val, atr_pct, "down", vol_surge)
 
-    # 3. Breakout candidate: ADX rising + big volume + price crossing EMA50
-    if vol_surge and 15 < adx_val < 30:
+    # 3. Breakout candidate: strong volume surge + clear ADX acceleration
+    # Require vol_ratio > 2.5 (real surge, not noise) AND ADX rising by ≥3 pts
+    strong_surge = vol_rat > 2.5
+    if strong_surge and 18 < adx_val < 35:
         recent_adx = float(adx_s.iloc[-5]) if len(adx_s) >= 5 and not np.isnan(adx_s.iloc[-5]) else adx_val
-        if adx_val > recent_adx:          # ADX accelerating
-            return RegimeResult(Regime.BREAKOUT, min(vol_rat * 30, 100), adx_val, atr_pct, trend_dir, True)
+        if adx_val > recent_adx + 3:      # ADX must accelerate meaningfully
+            return RegimeResult(Regime.BREAKOUT, min(vol_rat * 25, 100), adx_val, atr_pct, trend_dir, True)
 
     # 4. Ranging / sideways
     return RegimeResult(Regime.RANGING, max(0, 100 - adx_val * 3), adx_val, atr_pct, trend_dir, vol_surge)
