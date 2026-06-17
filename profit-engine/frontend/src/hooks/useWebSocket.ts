@@ -4,7 +4,7 @@ import { BotState, WSMessage } from '../lib/types';
 const WS_URL = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8000/ws';
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
-const EMPTY_STATE: BotState = {
+const EMPTY: BotState = {
   running: false,
   portfolio: {
     equity: 0, cash: 0, initial_capital: 0,
@@ -18,7 +18,7 @@ const EMPTY_STATE: BotState = {
 };
 
 export function useWebSocket() {
-  const [state, setState] = useState<BotState>(EMPTY_STATE);
+  const [state, setState] = useState<BotState>(EMPTY);
   const [connected, setConnected] = useState(false);
   const ws = useRef<WebSocket | null>(null);
 
@@ -33,10 +33,7 @@ export function useWebSocket() {
     if (ws.current?.readyState === WebSocket.OPEN) return;
     const socket = new WebSocket(WS_URL);
     socket.onopen = () => setConnected(true);
-    socket.onclose = () => {
-      setConnected(false);
-      setTimeout(connect, 3000);
-    };
+    socket.onclose = () => { setConnected(false); setTimeout(connect, 3000); };
     socket.onerror = () => socket.close();
     socket.onmessage = (e: MessageEvent) => {
       try {

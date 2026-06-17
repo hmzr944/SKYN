@@ -7,12 +7,10 @@ interface Props {
 
 export default function Chart({ symbol, className = '' }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const chartRef = useRef<any>(null);
 
   useEffect(() => {
     if (!containerRef.current) return;
     let chart: any;
-    let series: any;
 
     import('lightweight-charts').then(({ createChart, ColorType, CrosshairMode }) => {
       chart = createChart(containerRef.current!, {
@@ -31,7 +29,7 @@ export default function Chart({ symbol, className = '' }: Props) {
         height: containerRef.current!.clientHeight,
       });
 
-      series = chart.addCandlestickSeries({
+      chart.addCandlestickSeries({
         upColor: '#22c55e',
         downColor: '#ef4444',
         borderVisible: false,
@@ -39,9 +37,7 @@ export default function Chart({ symbol, className = '' }: Props) {
         wickDownColor: '#ef4444',
       });
 
-      chartRef.current = { chart, series };
-
-      const observer = new ResizeObserver(() => {
+      const obs = new ResizeObserver(() => {
         if (containerRef.current && chart) {
           chart.applyOptions({
             width: containerRef.current.clientWidth,
@@ -49,13 +45,13 @@ export default function Chart({ symbol, className = '' }: Props) {
           });
         }
       });
-      observer.observe(containerRef.current!);
-      (containerRef.current as any)._observer = observer;
+      obs.observe(containerRef.current!);
+      (containerRef.current as any)._obs = obs;
     });
 
     return () => {
-      if ((containerRef.current as any)?._observer) {
-        (containerRef.current as any)._observer.disconnect();
+      if ((containerRef.current as any)?._obs) {
+        (containerRef.current as any)._obs.disconnect();
       }
       if (chart) chart.remove();
     };
@@ -65,15 +61,9 @@ export default function Chart({ symbol, className = '' }: Props) {
     <div className={`relative bg-[#0a0a0a] ${className}`}>
       <div className="absolute top-3 left-3 z-10 font-mono text-sm font-bold text-white bg-black/60 px-2 py-0.5 rounded">
         {symbol}
-        <span className="ml-2 text-xs text-gray-500 font-normal">Graphique en temps réel</span>
+        <span className="ml-2 text-xs text-gray-500 font-normal">Live</span>
       </div>
-      <div
-        className="absolute inset-0 flex items-center justify-center text-gray-600 text-sm"
-        style={{ zIndex: 1 }}
-      >
-        Les données de bougie apparaîtront au prochain cycle d&#39;analyse
-      </div>
-      <div ref={containerRef} className="w-full h-full" style={{ position: 'relative', zIndex: 2 }} />
+      <div ref={containerRef} className="w-full h-full" />
     </div>
   );
 }

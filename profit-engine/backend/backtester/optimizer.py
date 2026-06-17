@@ -22,7 +22,7 @@ from .engine import Backtester, BacktestResult
 logger = logging.getLogger(__name__)
 
 # Parameter search space — 5×4×4×3×3×3 = 2160 combinations
-# min_score_buy range: 55-70 generated <8 trades on 2y data (signals too rare at those thresholds)
+# min_score_buy lowered: 55-70 generated < 8 trades on 2y data (signals too rare at those thresholds)
 PARAM_SPACE = {
     "min_score_buy":       [35, 40, 45, 48, 50],
     "stop_loss_atr_mult":  [1.5, 2.0, 2.5, 3.0],
@@ -129,7 +129,7 @@ class Optimizer:
             # Ignore -999 symbols (too few trades / high DD) — don't let ETF data scarcity kill crypto scores
             valid_scores = [s for s in per_sym_scores if s > -900]
             avg_score = float(np.mean(valid_scores)) if valid_scores else -999.0
-
+            # Representative result = first symbol (or best-scoring)
             best_sym = max(per_sym_results, key=lambda r: r.composite_score) if per_sym_results else None
             if best_sym:
                 best_sym.composite_score = avg_score
@@ -145,6 +145,7 @@ class Optimizer:
         best_params, best_score, best_result = scored[0]
         top_results = [(p, r) for p, _, r in scored[:50] if r is not None]
 
+        # Walk-forward validation on best params (4 windows)
         wf_windows, wf_consistency = self._walk_forward(
             symbols[0], data_map.get(symbols[0], pd.DataFrame()), best_params, n=4
         )

@@ -19,7 +19,7 @@ from engine.core import ProfitEngine
 console = Console()
 
 
-def _pnl_color(v: float) -> str:
+def _c(v: float) -> str:
     return "green" if v >= 0 else "red"
 
 
@@ -30,19 +30,22 @@ def build_display(engine: ProfitEngine) -> Layout:
     positions = st["positions"]
     trades = st["closed_trades"]
 
-    header_text = Text.from_markup(
-        f"[bold white]⬡ PROFIT ENGINE[/]  "
-        f"[cyan]${pf.get('equity', 0):,.2f}[/]  "
-        f"[{_pnl_color(pf.get('total_pnl', 0))}]P&L {pf.get('total_pnl', 0):+,.2f} "
-        f"({pf.get('total_pnl_pct', 0):+.2f}%)[/]  "
-        f"[yellow]DD {pf.get('drawdown_pct', 0):.1f}%[/]  "
-        f"[white]WR {pf.get('win_rate', 0):.0f}%[/]  "
-        f"[{'green' if engine.running else 'red'}]"
-        f"{'● RUNNING' if engine.running else '● STOPPED'}[/]  "
-        f"[dim]{datetime.now().strftime('%H:%M:%S')}[/]"
+    header = Panel(
+        Text.from_markup(
+            f"[bold white]⬡ PROFIT ENGINE[/]  "
+            f"[cyan]${pf.get('equity', 0):,.2f}[/]  "
+            f"[{_c(pf.get('total_pnl', 0))}]P&L {pf.get('total_pnl', 0):+,.2f} "
+            f"({pf.get('total_pnl_pct', 0):+.2f}%)[/]  "
+            f"[yellow]DD {pf.get('drawdown_pct', 0):.1f}%[/]  "
+            f"[white]WR {pf.get('win_rate', 0):.0f}%[/]  "
+            f"[{'green' if engine.running else 'red'}]"
+            f"{'● RUNNING' if engine.running else '● STOPPED'}[/]  "
+            f"[dim]{datetime.now().strftime('%H:%M:%S')}[/]"
+        ),
+        box=box.MINIMAL,
     )
 
-    sig_tbl = Table(box=box.SIMPLE, show_header=True, header_style="bold magenta", padding=(0, 1))
+    sig_tbl = Table(box=box.SIMPLE, header_style="bold magenta", padding=(0, 1))
     sig_tbl.add_column("Symbole", style="cyan", width=12)
     sig_tbl.add_column("Action", width=8)
     sig_tbl.add_column("Score", width=7)
@@ -85,7 +88,7 @@ def build_display(engine: ProfitEngine) -> Layout:
     tr_tbl.add_column("Raison")
     for t in list(reversed(trades))[:8]:
         pnl = t.get("pnl", 0)
-        c = _pnl_color(pnl)
+        c = _c(pnl)
         tr_tbl.add_row(
             t.get("symbol", ""),
             f"[{c}]{pnl:+.2f}[/]",
@@ -95,7 +98,7 @@ def build_display(engine: ProfitEngine) -> Layout:
 
     layout = Layout()
     layout.split_column(
-        Layout(Panel(header_text, box=box.MINIMAL), size=3),
+        Layout(header, size=3),
         Layout(name="body"),
     )
     layout["body"].split_row(
