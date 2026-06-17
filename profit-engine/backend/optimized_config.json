@@ -1,0 +1,23 @@
+{
+  "_meta": {
+    "composite_score": 3.0807800000000003,
+    "total_return_pct": 9.739,
+    "sharpe_ratio": 2.5101,
+    "win_rate": 45.83,
+    "profit_factor": 2.0794,
+    "max_drawdown_pct": 3.139,
+    "total_trades": 48,
+    "wf_consistency_pct": 50.0
+  },
+  "strategy": {
+    "min_score_buy": 35,
+    "min_score_sell": 35,
+    "rsi_oversold": 30,
+    "rsi_overbought": 65,
+    "bb_std": 2.2
+  },
+  "risk": {
+    "stop_loss_atr_mult": 3.0,
+    "take_profit_rr": 3.0
+  }
+}
