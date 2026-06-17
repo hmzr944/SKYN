@@ -14,9 +14,11 @@ export interface Position {
   symbol: string;
   side: 'long' | 'short';
   entry_price: number;
+  current_price: number;
   quantity: number;
   sl: number;
   tp: number;
+  unrealized_pnl: number;
   entry_time: string;
   asset_type: 'crypto' | 'etf';
 }
