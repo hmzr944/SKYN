@@ -112,11 +112,18 @@ class SignalFilter:
         reasons.extend(lsr_reasons)
 
         # ------------------------------------------------------------------
+        # 5. Entry timing — RSI not overextended, candle quality, VWAP
+        # ------------------------------------------------------------------
+        boost_timing, timing_reasons = self._check_entry_timing(signal, df_1h)
+        boost += boost_timing
+        reasons.extend(timing_reasons)
+
+        # ------------------------------------------------------------------
         # passes logic
         # ------------------------------------------------------------------
-        # Block if MTF strongly contradicts AND total boost is deeply negative
-        strongly_against_mtf = boost_mtf <= -20
-        passes = not (strongly_against_mtf and boost < _MIN_NET_SCORE)
+        # Hard block when 4h data is available and contradicts the signal
+        hard_blocked = (df_4h is not None and len(df_4h) >= 50 and boost_mtf <= -20)
+        passes = not hard_blocked and boost >= _MIN_NET_SCORE
 
         return FilterResult(
             passes=passes,
@@ -228,6 +235,68 @@ class SignalFilter:
         if llong < 0.35 and action == "SELL":
             return -10.0, [f"LSR: {llong:.1%} longs (shorts crowded) against SELL (-10)"]
         return 0.0, []
+
+    def _check_entry_timing(self, signal: Signal, df: pd.DataFrame):
+        """
+        Three sub-checks bundled into one method:
+          A) RSI overextension — don't buy when already overbought / sell when oversold
+          B) Candle body quality — doji-like candles are unreliable entry signals
+          C) VWAP alignment — buy above VWAP, sell below VWAP
+        Returns (boost, reasons).
+        """
+        import math
+        boost = 0.0
+        reasons = []
+        if df is None or len(df) < 5:
+            return boost, reasons
+
+        last = df.iloc[-1]
+        action = signal.action
+
+        # A) RSI overextension filter
+        rsi_v = last.get("rsi")
+        if rsi_v is not None and not math.isnan(float(rsi_v)):
+            rsi_v = float(rsi_v)
+            if action == "BUY" and rsi_v > 68:
+                boost -= 15
+                reasons.append(f"RSI suracheté à l'entrée ({rsi_v:.0f}) — risque retournement (-15)")
+            elif action == "SELL" and rsi_v < 32:
+                boost -= 15
+                reasons.append(f"RSI survendu à l'entrée ({rsi_v:.0f}) — risque rebond (-15)")
+
+        # B) Candle body quality — filter doji / indecision candles
+        try:
+            o = float(last["open"])
+            c = float(last["close"])
+            h = float(last["high"])
+            lo = float(last["low"])
+            candle_range = h - lo
+            body = abs(c - o)
+            if candle_range > 0 and body / candle_range < 0.25:
+                boost -= 8
+                reasons.append(f"Bougie indécise (corps {body/candle_range:.0%}) — signal faible (-8)")
+        except (TypeError, ValueError, KeyError):
+            pass
+
+        # C) VWAP alignment
+        vwap_v = last.get("vwap")
+        price = float(last.get("close", signal.price))
+        if vwap_v is not None and not math.isnan(float(vwap_v)):
+            vwap_v = float(vwap_v)
+            if action == "BUY" and price < vwap_v:
+                boost -= 10
+                reasons.append(f"Prix sous VWAP ({price:.2f} < {vwap_v:.2f}) (-10)")
+            elif action == "SELL" and price > vwap_v:
+                boost -= 10
+                reasons.append(f"Prix au-dessus VWAP ({price:.2f} > {vwap_v:.2f}) (-10)")
+            elif action == "BUY" and price >= vwap_v:
+                boost += 5
+                reasons.append(f"Prix au-dessus VWAP (+5)")
+            elif action == "SELL" and price <= vwap_v:
+                boost += 5
+                reasons.append(f"Prix sous VWAP (+5)")
+
+        return boost, reasons
 
     # ------------------------------------------------------------------
     # Data-fetch helper (used by core.py to populate df_4h)

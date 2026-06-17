@@ -44,28 +44,28 @@ class RouteResult:
 _PARAMS = {
     Regime.BULL_TREND: dict(
         sl_mult=1.5, tp_rr=3.5, max_leverage=5,
-        buy_bonus=18, sell_penalty=25,  # strongly favor longs
-        min_score=55, name="Momentum Haussier",
+        buy_bonus=18, sell_penalty=25,
+        min_score=62, name="Momentum Haussier",
     ),
     Regime.BEAR_TREND: dict(
         sl_mult=1.5, tp_rr=3.0, max_leverage=3,
-        buy_penalty=25, sell_bonus=18,  # strongly favor shorts
-        min_score=55, name="Momentum Baissier",
+        buy_penalty=25, sell_bonus=18,
+        min_score=62, name="Momentum Baissier",
     ),
     Regime.RANGING: dict(
         sl_mult=0.8, tp_rr=1.8, max_leverage=2,
-        buy_bonus=0, sell_bonus=0,      # no bias, pure RSI/BB
-        min_score=60, name="Mean Reversion",
+        buy_bonus=0, sell_bonus=0,
+        min_score=65, name="Mean Reversion",
     ),
     Regime.BREAKOUT: dict(
         sl_mult=1.0, tp_rr=3.0, max_leverage=5,
-        buy_bonus=12, sell_bonus=12,    # direction depends on breakout side
-        min_score=50, name="Breakout",
+        buy_bonus=12, sell_bonus=12,
+        min_score=60, name="Breakout",
     ),
     Regime.HIGH_VOL: dict(
         sl_mult=2.0, tp_rr=2.0, max_leverage=1,
         buy_bonus=0, sell_bonus=0,
-        min_score=75, name="Défensif",  # very high threshold = almost never trades
+        min_score=80, name="Défensif",
     ),
 }
 
@@ -103,6 +103,7 @@ class StrategyRouter:
             suggested_sl=base_signal.suggested_sl,
             suggested_tp=base_signal.suggested_tp,
             timestamp=base_signal.timestamp,
+            categories=base_signal.categories,
         )
 
         skip = (
