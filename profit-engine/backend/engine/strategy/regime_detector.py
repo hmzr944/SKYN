@@ -102,8 +102,8 @@ def detect_regime(df: pd.DataFrame) -> RegimeResult:
     if atr_pct > 3.5:
         return RegimeResult(Regime.HIGH_VOL, min(atr_pct * 20, 100), adx_val, atr_pct, trend_dir, vol_surge)
 
-    # 2. Strong trend — lowered to ADX > 22 to capture more valid trends
-    if adx_val > 22:
+    # 2. Strong trend — ADX > 20 captures more valid trends
+    if adx_val > 20:
         if di_plus > di_minus and trend_up:
             strength = min(adx_val * 2, 100)
             return RegimeResult(Regime.BULL_TREND, strength, adx_val, atr_pct, "up", vol_surge)

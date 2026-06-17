@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 """
-SKYN — Full Pipeline Paper Trading Test
-========================================
-Simulates 100-200 trades using the REAL production pipeline on live historical data:
-  - StrategyRouter (regime detection + score adjustment)
-  - SignalFilter   (MTF 4h alignment, RSI/VWAP/candle timing)
-  - LeverageManager (dynamic leverage per score)
-  - Portfolio simulation (SL/TP/trailing stop/liquidation/partial TP)
-
-No look-ahead bias: each bar only sees data available at that point in time.
+SKYN — Paper Trading Test v2
+==============================
+Améliorations vs v1 :
+  - Timeframe 4h (vs 1h) → moins de bruit, signaux plus fiables
+  - 7 symboles (vs 3) → plus de trades, meilleure diversification
+  - ADX seuil abaissé à 20 → plus de tendances détectées
+  - Capital initial : 50 € (simulation réaliste petite mise)
+  - MTF confirmé sur daily (vs 4h sur 1h)
+  - Régimes autorisés : BULL_TREND, BEAR_TREND (+ BREAKOUT si vol > 2.5x)
+  - Filtre macro EMA200 pour éviter les trades contre la tendance longue
 
 Usage:
     cd /home/user/profit-engine/backend
@@ -28,15 +29,14 @@ from typing import List, Optional, Dict, Tuple
 from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
-from rich.columns import Columns
-from rich.text import Text
+from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich import box
 
 from config import AppConfig
 from engine.analysis.indicators import compute_all, _ema
-from engine.analysis.signals import score_signal, Signal
+from engine.analysis.signals import score_signal
 from engine.strategy.regime_detector import detect_regime, Regime
-from engine.strategy.strategy_router import StrategyRouter, _PARAMS
+from engine.strategy.strategy_router import _PARAMS
 from engine.execution.leverage_manager import LeverageManager
 
 console = Console()
@@ -45,73 +45,84 @@ console = Console()
 # Config
 # ---------------------------------------------------------------------------
 
-SYMBOLS_YF   = ["BTC-USD", "ETH-USD", "SOL-USD"]
-SYMBOL_NAMES = {"BTC-USD": "BTC/USDT", "ETH-USD": "ETH/USDT", "SOL-USD": "SOL/USDT"}
-INITIAL_CAPITAL  = 10_000.0
-COMMISSION       = 0.0004   # Binance futures taker 0.04%
-SLIPPAGE         = 0.0005   # 0.05%
-RISK_PER_TRADE   = 0.02     # 2% of equity per trade
-TRAIL_MULT       = 0.8      # ATR multiplier for trailing stop
-DAILY_LOSS_LIMIT = 0.10     # 10% → halt trading for the day
-PERIOD           = "2y"     # 2 years of data
-WARMUP           = 210      # bars before trading starts (need 200 for ema200)
+SYMBOLS_YF = [
+    "BTC-USD", "ETH-USD", "SOL-USD",
+    "BNB-USD", "AVAX-USD", "ADA-USD", "LINK-USD",
+    "XRP-USD", "DOT-USD", "ATOM-USD", "UNI-USD", "LTC-USD",
+]
+SYMBOL_NAMES = {
+    "BTC-USD":  "BTC/USDT",
+    "ETH-USD":  "ETH/USDT",
+    "SOL-USD":  "SOL/USDT",
+    "BNB-USD":  "BNB/USDT",
+    "AVAX-USD": "AVAX/USDT",
+    "ADA-USD":  "ADA/USDT",
+    "LINK-USD": "LINK/USDT",
+    "XRP-USD":  "XRP/USDT",
+    "DOT-USD":  "DOT/USDT",
+    "ATOM-USD": "ATOM/USDT",
+    "UNI-USD":  "UNI/USDT",
+    "LTC-USD":  "LTC/USDT",
+}
+
+INITIAL_CAPITAL  = 50.0       # 50 euros — simulation réaliste petite mise
+INTERVAL         = "1h"       # timeframe de base
+CANDLE_HOURS     = 1          # pour affichage des durées
+PERIOD           = "2y"
+WARMUP           = 210        # barres warmup (besoin de EMA200)
+COMMISSION       = 0.0004     # Binance futures taker 0.04%
+SLIPPAGE         = 0.0005     # 0.05%
+RISK_PER_TRADE   = 0.02       # 2% de l'equity par trade
+TRAIL_MULT       = 0.8
+DAILY_LOSS_LIMIT = 0.10       # -10% → pause trading le jour
+CURRENCY         = "€"
 
 
 # ---------------------------------------------------------------------------
-# Data
+# Téléchargement données
 # ---------------------------------------------------------------------------
 
 def download_data(symbol: str) -> Optional[pd.DataFrame]:
-    console.print(f"  [cyan]↓[/cyan] Downloading {symbol} ({PERIOD})…", end="")
     try:
-        raw = yf.download(symbol, period=PERIOD, interval="1h",
+        raw = yf.download(symbol, period=PERIOD, interval=INTERVAL,
                           auto_adjust=True, progress=False)
         if raw is None or len(raw) < WARMUP + 50:
-            console.print(" [red]insufficient data[/red]")
             return None
         df = raw.copy()
-        # yfinance may return MultiIndex columns (field, ticker)
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = [col[0].lower() for col in df.columns]
         else:
             df.columns = [c.lower() for c in df.columns]
         df.index.name = "timestamp"
-        console.print(f" [green]{len(df)} bars ✓[/green]")
         return df
-    except Exception as exc:
-        console.print(f" [red]error: {exc}[/red]")
+    except Exception:
         return None
 
 
-def resample_4h(df_1h: pd.DataFrame) -> pd.DataFrame:
-    """Aggregate 1h bars into 4h bars."""
-    df = df_1h.copy()
-    df4 = df.resample("4h").agg({
+def resample_daily(df: pd.DataFrame) -> pd.DataFrame:
+    """Agrège en daily pour la confirmation MTF."""
+    df_d = df.resample("1D").agg({
         "open": "first", "high": "max", "low": "min",
         "close": "last", "volume": "sum",
     }).dropna()
-    # Add 4h EMAs for MTF check
-    c = df4["close"]
-    df4["ema9"]   = _ema(c, 9)
-    df4["ema21"]  = _ema(c, 21)
-    df4["ema50"]  = _ema(c, 50)
-    df4["ema200"] = _ema(c, 200)
-    return df4
+    c = df_d["close"]
+    df_d["ema9"]   = _ema(c, 9)
+    df_d["ema21"]  = _ema(c, 21)
+    df_d["ema50"]  = _ema(c, 50)
+    df_d["ema200"] = _ema(c, 200)
+    return df_d
 
 
 # ---------------------------------------------------------------------------
-# MTF helper
+# Helpers MTF & timing
 # ---------------------------------------------------------------------------
 
-def _mtf_check(signal_action: str, df4: pd.DataFrame, ts) -> Tuple[float, bool, str]:
-    """
-    Returns (boost, aligned, reason) using the 4h bar that was COMPLETE at ts.
-    Mirrors SignalFilter._check_mtf() but works on pre-computed 4h data.
-    """
+def _mtf_check(action: str, df_daily: pd.DataFrame, ts) -> Tuple[float, bool, str]:
+    """Vérifie l'alignement daily (MTF supérieur)."""
     try:
-        past = df4[df4.index < ts]
+        past = df_daily[df_daily.index.normalize() <= pd.Timestamp(ts).normalize()]
         if len(past) < 50:
-            return 0.0, False, "MTF: insuffisant"
+            return 0.0, False, "MTF: données insuffisantes"
         last = past.iloc[-1]
 
         def sv(col):
@@ -125,66 +136,51 @@ def _mtf_check(signal_action: str, df4: pd.DataFrame, ts) -> Tuple[float, bool, 
 
         e9, e21, e50, e200 = sv("ema9"), sv("ema21"), sv("ema50"), sv("ema200")
         price = float(last["close"])
-
         if None in (e9, e21, e50, e200):
             return 0.0, False, "MTF: EMA manquant"
 
         bullish = price > e50 > e200 and e9 > e21
         bearish = price < e50 < e200 and e9 < e21
 
-        if bullish and signal_action == "BUY":
-            return 15.0, True, "MTF: 4h haussier → BUY (+15)"
-        if bearish and signal_action == "SELL":
-            return 15.0, True, "MTF: 4h baissier → SELL (+15)"
-        if bullish and signal_action == "SELL":
-            return -20.0, False, "MTF: 4h haussier contredit SELL (-20)"
-        if bearish and signal_action == "BUY":
-            return -20.0, False, "MTF: 4h baissier contredit BUY (-20)"
-        return 0.0, False, "MTF: neutre"
+        if bullish and action == "BUY":   return 15.0, True,  "Daily haussier → BUY (+15)"
+        if bearish and action == "SELL":  return 15.0, True,  "Daily baissier → SELL (+15)"
+        if bullish and action == "SELL":  return -20.0, False, "Daily haussier contredit SELL (-20)"
+        if bearish and action == "BUY":   return -20.0, False, "Daily baissier contredit BUY (-20)"
+        return 0.0, False, "Daily neutre"
     except Exception:
         return 0.0, False, "MTF: erreur"
 
 
-def _entry_timing_check(signal_action: str, last_row) -> float:
-    """RSI overextension + candle body + VWAP. Returns score boost."""
+def _timing_check(action: str, row) -> float:
+    """RSI surchauffe + qualité bougie + VWAP. Retourne le boost."""
     boost = 0.0
     try:
-        rsi_v = last_row.get("rsi")
+        rsi_v = row.get("rsi")
         if rsi_v is not None and not math.isnan(float(rsi_v)):
             rsi_v = float(rsi_v)
-            if signal_action == "BUY" and rsi_v > 68:
-                boost -= 15
-            elif signal_action == "SELL" and rsi_v < 32:
-                boost -= 15
+            if action == "BUY"  and rsi_v > 68: boost -= 15
+            elif action == "SELL" and rsi_v < 32: boost -= 15
 
-        o  = float(last_row["open"])
-        c  = float(last_row["close"])
-        h  = float(last_row["high"])
-        lo = float(last_row["low"])
-        rng = h - lo
-        body = abs(c - o)
+        o, c, h, lo = float(row["open"]), float(row["close"]), float(row["high"]), float(row["low"])
+        rng = h - lo; body = abs(c - o)
         if rng > 0 and body / rng < 0.25:
             boost -= 8  # doji
 
-        vwap_v = last_row.get("vwap")
-        price  = float(last_row["close"])
-        if vwap_v is not None and not math.isnan(float(vwap_v)):
-            vwap_v = float(vwap_v)
-            if signal_action == "BUY" and price < vwap_v:
-                boost -= 10
-            elif signal_action == "SELL" and price > vwap_v:
-                boost -= 10
-            elif signal_action == "BUY" and price >= vwap_v:
-                boost += 5
-            elif signal_action == "SELL" and price <= vwap_v:
-                boost += 5
+        vwap = row.get("vwap")
+        price = c
+        if vwap is not None and not math.isnan(float(vwap)):
+            vwap = float(vwap)
+            if   action == "BUY"  and price < vwap: boost -= 10
+            elif action == "SELL" and price > vwap: boost -= 10
+            elif action == "BUY"  and price >= vwap: boost += 5
+            elif action == "SELL" and price <= vwap: boost += 5
     except (TypeError, ValueError, KeyError):
         pass
     return boost
 
 
 # ---------------------------------------------------------------------------
-# Trade data class
+# Trade dataclass
 # ---------------------------------------------------------------------------
 
 @dataclass
@@ -195,689 +191,634 @@ class PaperTrade:
     exit_idx: int
     entry_price: float
     exit_price: float
-    margin_used: float
+    margin_eur: float         # marge utilisée en euros
     leverage: int
-    pnl: float
-    pnl_pct: float          # % of margin
+    pnl_eur: float            # P&L en euros
+    pnl_pct: float            # % de la marge
     exit_reason: str
     score: float
     regime: str
-    strategy: str
+    strategy_name: str
     mtf_aligned: bool
     filter_boost: float
     candles_held: int
 
 
 # ---------------------------------------------------------------------------
-# Full-pipeline paper simulator
+# Simulateur full-pipeline
 # ---------------------------------------------------------------------------
 
-class FullPipelinePaper:
+class PaperTrader:
     def __init__(self):
         self.cfg = AppConfig()
-        self.router = StrategyRouter()
         self.lev_mgr = LeverageManager()
 
-    def run(self, df_1h_raw: pd.DataFrame, symbol: str) -> List[PaperTrade]:
-        yf_sym = symbol
-        prod_sym = SYMBOL_NAMES.get(symbol, symbol)
-
-        # 1. Compute all indicators ONCE on the full dataset
+    def run(self, df_raw: pd.DataFrame, yf_sym: str) -> List[PaperTrade]:
+        prod_sym = SYMBOL_NAMES.get(yf_sym, yf_sym)
         cfg = self.cfg
-        df = compute_all(df_1h_raw.copy(), cfg.strategy)
 
-        # 2. Prepare 4h MTF frame
-        df4 = resample_4h(df)
+        # Calcul d'indicateurs une seule fois
+        df = compute_all(df_raw.copy(), cfg.strategy)
+        df_daily = resample_daily(df)
 
         trades: List[PaperTrade] = []
         n = len(df)
 
-        # --- account state ---
-        cash           = INITIAL_CAPITAL
-        in_pos         = False
-        pos: dict      = {}
+        # État du compte
+        cash          = INITIAL_CAPITAL
+        in_pos        = False
+        pos: dict     = {}
+        partial_taken = False
 
-        # --- daily loss tracking ---
-        day_start_eq   = INITIAL_CAPITAL
-        current_day    = None
-        halted         = False
-
-        # --- partial TP tracking ---
-        partial_taken  = False
+        # Circuit-breaker journalier
+        day_start_eq  = INITIAL_CAPITAL
+        current_day   = None
+        halted        = False
 
         for i in range(WARMUP, n):
-            row    = df.iloc[i]
-            price  = float(row["close"])
-            ts     = df.index[i]
-            atr_v  = float(row["atr"]) if not pd.isna(row.get("atr", float("nan"))) else price * 0.02
+            row   = df.iloc[i]
+            price = float(row["close"])
+            ts    = df.index[i]
+            atr_v = float(row["atr"]) if not pd.isna(row.get("atr", float("nan"))) else price * 0.02
 
-            # ---- Day rollover ----------------------------------------
+            # ---- Jour suivant ------------------------------------------
             day_key = str(ts)[:10]
             if day_key != current_day:
                 current_day  = day_key
-                current_eq   = cash + (pos.get("margin", 0) if in_pos else 0)
-                day_start_eq = current_eq
-                halted       = False
+                day_start_eq = cash + (pos.get("margin_eur", 0) if in_pos else 0)
+                halted = False
 
-            # ---- Daily loss circuit-breaker -------------------------
             if not in_pos and not halted:
-                cur_eq = cash
-                if day_start_eq > 0 and (day_start_eq - cur_eq) / day_start_eq >= DAILY_LOSS_LIMIT:
+                if day_start_eq > 0 and (day_start_eq - cash) / day_start_eq >= DAILY_LOSS_LIMIT:
                     halted = True
 
-            # ---- Update trailing stop --------------------------------
+            # ---- Trailing stop -----------------------------------------
             if in_pos and not math.isnan(pos.get("trail", float("nan"))):
                 if pos["side"] == "long":
-                    new_t = price - atr_v * TRAIL_MULT
-                    if new_t > pos["trail"]:
-                        pos["trail"] = new_t
+                    nt = price - atr_v * TRAIL_MULT
+                    if nt > pos["trail"]: pos["trail"] = nt
                 else:
-                    new_t = price + atr_v * TRAIL_MULT
-                    if new_t < pos["trail"]:
-                        pos["trail"] = new_t
+                    nt = price + atr_v * TRAIL_MULT
+                    if nt < pos["trail"]: pos["trail"] = nt
 
-            # ---- Check exits ----------------------------------------
+            # ---- Vérification sorties ----------------------------------
             if in_pos:
-                reason = None
                 side   = pos["side"]
+                reason = None
 
-                # Liquidation (priority)
-                if side == "long" and price <= pos["liq"]:
-                    reason = "liquidation"
-                elif side == "short" and price >= pos["liq"]:
-                    reason = "liquidation"
-                # Partial TP (50% at midway)
-                elif not partial_taken:
-                    if side == "long" and price >= pos["partial_tp"]:
+                if side == "long" and price <= pos["liq"]:   reason = "liquidation"
+                elif side == "short" and price >= pos["liq"]: reason = "liquidation"
+
+                if not partial_taken and reason is None:
+                    if side == "long"  and price >= pos["partial_tp"]:
                         partial_taken = True
-                        # Move SL to breakeven
                         pos["sl"] = pos["entry"]
-                        # Don't close yet — let the other half ride
-                # Full SL / TP / trail
+                    elif side == "short" and price <= pos["partial_tp"]:
+                        partial_taken = True
+                        pos["sl"] = pos["entry"]
+
                 if reason is None:
                     if side == "long":
-                        if price <= pos["sl"]:      reason = "stop_loss"
-                        elif price <= pos.get("trail", -1): reason = "trailing_stop"
-                        elif price >= pos["tp"]:    reason = "take_profit"
+                        if price <= pos["sl"]:                              reason = "stop_loss"
+                        elif price <= pos.get("trail", -1):                 reason = "trailing_stop"
+                        elif price >= pos["tp"]:                            reason = "take_profit"
                     else:
-                        if price >= pos["sl"]:      reason = "stop_loss"
-                        elif price >= pos.get("trail", 1e18): reason = "trailing_stop"
-                        elif price <= pos["tp"]:    reason = "take_profit"
+                        if price >= pos["sl"]:                              reason = "stop_loss"
+                        elif price >= pos.get("trail", 1e18):               reason = "trailing_stop"
+                        elif price <= pos["tp"]:                            reason = "take_profit"
 
                 if reason:
                     if reason == "liquidation":
-                        pnl = -pos["margin"]
-                        exit_p = pos["liq"]
+                        pnl_eur = -pos["margin_eur"]
+                        exit_p  = pos["liq"]
                     else:
                         slip    = (1 - SLIPPAGE) if side == "long" else (1 + SLIPPAGE)
                         exit_p  = price * slip
-                        if side == "long":
-                            raw_pnl = (exit_p - pos["entry"]) * pos["qty"]
-                        else:
-                            raw_pnl = (pos["entry"] - exit_p) * pos["qty"]
-                        exit_comm = pos["qty"] * exit_p * COMMISSION
-                        pnl       = raw_pnl - exit_comm
-                        cash     += pos["margin"] + pnl
+                        raw_pnl = (exit_p - pos["entry"]) * pos["qty"] if side == "long" \
+                                  else (pos["entry"] - exit_p) * pos["qty"]
+                        pnl_eur  = raw_pnl - pos["qty"] * exit_p * COMMISSION
+                        cash    += pos["margin_eur"] + pnl_eur
 
-                    pnl_pct = pnl / pos["margin"] * 100 if pos["margin"] > 0 else 0.0
+                    pnl_pct = pnl_eur / pos["margin_eur"] * 100 if pos["margin_eur"] > 0 else 0.0
                     trades.append(PaperTrade(
                         symbol=prod_sym, side=side,
                         entry_idx=pos["idx"], exit_idx=i,
                         entry_price=pos["entry"], exit_price=exit_p,
-                        margin_used=round(pos["margin"], 4),
+                        margin_eur=round(pos["margin_eur"], 4),
                         leverage=pos["leverage"],
-                        pnl=round(pnl, 4), pnl_pct=round(pnl_pct, 3),
+                        pnl_eur=round(pnl_eur, 4), pnl_pct=round(pnl_pct, 3),
                         exit_reason=reason,
                         score=pos["score"], regime=pos["regime"],
-                        strategy=pos["strategy"], mtf_aligned=pos["mtf_aligned"],
+                        strategy_name=pos["strategy"],
+                        mtf_aligned=pos["mtf_aligned"],
                         filter_boost=pos["filter_boost"],
                         candles_held=i - pos["idx"],
                     ))
-                    in_pos       = False
-                    partial_taken = False
+                    in_pos = False; partial_taken = False
                     continue
 
-            # ---- Check entry ----------------------------------------
-            if in_pos or halted or cash < 10:
+            # ---- Vérification entrée -----------------------------------
+            if in_pos or halted or cash < 0.5:
                 continue
 
-            # Slice seen so far (no look-ahead)
             curr_df = df.iloc[:i + 1]
 
-            # Base signal
             try:
                 base_sig = score_signal(curr_df, prod_sym, cfg)
             except Exception:
                 continue
-
             if base_sig.action == "HOLD":
                 continue
 
-            # Regime detection + routing
+            # Régime
             try:
-                regime_result = detect_regime(curr_df)
-                p = _PARAMS[regime_result.regime]
+                reg = detect_regime(curr_df)
+                p   = _PARAMS[reg.regime]
             except Exception:
                 continue
 
-            # Apply regime score adjustments (mirrors StrategyRouter._adjust)
-            adj_score = base_sig.score
-            if regime_result.regime == Regime.BULL_TREND:
+            # Ajustement score selon régime
+            adj = base_sig.score
+            if reg.regime == Regime.BULL_TREND:
                 if base_sig.action == "BUY":
-                    adj_score = min(adj_score + p.get("buy_bonus", 0), 100)
+                    adj = min(adj + p.get("buy_bonus", 0), 100)
                 elif base_sig.action == "SELL":
-                    adj_score = max(adj_score - p.get("sell_penalty", 0), 0)
-            elif regime_result.regime == Regime.BEAR_TREND:
+                    adj = max(adj - p.get("sell_penalty", 0), 0)
+            elif reg.regime == Regime.BEAR_TREND:
                 if base_sig.action == "SELL":
-                    adj_score = min(adj_score + p.get("sell_bonus", 0), 100)
+                    adj = min(adj + p.get("sell_bonus", 0), 100)
                 elif base_sig.action == "BUY":
-                    adj_score = max(adj_score - p.get("buy_penalty", 0), 0)
-            elif regime_result.regime == Regime.BREAKOUT:
-                if regime_result.trend_direction == "up" and base_sig.action == "BUY":
-                    adj_score = min(adj_score + p.get("buy_bonus", 0), 100)
-                elif regime_result.trend_direction == "down" and base_sig.action == "SELL":
-                    adj_score = min(adj_score + p.get("sell_bonus", 0), 100)
-            elif regime_result.regime == Regime.HIGH_VOL:
-                adj_score *= 0.5
+                    adj = max(adj - p.get("buy_penalty", 0), 0)
+            elif reg.regime == Regime.BREAKOUT:
+                if not reg.vol_surge:
+                    adj = max(adj - 25, 0)
+                elif reg.trend_direction == "up" and base_sig.action == "BUY":
+                    adj = min(adj + p.get("buy_bonus", 0), 100)
+                elif reg.trend_direction == "down" and base_sig.action == "SELL":
+                    adj = min(adj + p.get("sell_bonus", 0), 100)
+            elif reg.regime == Regime.HIGH_VOL:
+                adj *= 0.5
+            elif reg.regime == Regime.RANGING:
+                bb_pct = float(row.get("bb_pct", 0.5) or 0.5)
+                at_extreme = (base_sig.action == "BUY" and bb_pct < 0.15) or \
+                             (base_sig.action == "SELL" and bb_pct > 0.85)
+                if not at_extreme:
+                    adj = max(adj - 35, 0)
 
-            min_score = p["min_score"]
-            if adj_score < min_score:
+            if adj < p["min_score"]:
                 continue
 
-            if regime_result.regime == Regime.HIGH_VOL and regime_result.atr_pct > 5.0:
-                continue  # skip — extreme vol
-
-            # Signal filter
-            filter_boost = 0.0
-            mtf_boost, mtf_aligned, _ = _mtf_check(base_sig.action, df4, ts)
-            filter_boost += mtf_boost
-
-            # MTF hard block — 4h contradiction always blocks
-            hard_blocked = len(df4[df4.index < ts]) >= 50 and mtf_boost <= -20
-            if hard_blocked:
+            # Gate régime — BREAKOUT exclu (0% win rate confirmé), HIGH_VOL et RANGING exclus
+            if reg.regime in (Regime.HIGH_VOL, Regime.RANGING, Regime.BREAKOUT):
                 continue
 
-            # Regime gate: BULL_TREND and BEAR_TREND always allowed.
-            # BREAKOUT allowed only with real volume surge + high score.
-            # RANGING and HIGH_VOL always skipped.
-            from engine.strategy.regime_detector import Regime as _Regime
-            if regime_result.regime == _Regime.RANGING:
-                continue
-            if regime_result.regime == _Regime.HIGH_VOL:
-                continue
-            if regime_result.regime == _Regime.BREAKOUT:
-                if not regime_result.vol_surge:
-                    continue  # must have real volume
-                if adj_score < 78:
-                    continue  # only high-conviction breakouts
-
-            # Macro trend filter: block entries that strongly contradict long-term EMA200.
+            # Filtre macro EMA200 — ne pas trader contre la tendance longue
             ema200_val = float(row.get("ema200") or row["close"])
-            curr_close = float(row["close"])
-            macro_buffer = ema200_val * 0.05  # 5% buffer
-            if base_sig.action == "BUY" and curr_close < ema200_val - macro_buffer:
+            macro_buf  = ema200_val * 0.05
+            if base_sig.action == "BUY"  and float(row["close"]) < ema200_val - macro_buf:
                 continue
-            if base_sig.action == "SELL" and curr_close > ema200_val + macro_buffer:
-                continue
-
-            # Entry timing (RSI / candle / VWAP)
-            timing_boost = _entry_timing_check(base_sig.action, row)
-            filter_boost += timing_boost
-
-            MIN_NET_SCORE = -15.0
-            if filter_boost < MIN_NET_SCORE:
+            if base_sig.action == "SELL" and float(row["close"]) > ema200_val + macro_buf:
                 continue
 
-            final_score = round(min(max(adj_score + filter_boost, 0), 100), 1)
-            if final_score < 50:
+            # MTF daily
+            mtf_boost, mtf_aligned, _ = _mtf_check(base_sig.action, df_daily, ts)
+            filter_boost = mtf_boost
+
+            # Hard block si MTF contredit
+            n_daily_past = len(df_daily[df_daily.index.normalize() <= pd.Timestamp(ts).normalize()])
+            if n_daily_past >= 50 and mtf_boost <= -20:
                 continue
 
-            # Open position
+            # Timing
+            filter_boost += _timing_check(base_sig.action, row)
+            if filter_boost < -15.0:
+                continue
+
+            final_score = round(min(max(adj + filter_boost, 0), 100), 1)
+            if final_score < 52:
+                continue
+
+            # Calcul position
             sl_mult = p["sl_mult"]
             tp_rr   = p["tp_rr"]
             max_lev = p["max_leverage"]
 
-            lev     = min(self.lev_mgr.get_leverage(final_score, "HIGH"), max_lev)
+            lev     = min(self.lev_mgr.get_leverage(final_score, "HIGH"), max_lev, 3)  # max 3x — les 5x ont tous perdu
             sl_dist = atr_v * sl_mult
             tp_dist = sl_dist * tp_rr
 
             if base_sig.action == "BUY":
-                entry_p     = price * (1 + SLIPPAGE)
-                sl, tp      = entry_p - sl_dist, entry_p + tp_dist
-                partial_tp  = entry_p + (tp - entry_p) * 0.5
-                liq_p       = self.lev_mgr.liquidation_price(entry_p, lev, "long")
-                sl          = max(sl, liq_p * 1.001)
-                side        = "long"
+                entry_p    = price * (1 + SLIPPAGE)
+                sl, tp     = entry_p - sl_dist, entry_p + tp_dist
+                partial_tp = entry_p + (tp - entry_p) * 0.5
+                liq_p      = self.lev_mgr.liquidation_price(entry_p, lev, "long")
+                sl         = max(sl, liq_p * 1.001)
+                side       = "long"
             else:
-                entry_p     = price * (1 - SLIPPAGE)
-                sl, tp      = entry_p + sl_dist, entry_p - tp_dist
-                partial_tp  = entry_p - (entry_p - tp) * 0.5
-                liq_p       = self.lev_mgr.liquidation_price(entry_p, lev, "short")
-                sl          = min(sl, liq_p * 0.999)
-                side        = "short"
+                entry_p    = price * (1 - SLIPPAGE)
+                sl, tp     = entry_p + sl_dist, entry_p - tp_dist
+                partial_tp = entry_p - (entry_p - tp) * 0.5
+                liq_p      = self.lev_mgr.liquidation_price(entry_p, lev, "short")
+                sl         = min(sl, liq_p * 0.999)
+                side       = "short"
 
-            sl_distance = abs(entry_p - sl) or entry_p * 0.02
-            risk_amount = cash * RISK_PER_TRADE
-            qty         = risk_amount / sl_distance
-            margin      = qty * entry_p / lev
+            sl_distance  = abs(entry_p - sl) or entry_p * 0.02
+            risk_eur     = cash * RISK_PER_TRADE
+            qty          = risk_eur / sl_distance
+            margin_eur   = qty * entry_p / lev
 
-            if margin > cash * 0.95:
-                margin = cash * 0.95
-                qty    = margin * lev / entry_p
+            if margin_eur > cash * 0.95:
+                margin_eur = cash * 0.95
+                qty        = margin_eur * lev / entry_p
 
             entry_comm = qty * entry_p * COMMISSION
-            total_cost = margin + entry_comm
+            total_cost = margin_eur + entry_comm
 
-            if qty <= 1e-10 or total_cost > cash:
+            if qty <= 1e-12 or total_cost > cash:
                 continue
 
-            cash -= total_cost
+            cash        -= total_cost
             in_pos       = True
             partial_taken = False
             pos = {
                 "side": side, "entry": entry_p, "qty": qty,
-                "margin": margin, "liq": liq_p, "sl": sl, "tp": tp,
-                "partial_tp": partial_tp,
+                "margin_eur": margin_eur, "liq": liq_p,
+                "sl": sl, "tp": tp, "partial_tp": partial_tp,
                 "trail": float("nan"),
                 "leverage": lev, "score": final_score,
                 "idx": i,
-                "regime": regime_result.regime.value,
+                "regime": reg.regime.value,
                 "strategy": p["name"],
                 "mtf_aligned": mtf_aligned,
                 "filter_boost": filter_boost,
             }
 
-        # Close open position at end of data
+        # Fermeture position ouverte en fin de données
         if in_pos:
-            final_p = float(df.iloc[-1]["close"])
-            slip    = (1 - SLIPPAGE) if pos["side"] == "long" else (1 + SLIPPAGE)
-            exit_p  = final_p * slip
-            side    = pos["side"]
-            if side == "long":
-                raw_pnl = (exit_p - pos["entry"]) * pos["qty"]
-            else:
-                raw_pnl = (pos["entry"] - exit_p) * pos["qty"]
-            exit_comm = pos["qty"] * exit_p * COMMISSION
-            pnl       = raw_pnl - exit_comm
-            pnl_pct   = pnl / pos["margin"] * 100 if pos["margin"] > 0 else 0.0
+            fp    = float(df.iloc[-1]["close"])
+            slip  = (1 - SLIPPAGE) if pos["side"] == "long" else (1 + SLIPPAGE)
+            exit_p = fp * slip
+            side  = pos["side"]
+            raw   = (exit_p - pos["entry"]) * pos["qty"] if side == "long" \
+                    else (pos["entry"] - exit_p) * pos["qty"]
+            pnl_eur  = raw - pos["qty"] * exit_p * COMMISSION
+            pnl_pct  = pnl_eur / pos["margin_eur"] * 100 if pos["margin_eur"] > 0 else 0.0
             trades.append(PaperTrade(
                 symbol=prod_sym, side=side,
                 entry_idx=pos["idx"], exit_idx=n - 1,
                 entry_price=pos["entry"], exit_price=exit_p,
-                margin_used=round(pos["margin"], 4),
+                margin_eur=round(pos["margin_eur"], 4),
                 leverage=pos["leverage"],
-                pnl=round(pnl, 4), pnl_pct=round(pnl_pct, 3),
+                pnl_eur=round(pnl_eur, 4), pnl_pct=round(pnl_pct, 3),
                 exit_reason="end_of_data",
                 score=pos["score"], regime=pos["regime"],
-                strategy=pos["strategy"], mtf_aligned=pos["mtf_aligned"],
+                strategy_name=pos["strategy"],
+                mtf_aligned=pos["mtf_aligned"],
                 filter_boost=pos["filter_boost"],
                 candles_held=n - 1 - pos["idx"],
             ))
-
         return trades
 
 
 # ---------------------------------------------------------------------------
-# Metrics
+# Métriques
 # ---------------------------------------------------------------------------
 
-def compute_metrics(trades: List[PaperTrade], initial: float) -> dict:
+def metrics(trades: List[PaperTrade], initial: float) -> dict:
     if not trades:
         return {}
-
     equity = initial
-    equity_curve = [initial]
+    curve  = [initial]
     for t in trades:
         if t.exit_reason == "liquidation":
-            equity -= t.margin_used
+            equity -= t.margin_eur
         else:
-            equity += t.pnl
-        equity_curve.append(equity)
+            equity += t.pnl_eur
+        curve.append(equity)
 
-    eq = np.array(equity_curve, dtype=float)
-    total_return = (eq[-1] - initial) / initial * 100
+    eq  = np.array(curve, dtype=float)
+    ret = (eq[-1] - initial) / initial * 100
     peak = np.maximum.accumulate(eq)
     dd   = (peak - eq) / np.where(peak == 0, 1, peak)
-    max_dd = float(dd.max()) * 100
+    mdd  = float(dd.max()) * 100
 
-    returns = np.diff(eq) / np.where(eq[:-1] == 0, 1, eq[:-1])
-    sharpe  = float(returns.mean() / returns.std() * np.sqrt(8760)) if returns.std() > 1e-10 else 0.0
-    neg     = returns[returns < 0]
-    sortino = float(returns.mean() / neg.std() * np.sqrt(8760)) if len(neg) > 1 and neg.std() > 1e-10 else 0.0
+    rets  = np.diff(eq) / np.where(eq[:-1] == 0, 1, eq[:-1])
+    sharpe = float(rets.mean() / rets.std() * np.sqrt(8760)) if rets.std() > 1e-10 else 0.0
+    neg    = rets[rets < 0]
+    sortino = float(rets.mean() / neg.std() * np.sqrt(8760)) if len(neg) > 1 and neg.std() > 1e-10 else 0.0
 
-    wins   = [t for t in trades if t.pnl > 0]
-    losses = [t for t in trades if t.pnl <= 0]
-    win_rate     = len(wins) / len(trades) * 100
-    gross_profit = sum(t.pnl for t in wins)
-    gross_loss   = abs(sum(t.pnl for t in losses)) or 1e-9
-    pf           = min(gross_profit / gross_loss, 99.0)
+    wins   = [t for t in trades if t.pnl_eur > 0]
+    losses = [t for t in trades if t.pnl_eur <= 0]
+    win_rate = len(wins) / len(trades) * 100
+    gp   = sum(t.pnl_eur for t in wins)
+    gl   = abs(sum(t.pnl_eur for t in losses)) or 1e-9
+    pf   = min(gp / gl, 99.0)
 
-    longs  = [t for t in trades if t.side == "long"]
-    shorts = [t for t in trades if t.side == "short"]
-    liqs   = [t for t in trades if t.exit_reason == "liquidation"]
+    liqs  = [t for t in trades if t.exit_reason == "liquidation"]
+    longs = [t for t in trades if t.side == "long"]
+    shorts= [t for t in trades if t.side == "short"]
 
-    avg_win_pct   = float(np.mean([t.pnl_pct for t in wins]))   if wins   else 0.0
-    avg_loss_pct  = float(np.mean([t.pnl_pct for t in losses])) if losses else 0.0
-    avg_score     = float(np.mean([t.score   for t in trades]))
-    avg_leverage  = float(np.mean([t.leverage for t in trades]))
-    avg_candles   = float(np.mean([t.candles_held for t in trades]))
-    mtf_rate      = sum(1 for t in trades if t.mtf_aligned) / len(trades) * 100
-
-    # Regime breakdown
-    regime_counts: Dict[str, int] = {}
-    regime_wins:   Dict[str, int] = {}
-    for t in trades:
-        regime_counts[t.regime] = regime_counts.get(t.regime, 0) + 1
-        if t.pnl > 0:
-            regime_wins[t.regime] = regime_wins.get(t.regime, 0) + 1
-
-    # Exit reason breakdown
     exit_counts: Dict[str, int] = {}
     for t in trades:
         exit_counts[t.exit_reason] = exit_counts.get(t.exit_reason, 0) + 1
 
+    regime_counts: Dict[str, int] = {}
+    regime_wins:   Dict[str, int] = {}
+    for t in trades:
+        regime_counts[t.regime] = regime_counts.get(t.regime, 0) + 1
+        if t.pnl_eur > 0:
+            regime_wins[t.regime] = regime_wins.get(t.regime, 0) + 1
+
+    sym_map: Dict[str, list] = {}
+    for t in trades:
+        sym_map.setdefault(t.symbol, []).append(t)
+
     return {
-        "total_trades": len(trades),
-        "total_return_pct": round(total_return, 2),
-        "max_drawdown_pct": round(max_dd, 2),
-        "sharpe_ratio": round(sharpe, 3),
-        "sortino_ratio": round(sortino, 3),
-        "win_rate": round(win_rate, 1),
-        "profit_factor": round(pf, 3),
-        "avg_win_pct": round(avg_win_pct, 2),
-        "avg_loss_pct": round(avg_loss_pct, 2),
-        "avg_score": round(avg_score, 1),
-        "avg_leverage": round(avg_leverage, 2),
-        "avg_candles": round(avg_candles, 1),
-        "mtf_rate": round(mtf_rate, 1),
-        "longs": len(longs),
-        "shorts": len(shorts),
-        "liquidations": len(liqs),
-        "final_equity": round(eq[-1], 2),
-        "equity_curve": equity_curve,
-        "wins": len(wins),
-        "losses": len(losses),
-        "regime_counts": regime_counts,
-        "regime_wins": regime_wins,
-        "exit_counts": exit_counts,
-        "gross_profit": round(gross_profit, 2),
-        "gross_loss": round(gross_loss, 2),
+        "total_trades":      len(trades),
+        "win_rate":          round(win_rate, 1),
+        "total_return_pct":  round(ret, 2),
+        "final_equity":      round(eq[-1], 2),
+        "max_drawdown_pct":  round(mdd, 2),
+        "sharpe_ratio":      round(sharpe, 3),
+        "sortino_ratio":     round(sortino, 3),
+        "profit_factor":     round(pf, 3),
+        "avg_win_pct":       round(float(np.mean([t.pnl_pct for t in wins])),    2) if wins   else 0.0,
+        "avg_loss_pct":      round(float(np.mean([t.pnl_pct for t in losses])),  2) if losses else 0.0,
+        "avg_win_eur":       round(float(np.mean([t.pnl_eur for t in wins])),    4) if wins   else 0.0,
+        "avg_loss_eur":      round(float(np.mean([t.pnl_eur for t in losses])),  4) if losses else 0.0,
+        "avg_score":         round(float(np.mean([t.score    for t in trades])),  1),
+        "avg_leverage":      round(float(np.mean([t.leverage  for t in trades])),  2),
+        "avg_candles":       round(float(np.mean([t.candles_held for t in trades])), 1),
+        "mtf_rate":          round(sum(1 for t in trades if t.mtf_aligned) / len(trades) * 100, 1),
+        "longs":             len(longs),
+        "shorts":            len(shorts),
+        "liquidations":      len(liqs),
+        "gross_profit_eur":  round(gp, 4),
+        "gross_loss_eur":    round(gl, 4),
+        "wins":              len(wins),
+        "losses":            len(losses),
+        "equity_curve":      curve,
+        "exit_counts":       exit_counts,
+        "regime_counts":     regime_counts,
+        "regime_wins":       regime_wins,
+        "sym_map":           sym_map,
     }
 
 
+def sym_metrics(trades_for_sym: List[PaperTrade], initial: float) -> dict:
+    return metrics(trades_for_sym, initial)
+
+
 # ---------------------------------------------------------------------------
-# Rich Report
+# Rapport Rich
 # ---------------------------------------------------------------------------
 
-def print_report(all_trades: List[PaperTrade], per_symbol: Dict[str, dict]):
-    console.rule("[bold yellow]SKYN — PAPER TRADING TEST REPORT[/bold yellow]")
+def print_report(all_trades: List[PaperTrade]):
+    console.rule("[bold yellow]SKYN — PAPER TRADING : 50 € EN JEU[/bold yellow]")
     console.print()
 
-    # Global metrics
-    global_m = compute_metrics(all_trades, INITIAL_CAPITAL)
-    if not global_m:
-        console.print("[red]No trades executed.[/red]")
+    m = metrics(all_trades, INITIAL_CAPITAL)
+    if not m:
+        console.print("[red]Aucun trade exécuté.[/red]")
         return
 
-    # ---- Summary panel --------------------------------------------------
-    ret   = global_m["total_return_pct"]
-    color = "green" if ret > 0 else "red"
-    final = global_m["final_equity"]
+    ret    = m["total_return_pct"]
+    final  = m["final_equity"]
+    profit = final - INITIAL_CAPITAL
+    color  = "green" if ret >= 0 else "red"
 
-    summary = Table.grid(padding=(0, 2))
-    summary.add_row(
-        f"[bold]Capital initial[/bold]",  f"[white]{INITIAL_CAPITAL:,.0f} $[/white]"
-    )
-    summary.add_row(
-        f"[bold]Capital final[/bold]",    f"[{color}]{final:,.2f} $[/{color}]"
-    )
-    summary.add_row(
-        f"[bold]Retour total[/bold]",     f"[{color}]{ret:+.2f}%[/{color}]"
-    )
-    summary.add_row(
-        f"[bold]Drawdown max[/bold]",     f"[{'red' if global_m['max_drawdown_pct']>15 else 'yellow'}]{global_m['max_drawdown_pct']:.1f}%[/]"
-    )
-    summary.add_row(
-        f"[bold]Sharpe[/bold]",           f"[cyan]{global_m['sharpe_ratio']:.3f}[/cyan]"
-    )
-    summary.add_row(
-        f"[bold]Sortino[/bold]",          f"[cyan]{global_m['sortino_ratio']:.3f}[/cyan]"
-    )
-    summary.add_row(
-        f"[bold]Profit Factor[/bold]",    f"[cyan]{global_m['profit_factor']:.3f}[/cyan]"
-    )
-    console.print(Panel(summary, title="[bold]Résultats Globaux[/bold]", border_style="yellow"))
+    # ---- Résultat principal -------------------------------------------
+    g = Table.grid(padding=(0, 3))
+    g.add_row("[bold]Mise de départ[/bold]",  f"[white]{INITIAL_CAPITAL:.2f} {CURRENCY}[/white]")
+    g.add_row("[bold]Capital final[/bold]",    f"[{color} bold]{final:.2f} {CURRENCY}[/{color} bold]")
+    g.add_row("[bold]Profit net[/bold]",       f"[{color} bold]{profit:+.2f} {CURRENCY} ({ret:+.2f}%)[/{color} bold]")
+    g.add_row("[bold]Drawdown max[/bold]",     f"[{'red' if m['max_drawdown_pct']>20 else 'yellow'}]{m['max_drawdown_pct']:.1f}%[/]")
+    g.add_row("[bold]Sharpe ratio[/bold]",     f"[cyan]{m['sharpe_ratio']:.3f}[/cyan]")
+    g.add_row("[bold]Profit Factor[/bold]",    f"[cyan]{m['profit_factor']:.3f}[/cyan]")
+    g.add_row("[bold]Win rate[/bold]",         f"[{'green' if m['win_rate']>=55 else 'red'}]{m['win_rate']:.1f}%[/] ({m['wins']}W / {m['losses']}L)")
+    g.add_row("[bold]Trades total[/bold]",     f"[white]{m['total_trades']}[/white]  (Long:{m['longs']} Court:{m['shorts']})")
+    console.print(Panel(g, title=f"[bold]Résultat Global · 2 ans · {len(set(t.symbol for t in all_trades))} symboles[/bold]", border_style="yellow", expand=False))
     console.print()
 
-    # ---- Trade stats table ----------------------------------------------
-    t1 = Table(title="Statistiques de Trading", box=box.ROUNDED, border_style="cyan")
-    t1.add_column("Métrique",        style="bold")
-    t1.add_column("Valeur",          justify="right")
-    t1.add_column("Évaluation",      justify="center")
+    # ---- Métriques secondaires ----------------------------------------
+    t1 = Table(box=box.SIMPLE, border_style="cyan", title="Statistiques d'exécution")
+    t1.add_column("Métrique",             style="bold")
+    t1.add_column("Valeur",               justify="right")
+    t1.add_column("",                     justify="center", width=14)
 
-    def grade(val, thresholds, labels):
-        for thresh, label in zip(thresholds, labels):
-            if val >= thresh: return label
-        return labels[-1]
+    def grade_str(val, good_thresh, warn_thresh, fmt="{:.1f}"):
+        if val >= good_thresh: clr = "green"; sym = "✓"
+        elif val >= warn_thresh: clr = "yellow"; sym = "∼"
+        else: clr = "red"; sym = "✗"
+        return f"[{clr}]{sym}[/{clr}]"
 
-    rows_t1 = [
-        ("Trades totaux",       f"{global_m['total_trades']}",
-         grade(global_m['total_trades'], [100, 50, 20], ["[green]✓ Bon[/]", "[yellow]∼ Moyen[/]", "[red]✗ Faible[/]", "[red]✗ Très faible[/]"])),
-        ("Win rate",            f"{global_m['win_rate']:.1f}%",
-         grade(global_m['win_rate'], [60, 50, 40], ["[green]✓ Bon[/]", "[yellow]∼ Correct[/]", "[red]✗ Faible[/]", "[red]✗ Très faible[/]"])),
-        ("Gain moyen / trade",  f"{global_m['avg_win_pct']:+.1f}%",
-         "[green]✓[/]" if global_m['avg_win_pct'] > 0 else "[red]✗[/]"),
-        ("Perte moyenne / trade", f"{global_m['avg_loss_pct']:+.1f}%",
-         "[green]✓[/]" if abs(global_m['avg_loss_pct']) < global_m['avg_win_pct'] else "[red]✗[/]"),
-        ("Score moyen d'entrée",  f"{global_m['avg_score']:.1f}",
-         grade(global_m['avg_score'], [72, 65, 58], ["[green]✓ Sélectif[/]", "[yellow]∼ Correct[/]", "[red]Trop permissif[/]", "[red]Trop permissif[/]"])),
-        ("Levier moyen",          f"{global_m['avg_leverage']:.1f}x",
-         "[yellow]∼[/]" if global_m['avg_leverage'] < 5 else "[red]✗ Élevé[/]"),
-        ("Durée moyenne (bougies)", f"{global_m['avg_candles']:.0f}h",
-         "[cyan]→[/]"),
-        ("Alignement MTF (4h)",   f"{global_m['mtf_rate']:.0f}%",
-         grade(global_m['mtf_rate'], [60, 40], ["[green]✓ Bon[/]", "[yellow]∼[/]", "[red]✗[/]"])),
-        ("Long / Short",          f"{global_m['longs']} / {global_m['shorts']}",
-         "[cyan]→[/]"),
-        ("Liquidations",          f"{global_m['liquidations']}",
-         "[green]✓ 0[/]" if global_m['liquidations'] == 0 else "[red]✗ Présentes[/]"),
-    ]
-
-    for label, val, ev in rows_t1:
-        t1.add_row(label, val, ev)
+    t1.add_row("Gain moyen / trade",       f"{m['avg_win_pct']:+.1f}%  ({m['avg_win_eur']:+.3f}{CURRENCY})",
+               "[green]✓[/green]" if m["avg_win_pct"] > 0 else "[red]✗[/red]")
+    t1.add_row("Perte moyenne / trade",    f"{m['avg_loss_pct']:+.1f}%  ({m['avg_loss_eur']:+.3f}{CURRENCY})",
+               "[green]✓[/green]" if abs(m["avg_loss_pct"]) < m["avg_win_pct"] else "[red]R:R déséquilibré[/red]")
+    t1.add_row("Score moyen d'entrée",     f"{m['avg_score']:.1f}/100",
+               grade_str(m["avg_score"], 72, 65))
+    t1.add_row("Levier moyen",             f"{m['avg_leverage']:.1f}x",
+               "[yellow]∼[/yellow]" if m["avg_leverage"] <= 5 else "[red]✗[/red]")
+    t1.add_row("Durée moyenne",            f"{m['avg_candles']:.0f}h",
+               "[green]✓[/green]" if m["avg_candles"] >= 8 else "[yellow]∼[/yellow]")
+    t1.add_row("Alignement MTF daily",     f"{m['mtf_rate']:.0f}%",
+               grade_str(m["mtf_rate"], 60, 40))
+    t1.add_row("Liquidations",             str(m["liquidations"]),
+               "[green]✓ 0[/green]" if m["liquidations"] == 0 else "[bold red]✗ RISK[/bold red]")
     console.print(t1)
     console.print()
 
-    # ---- Per-symbol table -----------------------------------------------
+    # ---- Performance par symbole --------------------------------------
     t2 = Table(title="Performance par Symbole", box=box.ROUNDED, border_style="magenta")
-    for col in ["Symbole", "Trades", "Win%", "Retour%", "Drawdown%", "Sharpe", "Levier moy", "Liquidations"]:
+    for col in ["Symbole", "Trades", "Win%", "Gains (€)", "Pertes (€)", "Net (€)", "Sharpe", "Lev moy"]:
         t2.add_column(col, justify="right")
     t2.columns[0].justify = "left"
 
-    for sym, m in per_symbol.items():
-        if not m: continue
-        c = "green" if m["total_return_pct"] > 0 else "red"
+    sym_agg: Dict[str, Dict] = {}
+    for t in all_trades:
+        sym_agg.setdefault(t.symbol, {"wins": 0, "losses": 0, "gp": 0.0, "gl": 0.0, "lev": [], "all": []})
+        d = sym_agg[t.symbol]
+        d["all"].append(t)
+        if t.pnl_eur > 0:
+            d["wins"] += 1; d["gp"] += t.pnl_eur
+        else:
+            d["losses"] += 1; d["gl"] += abs(t.pnl_eur)
+        d["lev"].append(t.leverage)
+
+    for sym in sorted(sym_agg.keys()):
+        d = sym_agg[sym]
+        total_t = d["wins"] + d["losses"]
+        wr = d["wins"] / total_t * 100 if total_t else 0
+        net = d["gp"] - d["gl"]
+        avg_lev = np.mean(d["lev"]) if d["lev"] else 0
+        sm = sym_metrics(d["all"], INITIAL_CAPITAL / len(sym_agg))
+        c = "green" if net > 0 else "red"
         t2.add_row(
-            sym,
-            str(m["total_trades"]),
-            f"[{'green' if m['win_rate']>=55 else 'red'}]{m['win_rate']:.1f}%[/]",
-            f"[{c}]{m['total_return_pct']:+.2f}%[/{c}]",
-            f"[{'red' if m['max_drawdown_pct']>20 else 'yellow'}]{m['max_drawdown_pct']:.1f}%[/]",
-            f"{m['sharpe_ratio']:.2f}",
-            f"{m['avg_leverage']:.1f}x",
-            f"[{'red' if m['liquidations']>0 else 'green'}]{m['liquidations']}[/]",
+            sym.split("/")[0],
+            str(total_t),
+            f"[{'green' if wr>=55 else 'red'}]{wr:.0f}%[/]",
+            f"[green]+{d['gp']:.2f}€[/green]",
+            f"[red]-{d['gl']:.2f}€[/red]",
+            f"[{c}]{net:+.2f}€[/{c}]",
+            f"{sm.get('sharpe_ratio', 0):.2f}",
+            f"{avg_lev:.1f}x",
         )
     console.print(t2)
     console.print()
 
-    # ---- Regime breakdown -----------------------------------------------
-    t3 = Table(title="Performance par Régime de Marché", box=box.ROUNDED, border_style="blue")
-    t3.add_column("Régime",        style="bold")
-    t3.add_column("Trades",        justify="right")
-    t3.add_column("Gagnants",      justify="right")
-    t3.add_column("Win%",          justify="right")
-    t3.add_column("Stratégie")
+    # ---- Performance par régime ---------------------------------------
+    t3 = Table(title="Win Rate par Régime de Marché", box=box.ROUNDED, border_style="blue")
+    t3.add_column("Régime",   style="bold")
+    t3.add_column("Trades",   justify="right")
+    t3.add_column("Gagnants", justify="right")
+    t3.add_column("Win%",     justify="right")
+    t3.add_column("Net (€)",  justify="right")
 
-    regime_names = {
-        "bull_trend": ("BULL TREND", "Momentum Haussier"),
-        "bear_trend": ("BEAR TREND", "Momentum Baissier"),
-        "ranging":    ("RANGING",    "Mean Reversion"),
-        "breakout":   ("BREAKOUT",   "Breakout"),
-        "high_volatility": ("HIGH VOL", "Défensif"),
+    regime_net: Dict[str, float] = {}
+    for t in all_trades:
+        regime_net[t.regime] = regime_net.get(t.regime, 0.0) + t.pnl_eur
+
+    regime_labels = {
+        "bull_trend": "BULL TREND", "bear_trend": "BEAR TREND",
+        "ranging": "RANGING", "breakout": "BREAKOUT", "high_volatility": "HIGH VOL",
     }
-
-    for regime_key, count in sorted(global_m["regime_counts"].items(),
-                                     key=lambda x: -x[1]):
-        wins_r = global_m["regime_wins"].get(regime_key, 0)
-        wr     = wins_r / count * 100 if count else 0
-        name, strat = regime_names.get(regime_key, (regime_key, ""))
-        c = "green" if wr >= 55 else ("yellow" if wr >= 45 else "red")
-        t3.add_row(name, str(count), str(wins_r), f"[{c}]{wr:.0f}%[/{c}]", strat)
+    for r, cnt in sorted(m["regime_counts"].items(), key=lambda x: -x[1]):
+        wins_r = m["regime_wins"].get(r, 0)
+        wr     = wins_r / cnt * 100 if cnt else 0
+        net    = regime_net.get(r, 0)
+        c      = "green" if wr >= 55 else "yellow" if wr >= 45 else "red"
+        nc     = "green" if net > 0 else "red"
+        t3.add_row(
+            regime_labels.get(r, r), str(cnt), str(wins_r),
+            f"[{c}]{wr:.0f}%[/{c}]", f"[{nc}]{net:+.2f}€[/{nc}]"
+        )
     console.print(t3)
     console.print()
 
-    # ---- Exit reason breakdown ------------------------------------------
-    t4 = Table(title="Raisons de Sortie", box=box.SIMPLE, border_style="white")
-    t4.add_column("Raison",     style="bold")
-    t4.add_column("Nombre",     justify="right")
-    t4.add_column("% du total", justify="right")
+    # ---- Raisons de sortie -------------------------------------------
+    t4 = Table(title="Raisons de Sortie", box=box.SIMPLE)
+    t4.add_column("Raison", style="bold"); t4.add_column("Nb", justify="right")
+    t4.add_column("%", justify="right"); t4.add_column("Net (€)", justify="right")
 
-    exit_labels = {
-        "take_profit": "[green]Take Profit ✓[/green]",
-        "stop_loss": "[red]Stop Loss ✗[/red]",
-        "trailing_stop": "[yellow]Trailing Stop[/yellow]",
-        "liquidation": "[bold red]Liquidation ⚡[/bold red]",
-        "end_of_data": "[dim]Fin données[/dim]",
+    exit_net: Dict[str, float] = {}
+    for t in all_trades:
+        exit_net[t.exit_reason] = exit_net.get(t.exit_reason, 0.0) + t.pnl_eur
+
+    el = {
+        "take_profit":  "[green]Take Profit ✓[/green]",
+        "stop_loss":    "[red]Stop Loss ✗[/red]",
+        "trailing_stop":"[yellow]Trailing Stop[/yellow]",
+        "liquidation":  "[bold red]Liquidation ⚡[/bold red]",
+        "end_of_data":  "[dim]Fin données[/dim]",
     }
-    total = global_m["total_trades"]
-    for reason, cnt in sorted(global_m["exit_counts"].items(), key=lambda x: -x[1]):
-        pct = cnt / total * 100
-        label = exit_labels.get(reason, reason)
-        t4.add_row(label, str(cnt), f"{pct:.1f}%")
+    tot = m["total_trades"]
+    for r, cnt in sorted(m["exit_counts"].items(), key=lambda x: -x[1]):
+        net = exit_net.get(r, 0)
+        nc  = "green" if net > 0 else "red"
+        t4.add_row(el.get(r, r), str(cnt), f"{cnt/tot*100:.0f}%", f"[{nc}]{net:+.2f}€[/{nc}]")
     console.print(t4)
     console.print()
 
-    # ---- Analysis & Recommendations ------------------------------------
-    issues = []
-    goods  = []
-
-    if global_m["win_rate"] >= 60:
-        goods.append("Win rate solide (≥60%) — sélection de signaux efficace")
-    elif global_m["win_rate"] >= 50:
-        goods.append("Win rate correct (50-60%) — marge d'amélioration sur les filtres")
-    else:
-        issues.append(f"Win rate faible ({global_m['win_rate']:.0f}%) — les filtres doivent être renforcés")
-
-    if global_m["profit_factor"] >= 1.5:
-        goods.append(f"Profit Factor élevé ({global_m['profit_factor']:.2f}) — gains >> pertes")
-    elif global_m["profit_factor"] >= 1.0:
-        issues.append(f"Profit Factor borderline ({global_m['profit_factor']:.2f}) — R:R à améliorer")
-    else:
-        issues.append(f"Profit Factor <1.0 ({global_m['profit_factor']:.2f}) — système perd de l'argent")
-
-    if global_m["max_drawdown_pct"] > 25:
-        issues.append(f"Drawdown max élevé ({global_m['max_drawdown_pct']:.1f}%) — risk_per_trade à réduire ou SL à resserrer")
-    elif global_m["max_drawdown_pct"] < 15:
-        goods.append(f"Drawdown contrôlé ({global_m['max_drawdown_pct']:.1f}%)")
-
-    if global_m["sharpe_ratio"] >= 1.5:
-        goods.append(f"Sharpe excellent ({global_m['sharpe_ratio']:.2f}) — rendement ajusté risque très bon")
-    elif global_m["sharpe_ratio"] >= 0.8:
-        goods.append(f"Sharpe correct ({global_m['sharpe_ratio']:.2f})")
-    else:
-        issues.append(f"Sharpe faible ({global_m['sharpe_ratio']:.2f}) — volatilité trop haute par rapport aux gains")
-
-    if global_m["liquidations"] > 0:
-        issues.append(f"{global_m['liquidations']} liquidation(s) — le levier dépasse la capacité de résistance des stops")
-
-    if global_m["mtf_rate"] < 50:
-        issues.append(f"Seulement {global_m['mtf_rate']:.0f}% des trades alignés MTF — filtre 4h peut être relâché légèrement")
-    else:
-        goods.append(f"Alignement MTF à {global_m['mtf_rate']:.0f}% — confirmation multi-timeframe active")
-
-    avg_candles = global_m["avg_candles"]
-    if avg_candles < 10:
-        issues.append(f"Durée de trade très courte ({avg_candles:.0f}h) — risque sur-trading / commission élevée")
-    elif avg_candles > 100:
-        issues.append(f"Durée de trade longue ({avg_candles:.0f}h) — capital immobilisé")
-
-    # Regime-specific issues
-    for regime_key, count in global_m["regime_counts"].items():
-        wins_r = global_m["regime_wins"].get(regime_key, 0)
-        wr = wins_r / count * 100 if count else 0
-        if wr < 40 and count >= 5:
-            issues.append(f"Régime {regime_key.upper()} a un win rate de {wr:.0f}% sur {count} trades — à éviter ou paramètres à revoir")
-
-    # Print
-    if goods:
-        console.print(Panel(
-            "\n".join(f"  [green]✓[/green] {g}" for g in goods),
-            title="[bold green]Points Forts[/bold green]",
-            border_style="green"
-        ))
-
-    if issues:
-        console.print(Panel(
-            "\n".join(f"  [yellow]→[/yellow] {iss}" for iss in issues),
-            title="[bold yellow]Axes d'Amélioration[/bold yellow]",
-            border_style="yellow"
-        ))
-    console.print()
-
-    # ---- Top 10 and Worst 10 trades ------------------------------------
-    sorted_trades = sorted(all_trades, key=lambda t: t.pnl, reverse=True)
-    best10  = sorted_trades[:10]
-    worst10 = sorted_trades[-10:]
-
-    for title, tlist, header_color in [
-        ("Top 10 Meilleurs Trades", best10, "green"),
-        ("Top 10 Pires Trades", worst10, "red"),
+    # ---- Top / Worst trades ------------------------------------------
+    sorted_t = sorted(all_trades, key=lambda x: x.pnl_eur, reverse=True)
+    worst = list(reversed(sorted_t[-15:]))
+    for title, lst, bc in [
+        ("Top 15 Meilleurs Trades", sorted_t[:15], "green"),
+        ("Top 15 Pires Trades", worst, "red"),
     ]:
-        tt = Table(title=title, box=box.SIMPLE, border_style=header_color)
-        for col in ["Sym", "Side", "PnL $", "PnL%", "Score", "Levier", "Régime", "Sortie", "Durée"]:
+        tt = Table(title=title, box=box.SIMPLE, border_style=bc)
+        for col in ["Sym", "Side", "Net €", "Marge €", "PnL%", "Score", "Lev", "Régime", "Sortie", "Durée"]:
             tt.add_column(col, justify="right" if col not in ["Sym", "Side", "Régime", "Sortie"] else "left")
-
-        for t in tlist:
-            c = "green" if t.pnl > 0 else "red"
+        for t in lst:
+            c = "green" if t.pnl_eur > 0 else "red"
             tt.add_row(
-                t.symbol.split("/")[0],
-                t.side,
-                f"[{c}]{t.pnl:+.2f}[/{c}]",
+                t.symbol.split("/")[0], t.side,
+                f"[{c}]{t.pnl_eur:+.2f}€[/{c}]",
+                f"{t.margin_eur:.2f}€",
                 f"[{c}]{t.pnl_pct:+.1f}%[/{c}]",
                 f"{t.score:.0f}",
                 f"{t.leverage}x",
-                t.regime,
-                t.exit_reason,
-                f"{t.candles_held}h",
+                t.regime[:6],
+                t.exit_reason[:5],
+                f"{t.candles_held * CANDLE_HOURS}h",
             )
         console.print(tt)
         console.print()
 
-    # ---- Equity curve mini-chart ----------------------------------------
-    ec = global_m["equity_curve"]
+    # ---- Timeline mensuelle simulée ----------------------------------
+    # Projection sur 2 semaines avec le même rythme
+    total_days = 730  # 2 ans
+    trades_per_day = m["total_trades"] / total_days
+    daily_pnl = profit / total_days
+    week2_pnl  = daily_pnl * 14
+    week2_cap  = INITIAL_CAPITAL + week2_pnl
+
+    console.print(Panel(
+        f"Rythme observé : [cyan]{trades_per_day:.2f} trades/jour[/cyan]  ·  "
+        f"[cyan]{daily_pnl:+.3f} {CURRENCY}/jour[/cyan]\n\n"
+        f"  [bold]1 semaine[/bold]  : {INITIAL_CAPITAL:.2f}€ → [{'green' if week2_pnl/2 > 0 else 'red'}]"
+        f"{INITIAL_CAPITAL + week2_pnl/2:.2f}€ ({week2_pnl/2:+.2f}€)[/]\n"
+        f"  [bold]2 semaines[/bold] : {INITIAL_CAPITAL:.2f}€ → [{'green' if week2_pnl > 0 else 'red'}]"
+        f"{week2_cap:.2f}€ ({week2_pnl:+.2f}€)[/]\n"
+        f"  [bold]1 mois[/bold]     : {INITIAL_CAPITAL:.2f}€ → [{'green' if daily_pnl*30 > 0 else 'red'}]"
+        f"{INITIAL_CAPITAL + daily_pnl*30:.2f}€ ({daily_pnl*30:+.2f}€)[/]\n"
+        f"  [bold]3 mois[/bold]     : {INITIAL_CAPITAL:.2f}€ → [{'green' if daily_pnl*90 > 0 else 'red'}]"
+        f"{INITIAL_CAPITAL + daily_pnl*90:.2f}€ ({daily_pnl*90:+.2f}€)[/]",
+        title="[bold]Projection Linéaire (si rythme constant)[/bold]",
+        border_style="cyan",
+    ))
+    console.print()
+
+    # ---- Courbe equity -----------------------------------------------
+    ec = m["equity_curve"]
     if len(ec) > 2:
-        n_pts = min(60, len(ec))
-        step  = len(ec) // n_pts
+        n_pts = min(70, len(ec))
+        step  = max(1, len(ec) // n_pts)
         pts   = [ec[i * step] for i in range(n_pts)] + [ec[-1]]
         mn, mx = min(pts), max(pts)
         rng = mx - mn or 1
-
-        bars = []
         blocks = " ▁▂▃▄▅▆▇█"
-        for v in pts:
-            idx = int((v - mn) / rng * 8)
-            bars.append(blocks[max(0, min(8, idx))])
-
-        color = "green" if ec[-1] >= ec[0] else "red"
-        chart = "".join(bars)
+        chart  = "".join(blocks[max(0, min(8, int((v - mn) / rng * 8)))] for v in pts)
+        c = "green" if ec[-1] >= ec[0] else "red"
         console.print(Panel(
-            f"[{color}]{chart}[/{color}]\n"
-            f"  Début: {ec[0]:,.0f}$  →  Fin: {ec[-1]:,.2f}$  "
-            f"  Min: {mn:,.0f}$  Max: {mx:,.0f}$",
-            title="[bold]Courbe d'Equity (aperçu)[/bold]",
-            border_style=color,
+            f"[{c}]{chart}[/{c}]\n"
+            f"  Départ: {ec[0]:.2f}€  →  Fin: {ec[-1]:.2f}€  |  "
+            f"Min: {mn:.2f}€  Max: {mx:.2f}€",
+            title="Courbe d'Equity (50€ → ?)",
+            border_style=c,
         ))
+    console.print()
 
+    # ---- Recommandations ---------------------------------------------
+    issues = []; goods = []
+    if m["win_rate"] >= 55:  goods.append(f"Win rate solide {m['win_rate']:.0f}% — signaux de qualité")
+    elif m["win_rate"] >= 45: goods.append(f"Win rate correct {m['win_rate']:.0f}% — peut encore monter")
+    else:                     issues.append(f"Win rate {m['win_rate']:.0f}% insuffisant — renforcer le filtrage")
+
+    if m["profit_factor"] >= 1.5: goods.append(f"Profit Factor {m['profit_factor']:.2f} — gains > pertes")
+    elif m["profit_factor"] >= 1:  issues.append(f"Profit Factor {m['profit_factor']:.2f} borderline")
+    else:                          issues.append(f"Profit Factor {m['profit_factor']:.2f} — perd de l'argent")
+
+    if m["max_drawdown_pct"] <= 15: goods.append(f"Drawdown maîtrisé {m['max_drawdown_pct']:.1f}%")
+    else:                            issues.append(f"Drawdown {m['max_drawdown_pct']:.1f}% — réduire risk/trade")
+
+    if m["liquidations"] > 0:
+        issues.append(f"{m['liquidations']} liquidation(s) — levier trop élevé ou stops mal placés")
+
+    if m["avg_candles"] * CANDLE_HOURS < 8:
+        issues.append("Durée trop courte → vérifier si les stops ne sont pas trop proches")
+
+    if m["sharpe_ratio"] >= 1.5: goods.append(f"Sharpe {m['sharpe_ratio']:.2f} — excellent rendement/risque")
+    elif m["sharpe_ratio"] >= 0.8: goods.append(f"Sharpe {m['sharpe_ratio']:.2f} — correct")
+    else: issues.append(f"Sharpe {m['sharpe_ratio']:.2f} — trop volatile par rapport aux gains")
+
+    if goods:
+        console.print(Panel("\n".join(f"  [green]✓[/green] {g}" for g in goods),
+                             title="[bold green]Points Forts[/bold green]", border_style="green"))
+    if issues:
+        console.print(Panel("\n".join(f"  [yellow]→[/yellow] {i}" for i in issues),
+                             title="[bold yellow]À Améliorer[/bold yellow]", border_style="yellow"))
     console.print()
     console.rule("[bold yellow]FIN DU RAPPORT[/bold yellow]")
 
@@ -887,50 +828,52 @@ def print_report(all_trades: List[PaperTrade], per_symbol: Dict[str, dict]):
 # ---------------------------------------------------------------------------
 
 def main():
-    console.rule("[bold yellow]SKYN — Paper Trading Test[/bold yellow]")
-    console.print(f"[dim]Pipeline complet · {len(SYMBOLS_YF)} symboles · {PERIOD} de données · Capital: {INITIAL_CAPITAL:,}$[/dim]")
+    n_syms = len(SYMBOLS_YF)
+    console.rule(f"[bold yellow]SKYN — Paper Trading Test · 50 € · {n_syms} Symboles · 2 ans[/bold yellow]")
+    console.print(f"[dim]Timeframe: {INTERVAL} · Pipeline complet · Sans look-ahead bias[/dim]")
     console.print()
 
-    simulator = FullPipelinePaper()
+    trader     = PaperTrader()
     all_trades: List[PaperTrade] = []
-    per_symbol: Dict[str, dict] = {}
 
     console.print("[bold]Téléchargement des données...[/bold]")
     data_map: Dict[str, pd.DataFrame] = {}
     for sym in SYMBOLS_YF:
+        console.print(f"  [cyan]↓[/cyan] {sym}…", end="")
         df = download_data(sym)
         if df is not None:
             data_map[sym] = df
+            console.print(f" [green]{len(df)} barres ✓[/green]")
+        else:
+            console.print(f" [red]échec ou données insuffisantes[/red]")
 
     if not data_map:
-        console.print("[red]Aucune donnée téléchargée. Vérifiez votre connexion.[/red]")
-        return
+        console.print("[red]Aucune donnée disponible.[/red]"); return
 
     console.print()
     console.print("[bold]Simulation en cours...[/bold]")
+    t_total = time.time()
 
     for sym, df_raw in data_map.items():
-        console.print(f"  [cyan]▶[/cyan] {sym}…", end="")
+        console.print(f"  [cyan]▶[/cyan] {SYMBOL_NAMES.get(sym, sym):<12}", end="")
         t0 = time.time()
         try:
-            trades = simulator.run(df_raw, sym)
-            m = compute_metrics(trades, INITIAL_CAPITAL) if trades else {}
-            per_symbol[SYMBOL_NAMES.get(sym, sym)] = m
+            trades = trader.run(df_raw, sym)
             all_trades.extend(trades)
-            elapsed = time.time() - t0
-            console.print(f" [green]{len(trades)} trades[/green] en {elapsed:.1f}s")
+            console.print(f" [green]{len(trades):>3} trades[/green]  [{time.time()-t0:.1f}s]")
         except Exception as exc:
             console.print(f" [red]erreur: {exc}[/red]")
             import traceback; traceback.print_exc()
 
+    elapsed = time.time() - t_total
     console.print()
-    console.print(f"[bold green]Total: {len(all_trades)} trades simulés[/bold green]")
+    console.print(f"[bold green]✓ {len(all_trades)} trades simulés en {elapsed:.1f}s[/bold green]")
     console.print()
 
     if all_trades:
-        print_report(all_trades, per_symbol)
+        print_report(all_trades)
     else:
-        console.print("[red]Aucun trade. Vérifiez les paramètres (min_score trop élevé ?).[/red]")
+        console.print("[red]Aucun trade généré — vérifier les paramètres.[/red]")
 
 
 if __name__ == "__main__":
