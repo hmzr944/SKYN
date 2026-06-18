@@ -23,7 +23,7 @@ from pydantic import BaseModel
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from apex_bot import ApexBot, load_state, save_state, STATE_FILE
-from paper_test_v15 import run_full_backtest, CONFIGS
+from paper_test_v16 import run_full_backtest, CONFIGS
 
 logging.basicConfig(
     level=logging.INFO,
@@ -58,7 +58,7 @@ async def _broadcast(payload: dict):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _bot
-    _bot = ApexBot(capital=500.0, cfg_name="Selectif", broadcast_fn=_broadcast)
+    _bot = ApexBot(capital=500.0, cfg_name="Premium", broadcast_fn=_broadcast)
     logger.info("APEX server started — bot ready (use /api/bot/start to activate)")
     yield
     if _bot:

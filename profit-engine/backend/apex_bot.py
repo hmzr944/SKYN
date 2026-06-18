@@ -196,7 +196,7 @@ class ApexBot:
                 break
 
     async def _do_scan(self):
-        from paper_test_v15 import scan_live_signals
+        from paper_test_v16 import scan_live_signals
 
         self._log(f"Scan #{self.state.get('scan_count', 0) + 1} — téléchargement données…")
         now_ts = datetime.now(timezone.utc).isoformat()
