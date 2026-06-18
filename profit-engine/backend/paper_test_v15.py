@@ -1130,6 +1130,7 @@ def scan_live_signals(capital: float = 500.0, cfg_name: str = "Selectif") -> dic
 
         signals.append({
             "symbol":        sym_name,
+            "sym_key":       sym,        # yfinance key e.g. "BTC-USD"
             "action":        action,
             "score":         dir_score,
             "filters":       nf,

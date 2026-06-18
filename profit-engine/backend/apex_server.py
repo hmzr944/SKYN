@@ -1,244 +1,182 @@
 """
 SKYN v15 APEX — Dashboard Server
-FastAPI server exposing backtest, scanner, and paper-portfolio endpoints.
-Run: uvicorn apex_server:app --host 0.0.0.0 --port 8765 --reload
+Run: uvicorn apex_server:app --host 0.0.0.0 --port 8765
 """
 
 import asyncio
 import json
 import logging
 import os
+import sys
 import time
-from datetime import datetime, timezone
+from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Set
 
-from fastapi import FastAPI, BackgroundTasks, HTTPException
+import uvicorn
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-# ── Import v15 strategy ───────────────────────────────────────────────────────
-import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from paper_test_v15 import (
-    run_full_backtest,
-    scan_live_signals,
-    CONFIGS,
-    SYMBOLS_YF,
-)
+from apex_bot import ApexBot, load_state, save_state, STATE_FILE
+from paper_test_v15 import run_full_backtest, CONFIGS
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s")
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s"
+)
 logger = logging.getLogger(__name__)
 
-STATE_FILE = Path(__file__).parent / "apex_state.json"
 DASHBOARD_DIR = Path(__file__).parent.parent / "dashboard"
 
+# ── Globals ───────────────────────────────────────────────────────────────────
 
-# ── State persistence ─────────────────────────────────────────────────────────
+_clients: Set[WebSocket] = set()
+_bot: Optional[ApexBot]  = None
+_jobs: dict              = {}   # job_id → {status, result, error, started_at}
 
-def _load_state() -> dict:
-    if STATE_FILE.exists():
+
+# ── WebSocket broadcast ────────────────────────────────────────────────────────
+
+async def _broadcast(payload: dict):
+    dead = set()
+    msg  = json.dumps(payload, default=str)
+    for ws in list(_clients):
         try:
-            return json.loads(STATE_FILE.read_text())
+            await ws.send_text(msg)
         except Exception:
-            pass
-    return {
-        "capital": 500.0,
-        "equity": 500.0,
-        "positions": {},
-        "closed_trades": [],
-        "last_scan": None,
-        "last_backtest": None,
-    }
+            dead.add(ws)
+    _clients -= dead
 
 
-def _save_state(state: dict):
-    STATE_FILE.write_text(json.dumps(state, default=str, indent=2))
+# ── Lifespan ──────────────────────────────────────────────────────────────────
 
-
-# ── Background job tracking ───────────────────────────────────────────────────
-
-_jobs: dict = {}   # job_id -> {status, result, error, started_at}
-
-
-def _new_job(job_id: str):
-    _jobs[job_id] = {
-        "status": "running",
-        "result": None,
-        "error": None,
-        "started_at": time.time(),
-    }
-
-
-def _finish_job(job_id: str, result: dict):
-    if job_id in _jobs:
-        _jobs[job_id]["status"] = "done"
-        _jobs[job_id]["result"] = result
-
-
-def _fail_job(job_id: str, error: str):
-    if job_id in _jobs:
-        _jobs[job_id]["status"] = "error"
-        _jobs[job_id]["error"] = error
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global _bot
+    _bot = ApexBot(capital=500.0, cfg_name="Selectif", broadcast_fn=_broadcast)
+    logger.info("APEX server started — bot ready (use /api/bot/start to activate)")
+    yield
+    if _bot:
+        _bot.stop()
 
 
 # ── App ───────────────────────────────────────────────────────────────────────
 
-app = FastAPI(title="SKYN v15 APEX Dashboard", version="15.0")
+app = FastAPI(title="SKYN v15 APEX", lifespan=lifespan)
 app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"]
 )
 
-
-# ── Static files ──────────────────────────────────────────────────────────────
-
 if DASHBOARD_DIR.exists():
-    app.mount("/static", StaticFiles(directory=str(DASHBOARD_DIR)), name="static")
+    app.mount("/assets", StaticFiles(directory=str(DASHBOARD_DIR)), name="assets")
 
+
+# ── Static / dashboard ────────────────────────────────────────────────────────
 
 @app.get("/")
-async def serve_dashboard():
-    html_path = DASHBOARD_DIR / "index.html"
-    if html_path.exists():
-        return FileResponse(str(html_path))
-    return JSONResponse({"error": "Dashboard not found", "path": str(html_path)}, status_code=404)
+async def root():
+    html = DASHBOARD_DIR / "index.html"
+    if html.exists():
+        return FileResponse(str(html))
+    return JSONResponse({"error": "Dashboard not found. Run from profit-engine/backend/"}, 404)
 
 
-# ── Backtest endpoints ────────────────────────────────────────────────────────
+# ── WebSocket ────────────────────────────────────────────────────────────────
 
-class BacktestRequest(BaseModel):
-    cfg_name: Optional[str] = "Optimal"
-    capital: Optional[float] = 500.0
-
-
-@app.post("/api/backtest/run")
-async def start_backtest(req: BacktestRequest, bg: BackgroundTasks):
-    job_id = f"bt_{int(time.time())}"
-    _new_job(job_id)
-
-    def _run():
-        try:
-            result = run_full_backtest(cfg_name=req.cfg_name)
-            state = _load_state()
-            state["last_backtest"] = {
-                "cfg_name": req.cfg_name,
-                "ran_at": datetime.now(timezone.utc).isoformat(),
-                "metrics": result.get("metrics", {}),
-            }
-            _save_state(state)
-            _finish_job(job_id, result)
-        except Exception as e:
-            _fail_job(job_id, str(e))
-            logger.exception("Backtest failed")
-
-    bg.add_task(_run)
-    return {"job_id": job_id, "status": "running"}
+@app.websocket("/ws")
+async def ws_endpoint(ws: WebSocket):
+    await ws.accept()
+    _clients.add(ws)
+    try:
+        if _bot:
+            await ws.send_text(json.dumps(
+                {"type": "init", "data": _bot.get_state()}, default=str
+            ))
+        while True:
+            try:
+                msg = await asyncio.wait_for(ws.receive_text(), timeout=30.0)
+                # Handle ping
+                if msg == "ping":
+                    await ws.send_text(json.dumps({"type": "pong"}))
+            except asyncio.TimeoutError:
+                await ws.send_text(json.dumps({"type": "heartbeat"}))
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        pass
+    finally:
+        _clients.discard(ws)
 
 
-@app.get("/api/backtest/status/{job_id}")
-async def backtest_status(job_id: str):
-    job = _jobs.get(job_id)
-    if not job:
-        raise HTTPException(404, "Job not found")
-    return {
-        "job_id": job_id,
-        "status": job["status"],
-        "elapsed_s": round(time.time() - job["started_at"], 1),
-        "result": job["result"] if job["status"] == "done" else None,
-        "error": job["error"],
-    }
+# ── Bot control ───────────────────────────────────────────────────────────────
+
+@app.post("/api/bot/start")
+async def bot_start():
+    if _bot and not _bot.running:
+        await _bot.start()
+    return {"status": "running", "state": _bot.get_state() if _bot else {}}
 
 
-@app.get("/api/backtest/configs")
-async def get_configs():
-    return {"configs": [{"name": c["name"], "score_min": c["score_min"],
-                         "risk_pct": c["risk_pct"], "sq_bars": c["sq_bars"]} for c in CONFIGS]}
+@app.post("/api/bot/stop")
+async def bot_stop():
+    if _bot:
+        _bot.stop()
+    return {"status": "stopped"}
 
 
-# ── Scanner endpoints ─────────────────────────────────────────────────────────
-
-class ScanRequest(BaseModel):
-    cfg_name: Optional[str] = "Selectif"
-    capital: Optional[float] = 500.0
-
-
-@app.post("/api/scan/run")
-async def start_scan(req: ScanRequest, bg: BackgroundTasks):
-    job_id = f"sc_{int(time.time())}"
-    _new_job(job_id)
-
-    def _run():
-        try:
-            result = scan_live_signals(capital=req.capital, cfg_name=req.cfg_name)
-            state = _load_state()
-            state["last_scan"] = result
-            _save_state(state)
-            _finish_job(job_id, result)
-        except Exception as e:
-            _fail_job(job_id, str(e))
-            logger.exception("Scan failed")
-
-    bg.add_task(_run)
-    return {"job_id": job_id, "status": "running"}
+@app.get("/api/bot/status")
+async def bot_status():
+    if not _bot:
+        return {"error": "Bot not initialized"}
+    return _bot.get_state()
 
 
-@app.get("/api/scan/status/{job_id}")
-async def scan_status(job_id: str):
-    job = _jobs.get(job_id)
-    if not job:
-        raise HTTPException(404, "Job not found")
-    return {
-        "job_id": job_id,
-        "status": job["status"],
-        "elapsed_s": round(time.time() - job["started_at"], 1),
-        "result": job["result"] if job["status"] == "done" else None,
-        "error": job["error"],
-    }
+# ── State / Portfolio ─────────────────────────────────────────────────────────
 
+@app.get("/api/state")
+async def get_state():
+    return _bot.get_state() if _bot else {}
 
-@app.get("/api/scan/last")
-async def last_scan():
-    state = _load_state()
-    return state.get("last_scan") or {"error": "No scan yet"}
-
-
-# ── Portfolio endpoints ───────────────────────────────────────────────────────
 
 @app.get("/api/portfolio")
 async def get_portfolio():
-    state = _load_state()
-    positions = state.get("positions", {})
-    closed = state.get("closed_trades", [])
-
-    total_pnl = sum(t.get("pnl", 0) for t in closed)
-    open_pnl = 0.0
-    for pos in positions.values():
-        open_pnl += pos.get("unrealized_pnl", 0.0)
-
-    wins = sum(1 for t in closed if t.get("pnl", 0) > 0)
-    total_closed = len(closed)
-
+    if not _bot:
+        return {}
+    s = _bot.get_state()
     return {
-        "capital_start": state.get("capital", 500.0),
-        "equity": state.get("equity", 500.0),
-        "total_pnl": round(total_pnl, 2),
-        "total_pnl_pct": round(total_pnl / state.get("capital", 500.0) * 100, 2),
-        "open_pnl": round(open_pnl, 2),
-        "positions_count": len(positions),
-        "closed_trades": total_closed,
-        "win_rate": round(wins / total_closed * 100, 1) if total_closed > 0 else 0,
-        "positions": positions,
-        "recent_trades": sorted(closed, key=lambda t: t.get("closed_at", ""), reverse=True)[:20],
+        "capital_start":   _bot.capital,
+        "equity":          s["equity"],
+        "total_pnl":       s["total_pnl"],
+        "total_pnl_pct":   s["total_pnl_pct"],
+        "open_pnl":        s["open_pnl"],
+        "positions_count": s["positions_count"],
+        "closed_trades":   s["closed_trades"],
+        "win_rate":        s["win_rate"],
+        "positions":       s["positions"],
+        "recent_trades":   s["recent_trades"],
     }
 
 
-class OpenPositionRequest(BaseModel):
+@app.delete("/api/portfolio/reset")
+async def reset_portfolio():
+    if not _bot:
+        return {"error": "Bot not initialized"}
+    _bot.stop()
+    import time as _t; _t.sleep(0.5)
+    from apex_bot import _default_state
+    _bot.state = _default_state(_bot.capital)
+    save_state(_bot.state)
+    return {"status": "reset", "equity": _bot.capital}
+
+
+# ── Manual position ────────────────────────────────────────────────────────────
+
+class OpenPositionReq(BaseModel):
     symbol: str
     action: str
     entry: float
@@ -250,126 +188,151 @@ class OpenPositionRequest(BaseModel):
     leverage: int = 10
     adx: float = 0.0
     adx_boosted: bool = False
+    sym_key: Optional[str] = None
 
 
-@app.post("/api/position/open")
-async def open_position(req: OpenPositionRequest):
-    state = _load_state()
-    positions = state.get("positions", {})
-
-    if req.symbol in positions:
-        raise HTTPException(400, f"Position already open for {req.symbol}")
-
-    if len(positions) >= 5:
-        raise HTTPException(400, "Max 5 positions simultanées")
-
-    tp_pct = abs(req.tp - req.entry) / req.entry
-    sl_pct_actual = abs(req.sl - req.entry) / req.entry
-    partial_tp1 = req.entry * (1 + tp_pct * 0.40) if req.action == "BUY" else req.entry * (1 - tp_pct * 0.40)
-    partial_tp2 = req.entry * (1 + tp_pct * 0.70) if req.action == "BUY" else req.entry * (1 - tp_pct * 0.70)
-
-    positions[req.symbol] = {
-        "symbol": req.symbol,
-        "action": req.action,
-        "entry": req.entry,
-        "current_price": req.entry,
-        "sl": req.sl,
-        "sl_orig": req.sl,
-        "tp": req.tp,
-        "partial_tp1": round(partial_tp1, 6),
-        "partial_tp2": round(partial_tp2, 6),
-        "partial1_taken": False,
-        "partial2_taken": False,
-        "risk_eur": req.risk_eur,
-        "score": req.score,
-        "filters": req.filters,
-        "leverage": req.leverage,
-        "adx": req.adx,
-        "adx_boosted": req.adx_boosted,
-        "unrealized_pnl": 0.0,
-        "opened_at": datetime.now(timezone.utc).isoformat(),
-    }
-
-    state["positions"] = positions
-    _save_state(state)
-    return {"status": "opened", "position": positions[req.symbol]}
-
-
-class ClosePositionRequest(BaseModel):
+class ClosePositionReq(BaseModel):
     symbol: str
     exit_price: float
     reason: str = "manual"
 
 
+@app.post("/api/position/open")
+async def open_position(req: OpenPositionReq):
+    if not _bot:
+        return JSONResponse({"error": "Bot not initialized"}, 500)
+    if req.symbol in _bot.state["positions"]:
+        return JSONResponse({"error": f"Position déjà ouverte: {req.symbol}"}, 400)
+    if len(_bot.state["positions"]) >= 5:
+        return JSONResponse({"error": "Max 5 positions simultanées"}, 400)
+
+    sig = req.model_dump()
+    if not sig.get("sym_key"):
+        sig["sym_key"] = req.symbol.replace("/USDT", "-USD")
+    _bot._open_position(sig)
+    save_state(_bot.state)
+    await _broadcast({"type": "trade_open", "data": _bot.state["positions"][req.symbol]})
+    await _broadcast({"type": "state", "data": _bot.get_state()})
+    return {"status": "opened", "position": _bot.state["positions"][req.symbol]}
+
+
 @app.post("/api/position/close")
-async def close_position(req: ClosePositionRequest):
-    state = _load_state()
-    positions = state.get("positions", {})
-
-    if req.symbol not in positions:
-        raise HTTPException(404, f"No open position for {req.symbol}")
-
-    pos = positions.pop(req.symbol)
-    entry = pos["entry"]
-    side  = "long" if pos["action"] == "BUY" else "short"
-    risk  = pos["risk_eur"]
-
-    if side == "long":
-        pnl_pct = (req.exit_price - entry) / entry
-    else:
-        pnl_pct = (entry - req.exit_price) / entry
-
-    sl_pct_actual = abs(pos["sl_orig"] - entry) / entry
-    pnl_eur = risk * (pnl_pct / sl_pct_actual) if sl_pct_actual > 0 else 0.0
-
-    trade = {
-        **pos,
-        "exit_price": req.exit_price,
-        "pnl": round(pnl_eur, 2),
-        "pnl_pct": round(pnl_pct * 100, 2),
-        "reason": req.reason,
-        "closed_at": datetime.now(timezone.utc).isoformat(),
-    }
-
-    state["positions"] = positions
-    state["closed_trades"] = state.get("closed_trades", []) + [trade]
-    state["equity"] = round(state.get("equity", 500.0) + pnl_eur, 2)
-    _save_state(state)
-
+async def close_position(req: ClosePositionReq):
+    if not _bot:
+        return JSONResponse({"error": "Bot not initialized"}, 500)
+    if req.symbol not in _bot.state["positions"]:
+        return JSONResponse({"error": f"Pas de position ouverte: {req.symbol}"}, 404)
+    _bot._close_position(req.symbol, req.exit_price, req.reason)
+    save_state(_bot.state)
+    trade = _bot.state["closed_trades"][-1] if _bot.state["closed_trades"] else {}
+    await _broadcast({"type": "trade_close", "data": trade})
+    await _broadcast({"type": "state", "data": _bot.get_state()})
     return {"status": "closed", "trade": trade}
 
 
-@app.delete("/api/portfolio/reset")
-async def reset_portfolio():
-    state = {
-        "capital": 500.0,
-        "equity": 500.0,
-        "positions": {},
-        "closed_trades": [],
-        "last_scan": None,
-        "last_backtest": None,
+# ── Backtest jobs ─────────────────────────────────────────────────────────────
+
+class BacktestReq(BaseModel):
+    cfg_name: Optional[str] = "Selectif"
+
+
+@app.post("/api/backtest/run")
+async def run_backtest(req: BacktestReq, bg_tasks=None):
+    job_id = f"bt_{int(time.time())}"
+    _jobs[job_id] = {"status": "running", "result": None, "error": None, "started_at": time.time()}
+
+    def _run():
+        try:
+            result = run_full_backtest(cfg_name=req.cfg_name)
+            _jobs[job_id]["status"] = "done"
+            _jobs[job_id]["result"] = result
+        except Exception as e:
+            _jobs[job_id]["status"] = "error"
+            _jobs[job_id]["error"] = str(e)
+            logger.exception("Backtest failed")
+
+    import threading
+    threading.Thread(target=_run, daemon=True).start()
+    return {"job_id": job_id, "status": "running"}
+
+
+@app.get("/api/backtest/status/{job_id}")
+async def backtest_status(job_id: str):
+    job = _jobs.get(job_id)
+    if not job:
+        return JSONResponse({"error": "Job not found"}, 404)
+    return {
+        "job_id":    job_id,
+        "status":    job["status"],
+        "elapsed_s": round(time.time() - job["started_at"], 1),
+        "result":    job["result"] if job["status"] == "done" else None,
+        "error":     job["error"],
     }
-    _save_state(state)
-    return {"status": "reset"}
 
 
-# ── System ────────────────────────────────────────────────────────────────────
+@app.get("/api/backtest/configs")
+async def get_configs():
+    return {"configs": [
+        {"name": c["name"], "score_min": c["score_min"],
+         "risk_pct": c["risk_pct"], "sq_bars": c["sq_bars"]}
+        for c in CONFIGS
+    ]}
 
-@app.get("/api/symbols")
-async def get_symbols():
-    return {"symbols": SYMBOLS_YF}
 
+# ── Scanner (manual one-shot) ─────────────────────────────────────────────────
+
+class ScanReq(BaseModel):
+    cfg_name: Optional[str] = "Selectif"
+    capital: Optional[float] = 500.0
+
+
+@app.post("/api/scan/run")
+async def run_scan(req: ScanReq):
+    job_id = f"sc_{int(time.time())}"
+    _jobs[job_id] = {"status": "running", "result": None, "error": None, "started_at": time.time()}
+
+    def _run():
+        from paper_test_v15 import scan_live_signals
+        try:
+            result = scan_live_signals(capital=req.capital, cfg_name=req.cfg_name)
+            _jobs[job_id]["status"] = "done"
+            _jobs[job_id]["result"] = result
+        except Exception as e:
+            _jobs[job_id]["status"] = "error"
+            _jobs[job_id]["error"] = str(e)
+            logger.exception("Scan failed")
+
+    import threading
+    threading.Thread(target=_run, daemon=True).start()
+    return {"job_id": job_id, "status": "running"}
+
+
+@app.get("/api/scan/status/{job_id}")
+async def scan_status(job_id: str):
+    job = _jobs.get(job_id)
+    if not job:
+        return JSONResponse({"error": "Job not found"}, 404)
+    return {
+        "job_id":    job_id,
+        "status":    job["status"],
+        "elapsed_s": round(time.time() - job["started_at"], 1),
+        "result":    job["result"] if job["status"] == "done" else None,
+        "error":     job["error"],
+    }
+
+
+# ── Health ────────────────────────────────────────────────────────────────────
 
 @app.get("/api/health")
 async def health():
+    from datetime import datetime, timezone
     return {
-        "status": "ok",
-        "version": "v15-APEX",
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "active_jobs": sum(1 for j in _jobs.values() if j["status"] == "running"),
+        "status":      "ok",
+        "version":     "v15-APEX",
+        "bot_running": _bot.running if _bot else False,
+        "timestamp":   datetime.now(timezone.utc).isoformat(),
     }
 
 
 if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run("apex_server:app", host="0.0.0.0", port=8765, reload=True)
+    uvicorn.run("apex_server:app", host="0.0.0.0", port=8765, reload=False)
