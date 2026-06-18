@@ -292,7 +292,7 @@ async def run_scan(req: ScanReq):
     _jobs[job_id] = {"status": "running", "result": None, "error": None, "started_at": time.time()}
 
     def _run():
-        from paper_test_v15 import scan_live_signals
+        from paper_test_v16 import scan_live_signals
         try:
             result = scan_live_signals(capital=req.capital, cfg_name=req.cfg_name)
             _jobs[job_id]["status"] = "done"
