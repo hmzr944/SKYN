@@ -38,13 +38,14 @@ INTERVAL           = "1h"
 PERIOD             = "2y"
 WARMUP             = 250
 N_MAX_POSITIONS    = 7
-COMMISSION         = 0.0004
-SLIPPAGE           = 0.0003
+COMMISSION         = 0.001      # 0.1% Binance taker per side (fixed from 0.04%)
+SLIPPAGE           = 0.0005    # entry slippage (15-min data delay + spread)
+EXIT_SLIPPAGE      = 0.0003    # exit slippage (market impact on close)
 DAILY_LOSS_LIMIT   = 0.10
 
 PATTERN = {
-    "A": {"sl": 0.020, "tp": 0.060, "cooldown_h": 16, "score_min": 65, "lev_max": 4, "risk_mult": 1.0},
-    "C": {"sl": 0.015, "tp": 0.075, "cooldown_h": 10, "score_min": 65, "lev_max": 5, "risk_mult": 1.2},
+    "A": {"sl": 0.020, "tp": 0.080, "cooldown_h": 16, "score_min": 70, "lev_max": 4, "risk_mult": 1.0},
+    "C": {"sl": 0.015, "tp": 0.090, "cooldown_h": 10, "score_min": 65, "lev_max": 5, "risk_mult": 1.2},
 }
 
 BTC_CRASH_THRESH    = 0.88
@@ -406,6 +407,7 @@ def precompute_symbol_v16(sym: str, cfg: dict) -> Optional[dict]:
         "ts_to_pos": ts_to_pos,
         "ts_index":  df.index,
         # Precomputed numpy arrays — fast O(1) bar access in engine loops
+        "open":       df["open"].values.astype(float),
         "close":      df["close"].values.astype(float),
         "high":       df["high"].values.astype(float),
         "low":        df["low"].values.astype(float),
@@ -630,6 +632,7 @@ def run_engine(sym_data_list, timestamps, btc_macro_dict, btc_rsi_dict,
     """
     equity          = INITIAL_CAPITAL
     open_positions  = {}
+    pending_entries = {}   # key: sym+pattern → params, executed at next bar open (1-bar delay)
     trades          = []
     eq_curve        = []
     day_wins        = {}
@@ -653,6 +656,47 @@ def run_engine(sym_data_list, timestamps, btc_macro_dict, btc_rsi_dict,
             day_start_equity = equity
             if ts_day not in day_wins:
                 day_wins[ts_day] = {"wins": 0, "losses": 0}
+
+        # ------------------------------------------------------------------ #
+        # 0. EXECUTE PENDING ENTRIES AT THIS BAR'S OPEN (1-bar delay)         #
+        # ------------------------------------------------------------------ #
+        for pk in list(pending_entries.keys()):
+            if len(open_positions) >= max_pos:
+                break
+            p   = pending_entries.pop(pk)
+            sd  = sym_lookup.get(p["sym"])
+            if sd is None:
+                continue
+            bar = sd["ts_to_pos"].get(ts)
+            if bar is None:
+                continue
+            open_px = float(sd["open"][bar])
+            side    = p["side"]
+            entry_price = open_px * (1 + SLIPPAGE) if side == "long" else open_px * (1 - SLIPPAGE)
+            sl_pct = PATTERN[p["pattern"]]["sl"]
+            tp_pct = PATTERN[p["pattern"]]["tp"]
+            if side == "long":
+                sl = entry_price * (1 - sl_pct)
+                tp = entry_price * (1 + tp_pct)
+            else:
+                sl = entry_price * (1 + sl_pct)
+                tp = entry_price * (1 - tp_pct)
+            pos_key = p["sym"] + p["pattern"] + str(ts)
+            open_positions[pos_key] = {
+                "sym":         p["sym"],
+                "side":        side,
+                "pattern":     p["pattern"],
+                "entry_ts":    ts,
+                "entry_price": entry_price,
+                "sl":          sl,
+                "tp":          tp,
+                "margin":      p["margin"],
+                "leverage":    p["leverage"],
+                "score":       p["score"],
+                "adx_entry":   p["adx_entry"],
+                "asset_trend": p["asset_trend"],
+                "btc_macro":   p["btc_macro"],
+            }
 
         daily_loss = (day_start_equity - equity) / (day_start_equity + 1e-10)
         skip_entries = daily_loss > DAILY_LOSS_LIMIT
@@ -706,9 +750,15 @@ def run_engine(sym_data_list, timestamps, btc_macro_dict, btc_rsi_dict,
                 exit_reason = "time_stop"
 
             if exit_price is not None:
+                # Adverse exit slippage (price moves against you when closing)
+                if side == "long":
+                    exit_price = exit_price * (1 - EXIT_SLIPPAGE)
+                else:
+                    exit_price = exit_price * (1 + EXIT_SLIPPAGE)
                 side_mult = 1 if side == "long" else -1
                 raw_pnl   = (exit_price - entry) / (entry + 1e-10) * side_mult * pos["leverage"] * pos["margin"]
-                commission_cost = pos["margin"] * COMMISSION * 2
+                notional  = pos["margin"] * pos["leverage"]
+                commission_cost = notional * COMMISSION * 2   # 0.1% entry + 0.1% exit on full notional
                 net_pnl   = raw_pnl - commission_cost
                 pnl_pct   = net_pnl / (pos["margin"] + 1e-10)
 
@@ -748,7 +798,7 @@ def run_engine(sym_data_list, timestamps, btc_macro_dict, btc_rsi_dict,
         # ------------------------------------------------------------------ #
         # 2. NEW ENTRIES                                                       #
         # ------------------------------------------------------------------ #
-        if skip_entries or len(open_positions) >= max_pos:
+        if skip_entries or len(open_positions) + len(pending_entries) >= max_pos:
             continue
 
         btc_macro = btc_macro_dict.get(ts_day, "neutral")
@@ -774,7 +824,7 @@ def run_engine(sym_data_list, timestamps, btc_macro_dict, btc_rsi_dict,
                     btc_4h_bull = b4h_20 > b4h_50
 
         for sd in sym_data_list:
-            if len(open_positions) >= max_pos:
+            if len(open_positions) + len(pending_entries) >= max_pos:
                 break
 
             sym = sd["name"]
@@ -845,43 +895,32 @@ def run_engine(sym_data_list, timestamps, btc_macro_dict, btc_rsi_dict,
                     if action == "SELL" and btc_macro == "bull" and be50 > be200 * BTC_EUPHORIA_THRESH:
                         continue
 
-                # Build position
+                # BTC 4H trend filter — avoid counter-trend unless very high conviction
+                if btc_4h_bull is not None and score < 82:
+                    if action == "BUY"  and not btc_4h_bull:
+                        continue
+                    if action == "SELL" and btc_4h_bull:
+                        continue
+
+                # Signal confirmed — queue for execution at next bar open (1-bar delay)
                 side = "long" if action == "BUY" else "short"
-                if side == "long":
-                    entry_price = close * (1 + SLIPPAGE)
-                else:
-                    entry_price = close * (1 - SLIPPAGE)
-
-                sl_pct  = PATTERN[pattern]["sl"]
-                tp_pct  = PATTERN[pattern]["tp"]
-
-                if side == "long":
-                    sl = entry_price * (1 - sl_pct)
-                    tp = entry_price * (1 + tp_pct)
-                else:
-                    sl = entry_price * (1 + sl_pct)
-                    tp = entry_price * (1 - tp_pct)
-
                 leverage    = _get_leverage(score, pattern)
                 risk_mult   = PATTERN[pattern]["risk_mult"]
                 margin      = equity * risk_pct * risk_mult
 
-                pos_key = sym + pattern + str(ts)
-                open_positions[pos_key] = {
-                    "sym":         sym,
-                    "side":        side,
-                    "pattern":     pattern,
-                    "entry_ts":    ts,
-                    "entry_price": entry_price,
-                    "sl":          sl,
-                    "tp":          tp,
-                    "margin":      margin,
-                    "leverage":    leverage,
-                    "score":       score,
-                    "adx_entry":   adx_val,
-                    "asset_trend": asset_trend,
-                    "btc_macro":   btc_macro,
-                }
+                pk = sym + pattern
+                if pk not in pending_entries:
+                    pending_entries[pk] = {
+                        "sym":         sym,
+                        "side":        side,
+                        "pattern":     pattern,
+                        "margin":      margin,
+                        "leverage":    leverage,
+                        "score":       score,
+                        "adx_entry":   adx_val,
+                        "asset_trend": asset_trend,
+                        "btc_macro":   btc_macro,
+                    }
 
                 # Update cooldown and last-B-bar
                 cooldown_tracker[ck] = ts
