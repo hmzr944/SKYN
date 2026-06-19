@@ -45,16 +45,16 @@ DAILY_LOSS_LIMIT   = 0.10
 
 PATTERN = {
     "A": {"sl": 0.020, "tp": 0.080, "cooldown_h": 16, "score_min": 70, "lev_max": 4, "risk_mult": 1.0},
-    "C": {"sl": 0.015, "tp": 0.090, "cooldown_h": 10, "score_min": 65, "lev_max": 5, "risk_mult": 1.2},
+    "C": {"sl": 0.010, "tp": 0.090, "cooldown_h":  8, "score_min": 65, "lev_max": 6, "risk_mult": 1.2},
 }
 
 BTC_CRASH_THRESH    = 0.88
 BTC_EUPHORIA_THRESH = 1.15
 
 CONFIGS = [
-    {"name": "Actif",    "score_min": 63, "risk_pct": 0.045, "max_pos": 5},
-    {"name": "Equilibre","score_min": 65, "risk_pct": 0.040, "max_pos": 4},
-    {"name": "Premium",  "score_min": 68, "risk_pct": 0.050, "max_pos": 3},
+    {"name": "Actif",    "score_min": 63, "risk_pct": 0.055, "max_pos": 5},
+    {"name": "Equilibre","score_min": 65, "risk_pct": 0.055, "max_pos": 4},
+    {"name": "Premium",  "score_min": 68, "risk_pct": 0.065, "max_pos": 3},
 ]
 
 
@@ -613,6 +613,8 @@ def _check_pattern_c(sd: dict, bar: int, sq_bars: int = 5) -> Optional[str]:
 
 def _get_leverage(score: int, pattern: str) -> int:
     if pattern == "C":
+        if score >= 85:  return 12
+        if score >= 78:  return 10
         return 8
     if pattern == "B":
         return 7 if score >= 80 else 6
@@ -640,7 +642,8 @@ def run_engine(sym_data_list, timestamps, btc_macro_dict, btc_rsi_dict,
     current_day       = ""
     day_start_equity  = INITIAL_CAPITAL
     cooldown_tracker  = {}   # key: sym+pattern → last fire ts
-    last_b_bar        = {}   # key: sym → last bar index where pattern B fired
+    last_b_bar        = {}
+    equity_peak       = INITIAL_CAPITAL
 
     # Build fast lookup: sym → sym_data
     sym_lookup = {sd["name"]: sd for sd in sym_data_list}
@@ -743,9 +746,9 @@ def run_engine(sym_data_list, timestamps, btc_macro_dict, btc_rsi_dict,
                     exit_price  = sl
                     exit_reason = "stop_loss"
 
-            # Time stop: 36 hours max
+            # Time stop: 60 hours max (give trades room to reach TP)
             elapsed = (ts - pos["entry_ts"]).total_seconds()
-            if exit_price is None and elapsed > 36 * 3600:
+            if exit_price is None and elapsed > 60 * 3600:
                 exit_price  = cl
                 exit_reason = "time_stop"
 
@@ -790,14 +793,22 @@ def run_engine(sym_data_list, timestamps, btc_macro_dict, btc_rsi_dict,
                     asset_trend = pos["asset_trend"],
                     btc_macro   = pos["btc_macro"],
                 ))
+                # Update equity peak
+                if equity > equity_peak:
+                    equity_peak = equity
+
                 pos_keys_to_remove.append(pos_key)
 
         for k in pos_keys_to_remove:
             del open_positions[k]
 
+        if equity > equity_peak:
+            equity_peak = equity
+
         # ------------------------------------------------------------------ #
         # 2. NEW ENTRIES                                                       #
         # ------------------------------------------------------------------ #
+        drawdown_from_peak = (equity_peak - equity) / (equity_peak + 1e-10)
         if skip_entries or len(open_positions) + len(pending_entries) >= max_pos:
             continue
 
@@ -895,18 +906,34 @@ def run_engine(sym_data_list, timestamps, btc_macro_dict, btc_rsi_dict,
                     if action == "SELL" and btc_macro == "bull" and be50 > be200 * BTC_EUPHORIA_THRESH:
                         continue
 
-                # BTC 4H trend filter — avoid counter-trend unless very high conviction
-                if btc_4h_bull is not None and score < 82:
+                # BTC 4H trend filter — no counter-trend trades (absolute rule)
+                if btc_4h_bull is not None:
                     if action == "BUY"  and not btc_4h_bull:
                         continue
                     if action == "SELL" and btc_4h_bull:
+                        continue
+
+                # Asset 4H trend alignment — signal must match the asset's own 4H trend
+                if pattern == "C":
+                    a4h_20 = sd["ema20_4h"][bar]
+                    a4h_50 = sd["ema50_4h"][bar]
+                    if not (math.isnan(a4h_20) or math.isnan(a4h_50)):
+                        asset_4h_bull = a4h_20 > a4h_50
+                        if action == "BUY"  and not asset_4h_bull:
+                            continue
+                        if action == "SELL" and asset_4h_bull:
+                            continue
+                    # ADX must confirm a real trend for breakout patterns
+                    if adx_val < 20:
                         continue
 
                 # Signal confirmed — queue for execution at next bar open (1-bar delay)
                 side = "long" if action == "BUY" else "short"
                 leverage    = _get_leverage(score, pattern)
                 risk_mult   = PATTERN[pattern]["risk_mult"]
-                margin      = equity * risk_pct * risk_mult
+                # Reduce position size during drawdown (max 40% reduction)
+                dd_scale    = max(0.6, 1.0 - drawdown_from_peak * 2)
+                margin      = equity * risk_pct * risk_mult * dd_scale
 
                 pk = sym + pattern
                 if pk not in pending_entries:
