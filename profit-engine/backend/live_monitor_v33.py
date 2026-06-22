@@ -31,6 +31,11 @@ from rich.table import Table
 from rich.panel import Panel
 from rich import box
 
+try:
+    import telegram_notif as _tg
+except ImportError:
+    _tg = None
+
 console = Console()
 
 # ── Répertoire de travail ────────────────────────────────────────────────────
@@ -350,6 +355,14 @@ def engine_step(state: dict, sym_data: dict, current_bar_ts: pd.Timestamp):
     # Day tracking
     today = str(current_bar_ts)[:10]
     if today != state["current_day"]:
+        if state["current_day"] and _tg:
+            _tg.notify_daily_summary(
+                equity,
+                equity - state["day_start_equity"],
+                state["total_trades"],
+                state["total_wins"],
+                len(open_positions),
+            )
         state["current_day"]      = today
         state["day_start_equity"] = equity
     day_start_equity = state["day_start_equity"]
@@ -397,6 +410,9 @@ def engine_step(state: dict, sym_data: dict, current_bar_ts: pd.Timestamp):
         }
         log.info(f"OPEN  {p['sym']:12s} {side:5s} | px={entry_price:.5g} "
                  f"sl={sl:.5g} tp={tp:.5g} | marge={p['margin']:.0f}€ ×{p['leverage']}")
+        if _tg:
+            _tg.notify_open(p["sym"], side, entry_price, sl, tp,
+                            p["margin"], p["leverage"])
 
     # ── 2. Vérifier les exits ─────────────────────────────────────────────────
     to_remove = []
@@ -464,6 +480,8 @@ def engine_step(state: dict, sym_data: dict, current_bar_ts: pd.Timestamp):
             emoji = "✓" if net_pnl > 0 else "✗"
             log.info(f"CLOSE {pos['sym']:12s} {side:5s} | {exit_reason:11s} | "
                      f"pnl={net_pnl:+.2f}€ {emoji} | equity={equity:.2f}€")
+            if _tg:
+                _tg.notify_close(pos["sym"], side, exit_reason, net_pnl, equity)
 
     for k in to_remove:
         del open_positions[k]
@@ -557,6 +575,9 @@ def engine_step(state: dict, sym_data: dict, current_bar_ts: pd.Timestamp):
         log.info(f"SIGNAL {c['sym']:12s} {side:5s} | score={c['score']} "
                  f"adx={c['adx']:.1f} lev=×{c['leverage']} | "
                  f"entry prévu à la prochaine bougie")
+        if _tg:
+            _tg.notify_signal(c["sym"], side, c["score"], c["adx"],
+                              c["leverage"], margin_per_trade)
 
     state["open_positions"]   = open_positions
     state["pending_entries"]  = pending_entries
@@ -672,6 +693,8 @@ def run_loop():
     """Boucle infinie : exécute à HH:03 chaque heure."""
     console.print("[bold cyan]PRISM v33 Live Monitor démarré — Ctrl+C pour quitter[/bold cyan]")
     log.info("Live monitor démarré")
+    if _tg:
+        _tg.notify_bot_start(load_state()["equity"])
     while True:
         wait = _seconds_to_next_hour(offset_min=3)
         nxt  = datetime.now() + timedelta(seconds=wait)
@@ -688,6 +711,8 @@ def run_loop():
         except Exception as e:
             log.exception(f"Erreur run_once: {e}")
             console.print(f"[red]Erreur : {e}[/red]")
+            if _tg:
+                _tg.notify_error(str(e))
 
 def show_status():
     state = load_state()
