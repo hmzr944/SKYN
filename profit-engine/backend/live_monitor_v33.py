@@ -39,7 +39,7 @@ except ImportError:
 console = Console()
 
 # ── Répertoire de travail ────────────────────────────────────────────────────
-BASE_DIR   = Path(__file__).parent
+BASE_DIR   = Path(os.environ.get("PRISM_DATA_DIR", str(Path(__file__).parent)))
 LOG_DIR    = BASE_DIR / "live_logs"
 STATE_FILE = BASE_DIR / "live_state_v33.json"
 LOG_DIR.mkdir(exist_ok=True)

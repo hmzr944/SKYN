@@ -7,6 +7,7 @@ Ouvrir  http://localhost:5001  dans le navigateur
 import argparse
 import csv
 import json
+import os
 from pathlib import Path
 from datetime import datetime
 
@@ -17,10 +18,10 @@ except ImportError:
     print("pip install flask flask-cors")
     raise
 
-BASE_DIR        = Path(__file__).parent
+BASE_DIR        = Path(os.environ.get("PRISM_DATA_DIR", str(Path(__file__).parent)))
 STATE_FILE      = BASE_DIR / "live_state_v33.json"
 LOG_DIR         = BASE_DIR / "live_logs"
-HTML_FILE       = BASE_DIR / "dashboard.html"
+HTML_FILE       = Path(__file__).parent / "dashboard.html"
 INITIAL_CAPITAL = 2500.0
 BOT_ONLINE_S    = 90 * 60   # considère le bot "en ligne" si dernier run < 90 min
 

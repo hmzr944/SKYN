@@ -14,10 +14,11 @@ Test : python3 telegram_notif.py
 
 import json
 import logging
+import os
 import requests
 from pathlib import Path
 
-CONFIG_FILE = Path(__file__).parent / "telegram_config.json"
+CONFIG_FILE = Path(os.environ.get("PRISM_DATA_DIR", str(Path(__file__).parent))) / "telegram_config.json"
 INITIAL_CAPITAL = 2500.0
 log = logging.getLogger("prism_live")
 
