@@ -1,13 +1,11 @@
 """Step 3 — Imperfection detection.
 
-For now we use a classical blob detector tuned to find dark spots inside the
-skin mask. This is the contract a future YOLOv8 / MobileNetV3 dermatology model
-will replace: same input (Preprocessed), same output (List[Detection]).
+Primary path: YOLOv8 acne detector (skyn_engine/models/acne_yolo/acne.pt, see
+ml_models.py). Falls back to the classical DoG blob detector when the model or
+its dependencies are unavailable, keeping the exact same output contract.
 
-To swap in a real model later:
-1. Drop the weights (.tflite / .onnx) inside skyn_engine/models/
-2. Replace `detect()` below with the inference call returning the same dataclass
-3. Add the dependency to requirements.txt (e.g. onnxruntime, tflite-runtime)
+To improve the model, fine-tune with backend/training/ and drop the new
+weights at the same path — no code change needed.
 """
 from __future__ import annotations
 
@@ -86,9 +84,24 @@ def _detect_dark_blobs(gray: np.ndarray, mask: np.ndarray, bbox, max_n: int = 6)
 
 
 def detect(pre: Preprocessed, max_n: int = 5) -> List[Detection]:
-    """Public API. Drop-in replaceable by a real ML model later."""
+    """Public API. YOLOv8 model first, classical CV fallback.
+
+    When the trained model runs successfully its verdict is final — zero
+    detection means clear skin, NOT a reason to fall back to the (noisier)
+    classical detector. CV only covers model-unavailable/error cases.
+    """
     if not pre.detected:
         return []
+
+    from .ml_models import get_acne_detector
+    detector = get_acne_detector()
+    if detector is not None:
+        try:
+            ml_dets = detector.detect(pre.rgb, pre.face_bbox, max_n=max_n)
+            return [Detection(**d) for d in ml_dets]
+        except Exception:
+            pass  # fall back to classical CV below
+
     gray = cv2.cvtColor(pre.rgb, cv2.COLOR_RGB2GRAY)
     return _detect_dark_blobs(gray, pre.skin_mask, pre.face_bbox, max_n=max_n)
 

@@ -129,6 +129,9 @@ export default function AnalysisScreen() {
         recommendations: recs,
         diagnosis: a?.diagnosis || "",
         detections: a?.detections || [],
+        products: a?.products || [],
+        skin_type_detected: a?.skin_type_detected || null,
+        acne_severity_label: a?.acne_severity_label || null,
       };
 
       await storage.setItem("skyn_last_low_light", a?.low_light ? "1" : "");

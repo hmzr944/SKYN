@@ -18,9 +18,15 @@ from jose import jwt as jose_jwt
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
-mongo_url = os.environ['MONGO_URL']
-client = AsyncIOMotorClient(mongo_url)
-db = client[os.environ['DB_NAME']]
+# MONGO_URL absent ou "demo" → base en mémoire (mongomock) : idéal pour une
+# démo cloud sans compte MongoDB. Les données sont perdues au redémarrage.
+mongo_url = os.environ.get('MONGO_URL', 'demo')
+if mongo_url == 'demo':
+    from mongomock_motor import AsyncMongoMockClient
+    client = AsyncMongoMockClient()
+else:
+    client = AsyncIOMotorClient(mongo_url)
+db = client[os.environ.get('DB_NAME', 'skyn')]
 
 EMERGENT_LLM_KEY = os.environ.get("EMERGENT_LLM_KEY", "")
 CORS_ORIGINS = [o.strip() for o in os.environ.get("CORS_ORIGINS", "").split(",") if o.strip()]
@@ -70,6 +76,19 @@ class Detection(BaseModel):
     radius: float
 
 
+class ProductReco(BaseModel):
+    id: str
+    name: str
+    brand: str
+    step: str
+    step_label: str
+    why: str
+    key_ingredients: List[str] = Field(default_factory=list)
+    price_eur: float
+    image_url: str
+    url: str
+
+
 class Report(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     user_id: str
@@ -80,6 +99,9 @@ class Report(BaseModel):
     recommendations: List[str]
     diagnosis: Optional[str] = None
     detections: List[Detection] = Field(default_factory=list)
+    products: List[ProductReco] = Field(default_factory=list)
+    skin_type_detected: Optional[str] = None
+    acne_severity_label: Optional[str] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
@@ -91,6 +113,9 @@ class ReportCreate(BaseModel):
     recommendations: List[str]
     diagnosis: Optional[str] = None
     detections: List[Detection] = Field(default_factory=list)
+    products: List[ProductReco] = Field(default_factory=list)
+    skin_type_detected: Optional[str] = None
+    acne_severity_label: Optional[str] = None
 
 
 # ~6MB of base64 (~4.5MB decoded) — generous for a compressed phone photo
@@ -112,6 +137,11 @@ class AnalyzeResponse(BaseModel):
     diagnosis: str
     recommendations: List[str]
     detections: List[Detection]
+    products: List[ProductReco] = Field(default_factory=list)
+    skin_type_detected: Optional[str] = None
+    skin_type_confidence: float = 0.0
+    acne_severity_level: Optional[int] = None
+    acne_severity_label: Optional[str] = None
     source: str
 
 
@@ -292,11 +322,18 @@ async def skyn_engine_analyze(payload: AnalyzeRequest, authorization: Optional[s
 
     profile_doc = await db.profiles.find_one({"user_id": user.user_id}, {"_id": 0}) or {}
 
-    from skyn_engine import analyze_skin
+    from skyn_engine import analyze_skin, recommend_products
     try:
         out = analyze_skin(payload.image_base64, profile_doc)
     except Exception as e:
         logger.warning(f"SKYN Engine failure, returning safe defaults: {e}")
+        try:
+            fallback_products = recommend_products(
+                {"texture": 72, "radiance": 68, "imperfections": 70, "redness": 0.0},
+                profile_doc,
+            )
+        except Exception:
+            fallback_products = []
         return AnalyzeResponse(
             detected=False, low_light=False, luminance=0.0,
             global_score=70, texture=72, radiance=68, imperfections=70,
@@ -307,6 +344,7 @@ async def skyn_engine_analyze(payload: AnalyzeRequest, authorization: Optional[s
                 "Affinez progressivement le grain de peau avec une exfoliation douce hebdomadaire.",
             ],
             detections=[],
+            products=[ProductReco(**p) for p in fallback_products],
             source="skyn_engine_v1_fallback",
         )
 
@@ -321,6 +359,11 @@ async def skyn_engine_analyze(payload: AnalyzeRequest, authorization: Optional[s
         diagnosis=out.diagnosis,
         recommendations=out.recommendations,
         detections=[Detection(**d) for d in out.detections],
+        products=[ProductReco(**p) for p in out.products],
+        skin_type_detected=out.skin_type_detected,
+        skin_type_confidence=out.skin_type_confidence,
+        acne_severity_level=out.acne_severity_level,
+        acne_severity_label=out.acne_severity_label,
         source=out.source,
     )
 
@@ -416,6 +459,28 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# ---- Optional: serve the Expo web build (single-host deployment) ----
+# Build with `npx expo export --platform web` then point SKYN_WEB_DIR at the
+# dist folder (defaults to ./webapp). API routes stay under /api.
+WEB_DIR = Path(os.environ.get("SKYN_WEB_DIR", ROOT_DIR / "webapp"))
+if WEB_DIR.is_dir():
+    from fastapi.staticfiles import StaticFiles
+    from starlette.exceptions import HTTPException as StarletteHTTPException
+
+    class SPAStaticFiles(StaticFiles):
+        """Static files with SPA fallback: unknown paths serve index.html so
+        expo-router deep links (e.g. /report) work on hard refresh."""
+        async def get_response(self, path: str, scope):
+            try:
+                return await super().get_response(path, scope)
+            except StarletteHTTPException as e:
+                if e.status_code == 404:
+                    return await super().get_response("index.html", scope)
+                raise
+
+    app.mount("/", SPAStaticFiles(directory=str(WEB_DIR), html=True), name="webapp")
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)

@@ -1,0 +1,11 @@
+# SKYN Engine v2 — dépendances des modèles entraînés.
+# Installées en plus de requirements.local.txt :
+#   pip install -r requirements.ml.txt
+# Torch CPU uniquement (pas de CUDA) pour garder l'image raisonnable.
+# Versions validées de bout en bout le 2026-07-09 (test tests/fixtures_face.jpg).
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.13.0
+torchvision==0.28.0
+ultralytics==8.4.90
+transformers==5.13.0
+safetensors==0.8.0

@@ -354,16 +354,55 @@ class TestAnalyze:
         assert len(recs) == 3
         for r_ in recs:
             assert isinstance(r_, str) and len(r_.strip()) > 20
-        # detections — normalized x/y in [0,1], radius float, confidence in [0,1]
+        # detections — normalized x/y in [0,1], radius float, confidence in [0,1].
+        # With the trained model (v2), zero detection is valid: it means the
+        # model confirmed clear skin. The classical v1 detector always finds
+        # some blobs on a real face.
         dets = data["detections"]
         assert isinstance(dets, list)
-        assert len(dets) >= 1, "expected at least 1 detection on a real face"
+        if data.get("source") == "skyn_engine_v1":
+            assert len(dets) >= 1, "expected at least 1 detection on a real face (v1)"
         for d in dets:
             assert isinstance(d["type"], str) and len(d["type"]) > 0
             assert 0.0 <= d["x"] <= 1.0, f"x out of range: {d['x']}"
             assert 0.0 <= d["y"] <= 1.0, f"y out of range: {d['y']}"
             assert 0.0 <= d["confidence"] <= 1.0
             assert isinstance(d["radius"], (int, float)) and d["radius"] > 0
+
+    def test_analyze_returns_ml_fields(self, session, auth):
+        """SKYN Engine v2: the response always carries the ML fields (may be
+        null when models are unavailable or no face is present)."""
+        r = session.post(f"{API}/analyze", headers=auth["headers"],
+                         json={"image_base64": TINY_JPEG_B64}, timeout=30)
+        assert r.status_code == 200
+        data = r.json()
+        for key in ("skin_type_detected", "skin_type_confidence",
+                    "acne_severity_level", "acne_severity_label"):
+            assert key in data, f"missing ML field {key}"
+        if data["skin_type_detected"] is not None:
+            assert data["skin_type_detected"] in ("Sèche", "Normale", "Grasse")
+        if data["acne_severity_level"] is not None:
+            assert -1 <= data["acne_severity_level"] <= 3
+
+    def test_analyze_returns_product_routine(self, session, auth):
+        """Every analysis must return a personalised product routine with
+        image + link for each product."""
+        r = session.post(f"{API}/analyze", headers=auth["headers"],
+                         json={"image_base64": TINY_JPEG_B64}, timeout=30)
+        assert r.status_code == 200
+        data = r.json()
+        products = data.get("products")
+        assert isinstance(products, list) and 4 <= len(products) <= 5, \
+            f"expected 4-5 products, got {products}"
+        steps = [p["step"] for p in products]
+        assert steps[0] == "nettoyant" and steps[-1] == "protection"
+        for p in products:
+            for key in ("id", "name", "brand", "step", "step_label", "why",
+                        "key_ingredients", "price_eur", "image_url", "url"):
+                assert key in p, f"missing key {key} in product {p}"
+            assert p["image_url"].startswith("https://")
+            assert p["url"].startswith("https://")
+            assert len(p["why"]) > 20
 
     def test_analyze_invalid_base64(self, session, auth):
         """Garbage base64 should not 500 — engine catches and returns fallback."""
@@ -406,6 +445,30 @@ class TestReportNewFields:
         assert gj["diagnosis"] == "Manque d'uniformité du teint"
         assert len(gj["detections"]) == 2
         assert gj["detections"][1]["confidence"] == 0.66
+
+    def test_report_persists_products(self, session, auth):
+        """Products attached to a report are persisted and returned."""
+        product = {
+            "id": "to-niacinamide", "name": "Niacinamide 10% + Zinc 1%",
+            "brand": "The Ordinary", "step": "serum", "step_label": "Sérum",
+            "why": "TEST — régule le sébum et resserre les pores.",
+            "key_ingredients": ["Niacinamide 10%"], "price_eur": 6.5,
+            "image_url": "https://example.com/img.webp",
+            "url": "https://example.com/product",
+        }
+        payload = {
+            "global_score": 70, "texture": 68, "radiance": 72, "imperfections": 65,
+            "recommendations": ["TEST a", "TEST b", "TEST c"],
+            "products": [product],
+        }
+        r = session.post(f"{API}/reports", headers=auth["headers"], json=payload, timeout=10)
+        assert r.status_code == 200, f"create with products failed: {r.status_code} {r.text}"
+        rid = r.json()["id"]
+        g = session.get(f"{API}/reports/{rid}", headers=auth["headers"], timeout=10)
+        assert g.status_code == 200
+        got = g.json()["products"]
+        assert len(got) == 1 and got[0]["id"] == "to-niacinamide"
+        assert got[0]["image_url"] == "https://example.com/img.webp"
 
     def test_report_without_new_fields_still_works(self, session, auth):
         """Backward compat: diagnosis/detections are optional."""

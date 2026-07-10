@@ -7,6 +7,8 @@ import {
   ScrollView,
   Dimensions,
   ActivityIndicator,
+  Image,
+  Linking,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -23,7 +25,7 @@ import Animated, {
 import * as Haptics from "expo-haptics";
 
 import { colors, fonts, spacing, radius, shadow } from "@/src/theme";
-import { api } from "@/src/services/api";
+import { api, ProductReco } from "@/src/services/api";
 import { storage } from "@/src/utils/storage";
 import { FadeIn } from "@/src/components/ui/FadeIn";
 import { AnimatedPressable } from "@/src/components/ui/AnimatedPressable";
@@ -120,6 +122,54 @@ function MetricCell({
       <Text style={styles.metricLabel}>{label}</Text>
       <Text style={styles.metricValue}>{value}</Text>
     </Animated.View>
+  );
+}
+
+function ProductCard({ product, index }: { product: ProductReco; index: number }) {
+  const [imgFailed, setImgFailed] = useState(false);
+
+  const openLink = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    Linking.openURL(product.url).catch(() => {});
+  };
+
+  return (
+    <FadeIn delay={index * 80} distance={10}>
+      <AnimatedPressable
+        style={styles.productCard}
+        onPress={openLink}
+        scaleTo={0.98}
+        testID={`product-card-${index}`}
+      >
+        <View style={styles.productImageWrap}>
+          {imgFailed ? (
+            <Text style={styles.productImageFallback}>
+              {product.brand.charAt(0)}
+            </Text>
+          ) : (
+            <Image
+              source={{ uri: product.image_url }}
+              style={styles.productImage}
+              resizeMode="contain"
+              onError={() => setImgFailed(true)}
+            />
+          )}
+        </View>
+        <View style={styles.productBody}>
+          <Text style={styles.productStep}>{product.step_label}</Text>
+          <Text style={styles.productName} numberOfLines={2}>
+            {product.brand} — {product.name}
+          </Text>
+          <Text style={styles.productWhy} numberOfLines={3}>
+            {product.why}
+          </Text>
+          <View style={styles.productFooter}>
+            <Text style={styles.productPrice}>≈ {product.price_eur.toFixed(0)} €</Text>
+            <Text style={styles.productLink}>Voir le produit →</Text>
+          </View>
+        </View>
+      </AnimatedPressable>
+    </FadeIn>
   );
 }
 
@@ -235,6 +285,25 @@ export default function ReportScreen() {
           </FadeIn>
         ) : null}
 
+        {report.skin_type_detected || report.acne_severity_label ? (
+          <FadeIn delay={90} distance={6}>
+            <View style={styles.aiChipsRow}>
+              {report.skin_type_detected ? (
+                <View style={styles.aiChip} testID="report-skin-type">
+                  <Text style={styles.aiChipText}>
+                    Peau {report.skin_type_detected.toLowerCase()} détectée
+                  </Text>
+                </View>
+              ) : null}
+              {report.acne_severity_label ? (
+                <View style={styles.aiChip} testID="report-acne-severity">
+                  <Text style={styles.aiChipText}>{report.acne_severity_label}</Text>
+                </View>
+              ) : null}
+            </View>
+          </FadeIn>
+        ) : null}
+
         <FadeIn delay={100} distance={20}>
           <View style={styles.ringWrap}>
             <ScoreRing value={report.global_score} />
@@ -266,6 +335,19 @@ export default function ReportScreen() {
             </View>
           </View>
         </View>
+
+        {/* Personalised product routine */}
+        {report.products?.length ? (
+          <View style={styles.productsSection}>
+            <FadeIn delay={200} distance={8}>
+              <Text style={styles.productsEyebrow}>VOTRE ROUTINE</Text>
+              <Text style={styles.productsTitle}>Produits recommandés</Text>
+            </FadeIn>
+            {report.products.map((p: ProductReco, i: number) => (
+              <ProductCard key={p.id} product={p} index={i} />
+            ))}
+          </View>
+        ) : null}
 
         {/* Recommendations trigger */}
         <AnimatedPressable
@@ -460,6 +542,111 @@ const styles = StyleSheet.create({
     color: colors.accent,
     fontSize: 48,
     letterSpacing: -1,
+  },
+  aiChipsRow: {
+    flexDirection: "row",
+    justifyContent: "center",
+    gap: spacing.s,
+    marginTop: spacing.m,
+    flexWrap: "wrap",
+  },
+  aiChip: {
+    borderWidth: 1,
+    borderColor: colors.borderMid,
+    backgroundColor: colors.accentSofter,
+    borderRadius: radius.pill,
+    paddingVertical: 6,
+    paddingHorizontal: 14,
+  },
+  aiChipText: {
+    fontFamily: fonts.bodyMedium,
+    color: colors.fg,
+    fontSize: 11,
+    letterSpacing: 1,
+    textTransform: "uppercase",
+  },
+  productsSection: { marginTop: spacing.xl },
+  productsEyebrow: {
+    fontFamily: fonts.bodyMedium,
+    color: colors.fgDim,
+    fontSize: 9,
+    letterSpacing: 3,
+    textTransform: "uppercase",
+  },
+  productsTitle: {
+    fontFamily: fonts.heading,
+    color: colors.fg,
+    fontSize: 22,
+    letterSpacing: -0.5,
+    marginTop: 4,
+    marginBottom: spacing.m,
+  },
+  productCard: {
+    flexDirection: "row",
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.borderSubtle,
+    borderRadius: radius.md,
+    padding: spacing.m,
+    marginBottom: spacing.s,
+    gap: spacing.m,
+    ...shadow.card,
+  },
+  productImageWrap: {
+    width: 72,
+    height: 72,
+    borderRadius: radius.sm,
+    backgroundColor: "#FFFFFF",
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
+  },
+  productImage: { width: 64, height: 64 },
+  productImageFallback: {
+    fontFamily: fonts.heading,
+    color: colors.accent,
+    fontSize: 28,
+    opacity: 0.4,
+  },
+  productBody: { flex: 1 },
+  productStep: {
+    fontFamily: fonts.bodyMedium,
+    color: colors.accent,
+    fontSize: 9,
+    letterSpacing: 2,
+    textTransform: "uppercase",
+  },
+  productName: {
+    fontFamily: fonts.headingMedium,
+    color: colors.fg,
+    fontSize: 14,
+    marginTop: 2,
+    lineHeight: 19,
+  },
+  productWhy: {
+    fontFamily: fonts.body,
+    color: colors.fgMuted,
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: 4,
+  },
+  productFooter: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginTop: spacing.s,
+  },
+  productPrice: {
+    fontFamily: fonts.bodyMedium,
+    color: colors.fgDim,
+    fontSize: 12,
+  },
+  productLink: {
+    fontFamily: fonts.bodyMedium,
+    color: colors.accent,
+    fontSize: 11,
+    letterSpacing: 1,
+    textTransform: "uppercase",
   },
   recoTrigger: {
     flexDirection: "row",

@@ -1,0 +1,16 @@
+# Dataset YOLO pour le fine-tuning du détecteur d'acné SKYN.
+# Copiez ce fichier en data.yaml et adaptez les chemins.
+#
+# Structure attendue :
+#   datasets/skyn_acne/
+#     images/train/*.jpg     labels/train/*.txt
+#     images/val/*.jpg       labels/val/*.txt
+#
+# Chaque .txt : une ligne par lésion → "class cx cy w h" (normalisé 0..1)
+
+path: ../datasets/skyn_acne
+train: images/train
+val: images/val
+
+names:
+  0: acne

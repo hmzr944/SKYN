@@ -32,11 +32,13 @@ markdown-it-py==4.2.0
 MarkupSafe==3.0.3
 mdurl==0.1.2
 mediapipe==0.10.14
+mongomock==4.3.0
+mongomock-motor==0.0.36
 motor==3.3.1
 multidict==6.7.1
-numpy==2.4.6
+numpy==1.26.4
 openai==1.99.9
-opencv-contrib-python==4.13.0.92
+opencv-contrib-python==4.11.0.86
 packaging==26.2
 pillow==12.2.0
 pluggy==1.6.0

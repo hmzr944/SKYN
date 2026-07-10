@@ -12,7 +12,16 @@ WORKDIR /app
 COPY requirements.local.txt ./requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
+# SKYN Engine v2 — trained models (torch CPU + ultralytics + transformers).
+# Build with --build-arg SKYN_ML=0 to skip and fall back to classical CV.
+ARG SKYN_ML=1
+COPY requirements.ml.txt ./requirements.ml.txt
+RUN if [ "$SKYN_ML" = "1" ]; then pip install --no-cache-dir -r requirements.ml.txt; fi
+
 COPY . .
+
+# Download model weights at build time so the image is self-contained.
+RUN if [ "$SKYN_ML" = "1" ]; then python scripts/download_models.py; fi
 
 EXPOSE 8000
 

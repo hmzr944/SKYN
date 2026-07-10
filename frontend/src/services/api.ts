@@ -1,7 +1,22 @@
 import { storage } from "@/src/utils/storage";
 import { supabase } from "@/src/services/supabase";
 
-const BASE = process.env.EXPO_PUBLIC_BACKEND_URL;
+export type ProductReco = {
+  id: string;
+  name: string;
+  brand: string;
+  step: string;
+  step_label: string;
+  why: string;
+  key_ingredients: string[];
+  price_eur: number;
+  image_url: string;
+  url: string;
+};
+
+// Empty string = same origin (single-host deployment where the backend also
+// serves the web build). Set EXPO_PUBLIC_BACKEND_URL for a separate backend.
+const BASE = process.env.EXPO_PUBLIC_BACKEND_URL || "";
 const PENDING_REPORTS_KEY = "skyn_pending_reports";
 
 async function authHeader(): Promise<Record<string, string>> {
@@ -65,6 +80,11 @@ export const api = {
       diagnosis: string;
       recommendations: string[];
       detections: { type: string; x: number; y: number; confidence: number; radius: number }[];
+      products: ProductReco[];
+      skin_type_detected: string | null;
+      skin_type_confidence: number;
+      acne_severity_level: number | null;
+      acne_severity_label: string | null;
       source: string;
     }>("/api/analyze", {
       method: "POST",
@@ -80,6 +100,7 @@ type PendingReport = {
   radiance: number;
   imperfections: number;
   recommendations: string[];
+  products?: ProductReco[];
   created_at: string;
 };
 
@@ -108,6 +129,7 @@ export async function syncPendingReports(): Promise<number> {
         radiance: r.radiance,
         imperfections: r.imperfections,
         recommendations: r.recommendations,
+        products: r.products || [],
       });
       synced += 1;
     } catch {

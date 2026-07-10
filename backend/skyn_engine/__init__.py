@@ -11,3 +11,4 @@ All coordinates returned are normalized to the face bounding box in [0, 1] so th
 frontend can render SVG overlays at any size without re-computing.
 """
 from .pipeline import analyze_skin, AnalysisOutput  # noqa: F401
+from .products import recommend_products, CATALOG  # noqa: F401

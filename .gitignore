@@ -71,6 +71,17 @@ __pycache__/
 venv/
 .venv/
 
+# ML model weights (downloaded via backend/scripts/download_models.py)
+backend/skyn_engine/models/
+runs/
+backend/runs/
+backend/datasets/
+backend/training/data.yaml
+backend/pip-ml.log
+*.safetensors
+*.pt
+*.onnx
+
 # Development tools
 chainlit.md
 .chainlit

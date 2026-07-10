@@ -1,0 +1,17 @@
+# Jamais dans l'image Docker
+.git
+.gitignore
+**/node_modules
+frontend/dist
+frontend/.expo
+backend/.venv
+backend/datasets
+backend/skyn_engine/models
+backend/__pycache__
+**/__pycache__
+runs/
+*.log
+*.md
+!README_SPACE.md
+.claude
+memory
