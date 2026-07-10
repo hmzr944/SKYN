@@ -6,7 +6,12 @@ frontend/dist
 frontend/.expo
 backend/.venv
 backend/datasets
-backend/skyn_engine/models
+# Les gros ViT (~700 Mo) sont retelecharges au build ; le YOLO fine-tune
+# local (52 Mo) est embarque s'il existe (download_models.py le saute alors)
+backend/skyn_engine/models/acne_severity
+backend/skyn_engine/models/skin_type
+*.bak
+*.part
 backend/__pycache__
 **/__pycache__
 runs/
