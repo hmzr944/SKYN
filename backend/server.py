@@ -209,10 +209,18 @@ async def verify_supabase_jwt(token: str) -> dict:
     return claims
 
 
+# Mode invité (démo sans compte) : activé par SKYN_ALLOW_GUEST=1.
+# Le frontend envoie "Bearer skyn-guest" ; aucune donnée réelle n'est exposée.
+ALLOW_GUEST = os.environ.get("SKYN_ALLOW_GUEST", "") == "1"
+GUEST_USER = User(user_id="guest", email="invite@skyn.demo", name="Invité")
+
+
 async def get_current_user(authorization: Optional[str] = Header(None)) -> User:
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Not authenticated")
     token = authorization.split(" ", 1)[1].strip()
+    if ALLOW_GUEST and token == "skyn-guest":
+        return GUEST_USER
     claims = await verify_supabase_jwt(token)
 
     user_id = claims.get("sub")

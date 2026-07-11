@@ -22,8 +22,11 @@ import Animated, {
   Easing,
 } from "react-native-reanimated";
 
+import { useRouter } from "expo-router";
+
 import { colors, fonts, spacing, radius, shadow } from "@/src/theme";
 import { storage } from "@/src/utils/storage";
+import { useAuth } from "@/src/contexts/AuthContext";
 import { FadeIn } from "@/src/components/ui/FadeIn";
 import { AnimatedPressable } from "@/src/components/ui/AnimatedPressable";
 import { GoogleLogo } from "@/src/components/icons/GoogleLogo";
@@ -74,6 +77,15 @@ export default function OnboardingScreen() {
   const scrollRef = useRef<ScrollView>(null);
   const [page, setPage] = useState(0);
   const { busy, error, handleGoogle } = useProviderAuth();
+  const { continueAsGuest } = useAuth();
+  const router = useRouter();
+
+  const handleGuest = async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    finishOnboarding();
+    await continueAsGuest();
+    router.replace("/profile-setup");
+  };
   const isNarrow = SCREEN_W < 380;
   const isShort = SCREEN_H < 700;
   const horizontalPadding = isNarrow ? spacing.m : spacing.xl;
@@ -281,6 +293,15 @@ export default function OnboardingScreen() {
                         </View>
                       </AnimatedPressable>
 
+                      <TouchableOpacity
+                        testID="onboarding-guest-button"
+                        onPress={handleGuest}
+                        style={styles.guestBtn}
+                        hitSlop={8}
+                      >
+                        <Text style={styles.guestText}>Tester sans compte →</Text>
+                      </TouchableOpacity>
+
                       <Text style={styles.gdpr} testID="onboarding-gdpr">
                         En continuant, vous créez votre dossier cutané chiffré. Vos photos
                         sont analysées puis immédiatement supprimées.
@@ -481,6 +502,14 @@ const styles = StyleSheet.create({
     color: colors.fg,
     fontSize: 14,
     letterSpacing: 0.3,
+  },
+  guestBtn: { alignSelf: "center", paddingVertical: 6 },
+  guestText: {
+    fontFamily: fonts.bodyMedium,
+    color: colors.fg,
+    fontSize: 13,
+    letterSpacing: 0.5,
+    textDecorationLine: "underline",
   },
   gdpr: {
     fontFamily: fonts.body,

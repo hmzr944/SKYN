@@ -29,7 +29,11 @@ image = (
     .apt_install("libgl1", "libglib2.0-0")
     .pip_install_from_requirements(str(HERE / "backend" / "requirements.local.txt"))
     .pip_install_from_requirements(str(HERE / "backend" / "requirements.ml.txt"))
-    .env({"SKYN_MODELS_DIR": "/models", "SKYN_WEB_DIR": "/app/webapp"})
+    .env({
+        "SKYN_MODELS_DIR": "/models",
+        "SKYN_WEB_DIR": "/app/webapp",
+        "SKYN_ALLOW_GUEST": "1",  # mode démo "Tester sans compte"
+    })
     .add_local_file(str(HERE / "backend" / "scripts" / "download_models.py"),
                     "/tmp/download_models.py", copy=True)
     .run_commands("python /tmp/download_models.py")

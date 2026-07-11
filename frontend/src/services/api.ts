@@ -19,7 +19,11 @@ export type ProductReco = {
 const BASE = process.env.EXPO_PUBLIC_BACKEND_URL || "";
 const PENDING_REPORTS_KEY = "skyn_pending_reports";
 
+export const GUEST_FLAG_KEY = "skyn_guest";
+
 async function authHeader(): Promise<Record<string, string>> {
+  const guest = (await storage.getItem(GUEST_FLAG_KEY, "")) as string;
+  if (guest === "1") return { Authorization: "Bearer skyn-guest" };
   const { data } = await supabase.auth.getSession();
   const token = data.session?.access_token;
   return token ? { Authorization: `Bearer ${token}` } : {};
