@@ -17,6 +17,7 @@ model dropped into models/acne_yolo/acne.pt is picked up without code change
 from __future__ import annotations
 
 import logging
+import os
 import threading
 from pathlib import Path
 from typing import List, Optional, Tuple
@@ -25,7 +26,8 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
-MODELS_DIR = Path(__file__).parent / "models"
+# SKYN_MODELS_DIR permet de stocker les poids hors du code (ex: /models en cloud)
+MODELS_DIR = Path(os.environ.get("SKYN_MODELS_DIR", Path(__file__).parent / "models"))
 ACNE_YOLO_WEIGHTS = MODELS_DIR / "acne_yolo" / "acne.pt"
 ACNE_SEVERITY_DIR = MODELS_DIR / "acne_severity"
 SKIN_TYPE_DIR = MODELS_DIR / "skin_type"

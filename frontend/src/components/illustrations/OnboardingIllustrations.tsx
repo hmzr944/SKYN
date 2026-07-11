@@ -4,9 +4,9 @@ import { colors } from "@/src/theme";
 
 const SIZE = 160;
 
-export function PromiseIllustration() {
+export function PromiseIllustration({ size = SIZE }: { size?: number } = {}) {
   return (
-    <Svg width={SIZE} height={SIZE} viewBox="0 0 160 160">
+    <Svg width={size} height={size} viewBox="0 0 160 160">
       <Circle cx={70} cy={64} r={52} fill={colors.accent} opacity={0.15} />
       <Circle cx={96} cy={100} r={42} fill={colors.lime} opacity={0.2} />
       <Circle
@@ -21,7 +21,7 @@ export function PromiseIllustration() {
   );
 }
 
-export function TechIllustration() {
+export function TechIllustration({ size = SIZE }: { size?: number } = {}) {
   const dots = [];
   for (let x = 12; x < SIZE; x += 16) {
     for (let y = 12; y < SIZE; y += 16) {
@@ -29,7 +29,7 @@ export function TechIllustration() {
     }
   }
   return (
-    <Svg width={SIZE} height={SIZE} viewBox="0 0 160 160">
+    <Svg width={size} height={size} viewBox="0 0 160 160">
       {dots}
       <Rect x={20} y={20} width={48} height={36} rx={10} fill={colors.lime} opacity={0.3} />
       <Rect x={92} y={20} width={48} height={36} rx={10} fill={colors.lime} opacity={0.3} />
@@ -41,9 +41,9 @@ export function TechIllustration() {
   );
 }
 
-export function PrivacyIllustration() {
+export function PrivacyIllustration({ size = SIZE }: { size?: number } = {}) {
   return (
-    <Svg width={SIZE} height={SIZE} viewBox="0 0 160 160">
+    <Svg width={size} height={size} viewBox="0 0 160 160">
       <Path
         d="M80 16 L136 36 V80 C136 114 112 138 80 148 C48 138 24 114 24 80 V36 Z"
         fill="none"
@@ -63,9 +63,9 @@ export function PrivacyIllustration() {
   );
 }
 
-export function CaptureIllustration() {
+export function CaptureIllustration({ size = SIZE }: { size?: number } = {}) {
   return (
-    <Svg width={SIZE} height={SIZE} viewBox="0 0 160 160">
+    <Svg width={size} height={size} viewBox="0 0 160 160">
       <Ellipse cx={80} cy={80} rx={56} ry={68} fill={colors.surface} stroke={colors.accent} strokeWidth={2} />
       <Path d="M52 50 L62 50 L62 60" stroke={colors.accent} strokeWidth={1.5} fill="none" opacity={0.4} />
       <Path d="M108 50 L98 50 L98 60" stroke={colors.accent} strokeWidth={1.5} fill="none" opacity={0.4} />

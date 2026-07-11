@@ -178,11 +178,17 @@ export default function OnboardingScreen() {
         showsHorizontalScrollIndicator={false}
         onMomentumScrollEnd={onMomentumEnd}
         scrollEnabled={false}
+        style={{ flex: 1 }}
       >
         {SLIDES.map((slide, i) => {
           const Illustration = "Illustration" in slide ? slide.Illustration : null;
           return (
-            <View key={i} style={[styles.page, { width: SCREEN_W }]}>
+            <ScrollView
+              key={i}
+              style={{ width: SCREEN_W }}
+              contentContainerStyle={[styles.page, { minHeight: "100%" }]}
+              showsVerticalScrollIndicator={false}
+            >
               <View
                 style={[
                   styles.pageContent,
@@ -205,7 +211,7 @@ export default function OnboardingScreen() {
                         },
                       ]}
                     >
-                      <Illustration />
+                      <Illustration size={illustrationSize} />
                     </View>
                   </FadeIn>
                 ) : (
@@ -283,7 +289,7 @@ export default function OnboardingScreen() {
                   </FadeIn>
                 ) : null}
               </View>
-            </View>
+            </ScrollView>
           );
         })}
       </ScrollView>

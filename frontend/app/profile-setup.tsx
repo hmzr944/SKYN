@@ -4,12 +4,12 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  Dimensions,
   ScrollView,
   NativeSyntheticEvent,
   NativeScrollEvent,
   ActivityIndicator,
   Platform,
+  useWindowDimensions,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
@@ -27,8 +27,6 @@ import {
   PrivacyIllustration,
 } from "@/src/components/illustrations/OnboardingIllustrations";
 
-const { width: SCREEN_W } = Dimensions.get("window");
-
 const AGE_OPTIONS = ["Moins de 25", "25 – 40", "40 – 60", "60 +"];
 const AGE_VALUES = ["<25", "25-40", "40-60", "60+"];
 const ENV_OPTIONS = [
@@ -40,6 +38,9 @@ const ENV_OPTIONS = [
 const PRIORITY_OPTIONS = ["Éclat", "Ridules", "Imperfections", "Sensibilité"];
 
 export default function ProfileSetupScreen() {
+  const { width: SCREEN_W, height: SCREEN_H } = useWindowDimensions();
+  const isShort = SCREEN_H < 700;
+  const illustrationSize = isShort ? 104 : 160;
   const router = useRouter();
   const { refreshProfile } = useAuth();
   const scrollRef = useRef<ScrollView>(null);
@@ -102,14 +103,18 @@ export default function ProfileSetupScreen() {
     setter: (v: string) => void,
     testPrefix: string,
   ) => (
-    <View style={styles.optionList}>
+    <View style={[styles.optionList, isShort && { marginTop: spacing.l }]}>
       {options.map((opt, i) => {
         const selected = current === opt.value;
         return (
           <FadeIn key={opt.value} delay={120 + i * 60} distance={10}>
             <AnimatedPressable
               testID={`${testPrefix}-${opt.value}`}
-              style={[styles.option, selected && styles.optionSelected]}
+              style={[
+                styles.option,
+                isShort && { paddingVertical: spacing.s },
+                selected && styles.optionSelected,
+              ]}
               scaleTo={0.98}
               onPress={() => {
                 setter(opt.value);
@@ -161,19 +166,34 @@ export default function ProfileSetupScreen() {
         onMomentumScrollEnd={onMomentumEnd}
         keyboardShouldPersistTaps="handled"
         scrollEnabled={false}
+        style={{ flex: 1 }}
       >
         {/* Q1 — Age range */}
-        <View style={styles.page}>
+        <ScrollView
+          style={{ width: SCREEN_W }}
+          contentContainerStyle={styles.page}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
           <FadeIn distance={16}>
-            <View style={styles.illustration}>
-              <PromiseIllustration />
+            <View
+              style={[
+                styles.illustration,
+                {
+                  width: illustrationSize,
+                  height: illustrationSize,
+                  marginBottom: isShort ? spacing.s : spacing.m,
+                },
+              ]}
+            >
+              <PromiseIllustration size={illustrationSize} />
             </View>
           </FadeIn>
           <FadeIn delay={60} distance={16}>
-            <Text style={styles.question}>{"Votre\ntranche d'âge"}</Text>
+            <Text style={[styles.question, isShort && styles.questionShort]}>{"Votre\ntranche d'âge"}</Text>
           </FadeIn>
           <FadeIn delay={120}>
-            <Text style={styles.helper}>
+            <Text style={[styles.helper, isShort && { marginTop: spacing.s, fontSize: 14 }]}>
               {"Pour calibrer l'algorithme selon votre cycle cutané."}
             </Text>
           </FadeIn>
@@ -183,38 +203,66 @@ export default function ProfileSetupScreen() {
             setAgeRange,
             "age",
           )}
-        </View>
+        </ScrollView>
 
         {/* Q2 — Environment */}
-        <View style={styles.page}>
+        <ScrollView
+          style={{ width: SCREEN_W }}
+          contentContainerStyle={styles.page}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
           <FadeIn distance={16}>
-            <View style={styles.illustration}>
-              <TechIllustration />
+            <View
+              style={[
+                styles.illustration,
+                {
+                  width: illustrationSize,
+                  height: illustrationSize,
+                  marginBottom: isShort ? spacing.s : spacing.m,
+                },
+              ]}
+            >
+              <TechIllustration size={illustrationSize} />
             </View>
           </FadeIn>
           <FadeIn delay={60} distance={16}>
-            <Text style={styles.question}>{"Votre\nenvironnement\nquotidien"}</Text>
+            <Text style={[styles.question, isShort && styles.questionShort]}>{"Votre\nenvironnement\nquotidien"}</Text>
           </FadeIn>
           <FadeIn delay={120}>
-            <Text style={styles.helper}>
+            <Text style={[styles.helper, isShort && { marginTop: spacing.s, fontSize: 14 }]}>
               {"L'environnement influence directement l'état de votre peau."}
             </Text>
           </FadeIn>
           {renderOptions(ENV_OPTIONS, environment, setEnvironment, "env")}
-        </View>
+        </ScrollView>
 
         {/* Q3 — Priority */}
-        <View style={styles.page}>
+        <ScrollView
+          style={{ width: SCREEN_W }}
+          contentContainerStyle={styles.page}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
           <FadeIn distance={16}>
-            <View style={styles.illustration}>
-              <PrivacyIllustration />
+            <View
+              style={[
+                styles.illustration,
+                {
+                  width: illustrationSize,
+                  height: illustrationSize,
+                  marginBottom: isShort ? spacing.s : spacing.m,
+                },
+              ]}
+            >
+              <PrivacyIllustration size={illustrationSize} />
             </View>
           </FadeIn>
           <FadeIn delay={60} distance={16}>
-            <Text style={styles.question}>{"Votre priorité\nmajeure"}</Text>
+            <Text style={[styles.question, isShort && styles.questionShort]}>{"Votre priorité\nmajeure"}</Text>
           </FadeIn>
           <FadeIn delay={120}>
-            <Text style={styles.helper}>
+            <Text style={[styles.helper, isShort && { marginTop: spacing.s, fontSize: 14 }]}>
               {"Nous personnaliserons vos recommandations en conséquence."}
             </Text>
           </FadeIn>
@@ -232,7 +280,7 @@ export default function ProfileSetupScreen() {
           >
             <Text style={styles.howLinkText}>Comment ça marche ?</Text>
           </TouchableOpacity>
-        </View>
+        </ScrollView>
       </ScrollView>
 
       {error ? (
@@ -308,8 +356,9 @@ const styles = StyleSheet.create({
     color: colors.fgDim,
   },
   page: {
-    width: SCREEN_W,
+    minHeight: "100%",
     paddingHorizontal: spacing.xl,
+    paddingBottom: spacing.l,
     alignItems: "center",
   },
   illustration: {
@@ -326,6 +375,10 @@ const styles = StyleSheet.create({
     lineHeight: 42,
     letterSpacing: -0.5,
     textAlign: "center",
+  },
+  questionShort: {
+    fontSize: 27,
+    lineHeight: 32,
   },
   helper: {
     fontFamily: fonts.body,

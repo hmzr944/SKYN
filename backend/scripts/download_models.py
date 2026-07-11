@@ -10,11 +10,13 @@ Safe to re-run: existing files are skipped.
 """
 from __future__ import annotations
 
+import os
 import sys
 import urllib.request
 from pathlib import Path
 
-BASE = Path(__file__).resolve().parent.parent / "skyn_engine" / "models"
+BASE = Path(os.environ.get("SKYN_MODELS_DIR",
+                           Path(__file__).resolve().parent.parent / "skyn_engine" / "models"))
 
 FILES = {
     # target relative path -> HF resolve URL

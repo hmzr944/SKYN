@@ -21,14 +21,20 @@ permettent pas — ils plafonnent à 512 Mo).
 Dans un terminal, dans le dossier `SKYN-main` :
 
 ```bash
+# 1. Construire l'app web (à refaire seulement si le frontend change)
+cd frontend
+npx expo export --platform web
+cd ..
+
+# 2. Déployer
 pip install modal
 modal setup            # ouvre le navigateur pour lier votre compte
 modal deploy deploy_modal.py
 ```
 
-Le premier déploiement construit l'image complète (build de l'app web +
-téléchargement des modèles) : comptez **15-25 min**. Les suivants sont bien
-plus rapides.
+Le premier déploiement télécharge les dépendances et les modèles côté Modal :
+comptez **10-15 min**. Les suivants prennent quelques secondes (le code est
+monté au démarrage, l'image n'est pas reconstruite).
 
 À la fin, Modal affiche votre URL :
 
