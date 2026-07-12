@@ -289,43 +289,65 @@ export default function OnboardingScreen() {
       </ScrollView>
 
       {/* Footer */}
-      {!isLast ? (
-        <View
-          style={[
-            styles.footer,
-            {
-              paddingHorizontal: horizontalPadding,
-              paddingTop: isShort ? spacing.s : spacing.m,
-              paddingBottom:
-                Platform.OS === "ios"
-                  ? isShort
-                    ? spacing.m
-                    : spacing.l
-                  : isShort
-                    ? spacing.m
-                    : spacing.xl,
-            },
-          ]}
-        >
-          {page > 0 ? (
-            <TouchableOpacity
-              testID="onboarding-back-btn"
-              onPress={() => goToPage(page - 1)}
-              style={styles.backBtn}
-              activeOpacity={0.6}
-            >
-              <Text style={styles.backText}>← Retour</Text>
-            </TouchableOpacity>
-          ) : (
-            <View style={{ width: 80 }} />
-          )}
+      <View
+        style={[
+          styles.footer,
+          {
+            paddingHorizontal: horizontalPadding,
+            paddingTop: isShort ? spacing.s : spacing.m,
+            paddingBottom:
+              Platform.OS === "ios"
+                ? isShort
+                  ? spacing.m
+                  : spacing.l
+                : isShort
+                  ? spacing.m
+                  : spacing.xl,
+          },
+        ]}
+      >
+        {page > 0 ? (
+          <TouchableOpacity
+            testID="onboarding-back-btn"
+            onPress={() => goToPage(page - 1)}
+            style={styles.backBtn}
+            activeOpacity={0.6}
+          >
+            <Text style={styles.backText}>← Retour</Text>
+          </TouchableOpacity>
+        ) : (
+          <View style={{ width: 80 }} />
+        )}
 
-          <View style={styles.dotsRow}>
-            {Array.from({ length: PAGE_COUNT }).map((_, i) => (
-              <View key={i} style={[styles.dot, page === i && styles.dotActive]} />
-            ))}
-          </View>
+        <View style={styles.dotsRow}>
+          {Array.from({ length: PAGE_COUNT }).map((_, i) => (
+            <View key={i} style={[styles.dot, page === i && styles.dotActive]} />
+          ))}
+        </View>
 
+        {isLast ? (
+          <AnimatedPressable
+            testID="onboarding-start-btn"
+            style={[
+              styles.nextBtn,
+              {
+                minWidth: isNarrow ? 104 : 120,
+                paddingHorizontal: isNarrow ? spacing.l : spacing.xl,
+                paddingVertical: isShort ? 14 : 16,
+                opacity: busy !== null ? 0.6 : 1,
+              },
+            ]}
+            onPress={() => {
+              finishOnboarding();
+              handleGoogle();
+            }}
+            disabled={busy !== null}
+          >
+            <Text style={styles.nextText}>
+              {busy === "google" ? "…" : "Commencer"}
+            </Text>
+          </AnimatedPressable>
+        ) : (
           <AnimatedPressable
             testID="onboarding-next-btn"
             onPress={() => goToPage(page + 1)}
@@ -340,29 +362,8 @@ export default function OnboardingScreen() {
           >
             <Text style={styles.nextText}>Suivant</Text>
           </AnimatedPressable>
-        </View>
-      ) : (
-        <View
-          style={[
-            styles.footerDots,
-            {
-              paddingTop: isShort ? spacing.s : spacing.m,
-              paddingBottom:
-                Platform.OS === "ios"
-                  ? isShort
-                    ? spacing.m
-                    : spacing.l
-                  : isShort
-                    ? spacing.m
-                    : spacing.xl,
-            },
-          ]}
-        >
-          {Array.from({ length: PAGE_COUNT }).map((_, i) => (
-            <View key={i} style={[styles.dot, page === i && styles.dotActive]} />
-          ))}
-        </View>
-      )}
+        )}
+      </View>
     </SafeAreaView>
   );
 }
@@ -492,13 +493,6 @@ const styles = StyleSheet.create({
     paddingBottom: Platform.OS === "ios" ? spacing.l : spacing.xl,
     paddingTop: spacing.m,
     gap: spacing.s,
-  },
-  footerDots: {
-    flexDirection: "row",
-    justifyContent: "center",
-    gap: 6,
-    paddingBottom: Platform.OS === "ios" ? spacing.l : spacing.xl,
-    paddingTop: spacing.m,
   },
   backBtn: { paddingVertical: 12, paddingRight: spacing.m },
   backText: {
