@@ -68,6 +68,31 @@ export default function CameraScreen() {
     router.replace("/analysis");
   };
 
+  // La caméra frontale capture en miroir : on remet la photo à l'endroit
+  // (l'aperçu, lui, reste en miroir — comportement selfie naturel).
+  const unmirror = (b64: string): Promise<string> => {
+    if (Platform.OS !== "web") return Promise.resolve(b64);
+    return new Promise((resolve) => {
+      const img = new window.Image();
+      img.onload = () => {
+        try {
+          const c = document.createElement("canvas");
+          c.width = img.width;
+          c.height = img.height;
+          const g = c.getContext("2d")!;
+          g.translate(img.width, 0);
+          g.scale(-1, 1);
+          g.drawImage(img, 0, 0);
+          resolve(c.toDataURL("image/jpeg", 0.85));
+        } catch {
+          resolve(b64);
+        }
+      };
+      img.onerror = () => resolve(b64);
+      img.src = b64.startsWith("data:") ? b64 : `data:image/jpeg;base64,${b64}`;
+    });
+  };
+
   const capture = async () => {
     if (!cameraRef.current) {
       finalize(null);
@@ -90,7 +115,7 @@ export default function CameraScreen() {
           fr.readAsDataURL(blob);
         });
       }
-      finalize(b64);
+      finalize(b64 ? await unmirror(b64) : null);
     } catch {
       finalize(null);
     }
