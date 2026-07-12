@@ -114,6 +114,12 @@ def analyze_skin(image_b64: str, profile_dict: Optional[dict] = None) -> Analysi
         "imperfections": imperf_score,
         "redness": metrics.redness,
     }
+    # Type de peau effectif : déclaré par l'utilisateur, sinon détecté sur la
+    # photo (si confiance suffisante) — alimente les règles du système expert.
+    profile.skin_type = (profile_dict or {}).get("skin_type") or (
+        skin_type_detected if skin_type_conf >= 0.5 else None
+    )
+
     diag = diagnose(metrics_d, profile)
     # Clinical grading overrides the heuristic diagnosis when acne is confirmed
     if severity_level is not None and severity_level >= 2:

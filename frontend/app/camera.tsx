@@ -35,6 +35,17 @@ const GRAIN_DOTS = Array.from({ length: 80 }).map((_, i) => {
   return { x, y, r };
 });
 
+// Guidage temps réel (web) : états de cadrage du visage
+type GuideState = "searching" | "too_far" | "too_close" | "off_center" | "perfect";
+
+const GUIDE_MSG: Record<GuideState, string> = {
+  searching: "Placez votre visage\ndans l'ovale.",
+  too_far: "Rapprochez-vous\ndoucement.",
+  too_close: "Éloignez-vous\nun peu.",
+  off_center: "Centrez votre visage\ndans l'ovale.",
+  perfect: "Parfait —\nne bougez plus.",
+};
+
 const SCAN_TIPS = [
   { icon: "☀", title: "Lumière naturelle", text: "Placez-vous face à une fenêtre, sans contre-jour ni lampe directe." },
   { icon: "⌖", title: "30 cm de distance", text: "Le visage remplit l'ovale, regard vers l'objectif, cheveux dégagés." },
@@ -62,6 +73,70 @@ export default function CameraScreen() {
     await storage.setItem("skyn_scan_tips_seen", "1");
     setShowTips(false);
   };
+
+  // Guidage live (web) : MediaPipe FaceDetector sur le flux vidéo, ~5 fps.
+  // Règles : visage absent → chercher ; hauteur <30% → trop loin ;
+  // >62% → trop près ; décentré → recentrer ; sinon → parfait.
+  const [guide, setGuide] = useState<GuideState>("searching");
+  useEffect(() => {
+    if (Platform.OS !== "web" || !permission?.granted) return;
+    let stopped = false;
+    let raf = 0;
+    let lastTs = 0;
+    let detector: any = null;
+    (async () => {
+      try {
+        // Import ESM natif du navigateur (hors bundler Metro, fichiers locaux)
+        const vision: any = await new Function("u", "return import(u)")(
+          "/mediapipe/vision_bundle.mjs",
+        );
+        const { FaceDetector, FilesetResolver } = vision;
+        const fileset = await FilesetResolver.forVisionTasks("/mediapipe");
+        detector = await FaceDetector.createFromOptions(fileset, {
+          baseOptions: { modelAssetPath: "/mediapipe/blaze_face_short_range.tflite" },
+          runningMode: "VIDEO",
+        });
+        const loop = () => {
+          if (stopped) return;
+          const v = document.querySelector("video");
+          const now = performance.now();
+          if (v && v.readyState >= 2 && v.videoWidth > 0 && now - lastTs > 180) {
+            lastTs = now;
+            try {
+              const res = detector.detectForVideo(v, now);
+              const d = res?.detections?.[0];
+              if (!d) {
+                setGuide("searching");
+              } else {
+                const bb = d.boundingBox;
+                const hRatio = bb.height / v.videoHeight;
+                const cx = (bb.originX + bb.width / 2) / v.videoWidth;
+                const cy = (bb.originY + bb.height / 2) / v.videoHeight;
+                if (hRatio < 0.3) setGuide("too_far");
+                else if (hRatio > 0.62) setGuide("too_close");
+                else if (Math.abs(cx - 0.5) > 0.14 || Math.abs(cy - 0.5) > 0.16)
+                  setGuide("off_center");
+                else setGuide("perfect");
+              }
+            } catch {
+              /* frame suivante */
+            }
+          }
+          raf = requestAnimationFrame(loop);
+        };
+        loop();
+      } catch {
+        /* guidage optionnel : sans détecteur, l'écran reste utilisable */
+      }
+    })();
+    return () => {
+      stopped = true;
+      if (raf) cancelAnimationFrame(raf);
+      try { detector?.close?.(); } catch { /* noop */ }
+    };
+  }, [permission?.granted]);
+
+  const isPerfect = guide === "perfect";
 
   const pulse = useSharedValue(0);
   useEffect(() => {
@@ -215,14 +290,14 @@ export default function CameraScreen() {
             opacity={0.78}
             mask="url(#ovalMask)"
           />
-          {/* Oval contour — accent solid stroke */}
+          {/* Oval contour — vert quand le cadrage est parfait */}
           <Ellipse
             cx={SCREEN_W / 2}
             cy={SCREEN_H / 2 - 40}
             rx={SCREEN_W * 0.36}
             ry={SCREEN_H * 0.26}
-            stroke={colors.accent}
-            strokeWidth={2}
+            stroke={isPerfect ? colors.lime : colors.accent}
+            strokeWidth={isPerfect ? 3 : 2}
             fill="transparent"
           />
           {GRAIN_DOTS.map((g, i) => (
@@ -245,7 +320,7 @@ export default function CameraScreen() {
               cy={SCREEN_H / 2 - 40}
               rx={SCREEN_W * 0.36 + 6}
               ry={SCREEN_H * 0.26 + 6}
-              stroke={colors.accent}
+              stroke={isPerfect ? colors.lime : colors.accent}
               strokeWidth={1}
               fill="transparent"
             />
@@ -288,8 +363,13 @@ export default function CameraScreen() {
       {/* Bottom controls */}
       <View style={styles.bottomBar} pointerEvents="box-none">
         <FadeIn distance={10}>
-          <Text style={styles.guide}>
-            {"Placez votre visage\nau centre de l'ovale."}
+          <Text
+            style={[styles.guide, isPerfect && { color: colors.lime }]}
+            testID="camera-guide"
+          >
+            {Platform.OS === "web"
+              ? GUIDE_MSG[guide]
+              : "Placez votre visage\nau centre de l'ovale."}
           </Text>
           <Text style={styles.conditions}>
             Lumière naturelle · Distance 30 cm

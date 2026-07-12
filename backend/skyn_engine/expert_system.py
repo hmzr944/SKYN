@@ -15,6 +15,7 @@ class ProfileCtx:
     age_range: Optional[str] = None       # "<25" | "25-40" | "40-60" | "60+"
     environment: Optional[str] = None     # "Urbain" | "Sec" | "Humide" | "Variable"
     priority: Optional[str] = None        # "Éclat" | "Ridules" | "Imperfections" | "Sensibilité"
+    skin_type: Optional[str] = None       # "Normale" | "Mixte" | "Grasse" | "Sèche" (déclaré ou détecté)
 
 
 # Diagnosis catalogue ----------------------------------------------------------
@@ -127,6 +128,29 @@ def recommend(metrics: Dict[str, float], profile: ProfileCtx, diagnosis: str) ->
         candidates.append((
             _w(tx) + (20 if age == "60+" else 10),
             "Initiez un rétinol faible dosage (0,3%) deux soirs par semaine pour stimuler le renouvellement cellulaire, en commençant progressivement pour préserver la tolérance.",
+        ))
+
+    # Règles par type de peau — le geste de base change selon la nature de peau
+    skin = (profile.skin_type or "").lower()
+    if "grasse" in skin:
+        candidates.append((
+            _w(im) + 12,
+            "Peau grasse : nettoyez avec un gel moussant doux matin et soir, et privilégiez des textures légères non-comédogènes — ne décapez jamais, l'excès de sébum est souvent une réaction de défense.",
+        ))
+    elif "sèche" in skin or "seche" in skin:
+        candidates.append((
+            _w(rd) + 12,
+            "Peau sèche : remplacez les nettoyants moussants par une crème lavante aux céramides, et scellez l'hydratation avec une crème riche pendant que la peau est encore humide.",
+        ))
+    elif "mixte" in skin:
+        candidates.append((
+            14,
+            "Peau mixte : traitez la zone T (front, nez, menton) avec des soins régulateurs et réservez les textures plus riches aux joues — deux besoins, deux gestes.",
+        ))
+    elif "normale" in skin:
+        candidates.append((
+            10,
+            "Peau normale : votre équilibre est un capital — entretenez-le avec un nettoyage doux, une hydratation quotidienne et une protection solaire constante.",
         ))
 
     # SPF — always relevant
