@@ -35,12 +35,33 @@ const GRAIN_DOTS = Array.from({ length: 80 }).map((_, i) => {
   return { x, y, r };
 });
 
+const SCAN_TIPS = [
+  { icon: "☀", title: "Lumière naturelle", text: "Placez-vous face à une fenêtre, sans contre-jour ni lampe directe." },
+  { icon: "⌖", title: "30 cm de distance", text: "Le visage remplit l'ovale, regard vers l'objectif, cheveux dégagés." },
+  { icon: "✧", title: "Peau nue", text: "Sans maquillage ni crème fraîchement appliquée, pour une analyse fidèle." },
+];
+
 export default function CameraScreen() {
   const router = useRouter();
   const { retake } = useLocalSearchParams<{ retake?: string }>();
   const [permission, requestPermission] = useCameraPermissions();
   const [ready, setReady] = useState(false);
+  const [showTips, setShowTips] = useState(false);
   const cameraRef = useRef<CameraView>(null);
+
+  // Coaching photo : affiché automatiquement au premier scan
+  useEffect(() => {
+    (async () => {
+      const seen = (await storage.getItem("skyn_scan_tips_seen", "")) as string;
+      if (seen !== "1") setShowTips(true);
+    })();
+  }, []);
+
+  const closeTips = async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    await storage.setItem("skyn_scan_tips_seen", "1");
+    setShowTips(false);
+  };
 
   const pulse = useSharedValue(0);
   useEffect(() => {
@@ -243,7 +264,14 @@ export default function CameraScreen() {
           <Text style={styles.closeText}>✕</Text>
         </AnimatedPressable>
         <Text style={styles.topTitle}>Bilan</Text>
-        <View style={{ width: 36 }} />
+        <AnimatedPressable
+          testID="camera-tips-btn"
+          onPress={() => setShowTips(true)}
+          style={styles.closeBtn}
+          scaleTo={0.9}
+        >
+          <Text style={styles.closeText}>?</Text>
+        </AnimatedPressable>
       </View>
 
       {/* Retake notice */}
@@ -292,6 +320,34 @@ export default function CameraScreen() {
 
         <Text style={styles.hint}>Appuyez pour démarrer l'analyse</Text>
       </View>
+
+      {/* Coaching photo — premier scan ou via "?" */}
+      {showTips ? (
+        <View style={styles.tipsOverlay} testID="camera-tips-sheet">
+          <View style={styles.tipsCard}>
+            <Text style={styles.tipsTitle}>Réussir votre scan</Text>
+            <Text style={styles.tipsSubtitle}>
+              Trois gestes pour une analyse précise :
+            </Text>
+            {SCAN_TIPS.map((t) => (
+              <View key={t.title} style={styles.tipRow}>
+                <Text style={styles.tipIcon}>{t.icon}</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.tipTitle}>{t.title}</Text>
+                  <Text style={styles.tipBody}>{t.text}</Text>
+                </View>
+              </View>
+            ))}
+            <AnimatedPressable
+              testID="camera-tips-ok"
+              onPress={closeTips}
+              style={styles.tipsBtn}
+            >
+              <Text style={styles.tipsBtnText}>C'est compris</Text>
+            </AnimatedPressable>
+          </View>
+        </View>
+      ) : null}
     </SafeAreaView>
   );
 }
@@ -436,6 +492,73 @@ const styles = StyleSheet.create({
     fontFamily: fonts.body,
     color: "rgba(255,255,255,0.6)",
     fontSize: 10,
+    letterSpacing: 2,
+    textTransform: "uppercase",
+  },
+  tipsOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(19,17,13,0.72)",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: spacing.l,
+    zIndex: 30,
+  },
+  tipsCard: {
+    backgroundColor: colors.bg,
+    borderRadius: radius.lg,
+    padding: spacing.l,
+    width: "100%",
+    maxWidth: 420,
+  },
+  tipsTitle: {
+    fontFamily: fonts.heading,
+    color: colors.fg,
+    fontSize: 26,
+    letterSpacing: -0.5,
+  },
+  tipsSubtitle: {
+    fontFamily: fonts.body,
+    color: colors.fgMuted,
+    fontSize: 13,
+    marginTop: 4,
+    marginBottom: spacing.m,
+  },
+  tipRow: {
+    flexDirection: "row",
+    gap: spacing.m,
+    paddingVertical: spacing.s,
+    alignItems: "flex-start",
+  },
+  tipIcon: {
+    fontFamily: fonts.heading,
+    color: colors.accent,
+    fontSize: 22,
+    width: 30,
+    textAlign: "center",
+  },
+  tipTitle: {
+    fontFamily: fonts.headingMedium,
+    color: colors.fg,
+    fontSize: 15,
+  },
+  tipBody: {
+    fontFamily: fonts.body,
+    color: colors.fgMuted,
+    fontSize: 13,
+    lineHeight: 19,
+    marginTop: 2,
+  },
+  tipsBtn: {
+    marginTop: spacing.m,
+    backgroundColor: colors.accent,
+    paddingVertical: 15,
+    alignItems: "center",
+    borderRadius: radius.pill,
+  },
+  tipsBtnText: {
+    fontFamily: fonts.headingMedium,
+    color: colors.onAccent,
+    fontSize: 12,
     letterSpacing: 2,
     textTransform: "uppercase",
   },

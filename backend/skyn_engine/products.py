@@ -28,6 +28,7 @@ STEP_LABELS = {
 CATALOG: List[dict] = [
     {
         "id": "cerave-foaming-cleanser",
+        "moment": "matin_soir",
         "name": "Gel Moussant Nettoyant",
         "brand": "CeraVe",
         "step": "nettoyant",
@@ -40,6 +41,7 @@ CATALOG: List[dict] = [
     },
     {
         "id": "cerave-hydrating-cleanser",
+        "moment": "matin_soir",
         "name": "Crème Lavante Hydratante",
         "brand": "CeraVe",
         "step": "nettoyant",
@@ -52,6 +54,7 @@ CATALOG: List[dict] = [
     },
     {
         "id": "to-niacinamide",
+        "moment": "soir",
         "name": "Niacinamide 10% + Zinc 1%",
         "brand": "The Ordinary",
         "step": "serum",
@@ -64,6 +67,7 @@ CATALOG: List[dict] = [
     },
     {
         "id": "to-hyaluronic",
+        "moment": "matin_soir",
         "name": "Hyaluronic Acid 2% + B5",
         "brand": "The Ordinary",
         "step": "serum",
@@ -76,6 +80,7 @@ CATALOG: List[dict] = [
     },
     {
         "id": "lrp-vitamin-c10",
+        "moment": "matin",
         "name": "Pure Vitamin C10 Sérum",
         "brand": "La Roche-Posay",
         "step": "serum",
@@ -88,6 +93,7 @@ CATALOG: List[dict] = [
     },
     {
         "id": "vichy-mineral-89",
+        "moment": "matin_soir",
         "name": "Minéral 89 Booster Quotidien",
         "brand": "Vichy",
         "step": "serum",
@@ -100,6 +106,7 @@ CATALOG: List[dict] = [
     },
     {
         "id": "lrp-retinol-b3",
+        "moment": "soir",
         "name": "Retinol B3 Sérum",
         "brand": "La Roche-Posay",
         "step": "serum",
@@ -114,6 +121,7 @@ CATALOG: List[dict] = [
     },
     {
         "id": "to-glycolic-toner",
+        "moment": "soir",
         "name": "Glycolic Acid 7% Toning Solution",
         "brand": "The Ordinary",
         "step": "traitement",
@@ -128,6 +136,7 @@ CATALOG: List[dict] = [
     },
     {
         "id": "pc-bha-2",
+        "moment": "soir",
         "name": "Skin Perfecting 2% BHA Liquid Exfoliant",
         "brand": "Paula's Choice",
         "step": "traitement",
@@ -141,6 +150,7 @@ CATALOG: List[dict] = [
     },
     {
         "id": "lrp-effaclar-duo",
+        "moment": "soir",
         "name": "Effaclar Duo+ M",
         "brand": "La Roche-Posay",
         "step": "traitement",
@@ -153,6 +163,7 @@ CATALOG: List[dict] = [
     },
     {
         "id": "avene-comedomed",
+        "moment": "matin_soir",
         "name": "Cleanance Comedomed Concentré",
         "brand": "Avène",
         "step": "traitement",
@@ -165,6 +176,7 @@ CATALOG: List[dict] = [
     },
     {
         "id": "lrp-cicaplast-b5",
+        "moment": "matin_soir",
         "name": "Cicaplast Baume B5+",
         "brand": "La Roche-Posay",
         "step": "traitement",
@@ -177,6 +189,7 @@ CATALOG: List[dict] = [
     },
     {
         "id": "avene-cicalfate",
+        "moment": "matin_soir",
         "name": "Cicalfate+ Crème Réparatrice",
         "brand": "Avène",
         "step": "traitement",
@@ -189,6 +202,7 @@ CATALOG: List[dict] = [
     },
     {
         "id": "cerave-facial-lotion",
+        "moment": "matin_soir",
         "name": "Lotion Hydratante Visage",
         "brand": "CeraVe",
         "step": "hydratant",
@@ -201,6 +215,7 @@ CATALOG: List[dict] = [
     },
     {
         "id": "lrp-anthelios-uvmune",
+        "moment": "matin",
         "name": "Anthelios UVMune 400 Fluide Invisible SPF50+",
         "brand": "La Roche-Posay",
         "step": "protection",
@@ -377,6 +392,8 @@ def recommend_products(
             "brand": p["brand"],
             "step": p["step"],
             "step_label": STEP_LABELS[p["step"]],
+            "moment": p.get("moment", "matin_soir"),
+            "moment_label": {"matin": "Matin", "soir": "Soir", "matin_soir": "Matin & soir"}[p.get("moment", "matin_soir")],
             "why": _why(p, needs, metrics),
             "key_ingredients": p["key_ingredients"],
             "price_eur": p["price_eur"],

@@ -7,6 +7,8 @@ export type ProductReco = {
   brand: string;
   step: string;
   step_label: string;
+  moment: string;
+  moment_label: string;
   why: string;
   key_ingredients: string[];
   price_eur: number;

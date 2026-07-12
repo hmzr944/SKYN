@@ -15,6 +15,22 @@ const { width: SCREEN_W } = Dimensions.get("window");
 const CHART_W = SCREEN_W - spacing.xl * 2 - spacing.m * 2;
 const CHART_H = 110;
 
+// Accompagnement : un focus concret selon la métrique la plus faible du dernier bilan
+const FOCUS_INFO: Record<string, { label: string; tip: string }> = {
+  texture: {
+    label: "Votre grain de peau",
+    tip: "C'est votre point le plus perfectible en ce moment. Une exfoliation douce (AHA/PHA) deux soirs par semaine affinera progressivement la surface.",
+  },
+  radiance: {
+    label: "Votre éclat",
+    tip: "C'est votre point le plus perfectible en ce moment. Vitamine C le matin, hydratation renforcée et sommeil régulier raviveront votre teint.",
+  },
+  imperfections: {
+    label: "Vos imperfections",
+    tip: "C'est votre point le plus perfectible en ce moment. Niacinamide le soir, et surtout de la constance : les résultats se voient en 4 à 6 semaines.",
+  },
+};
+
 const TIPS = [
   "Hydratez votre peau matin et soir avec une crème adaptée à votre type de peau.",
   "Appliquez une protection solaire SPF 30+ chaque matin, même par temps couvert.",
@@ -134,6 +150,19 @@ export default function DashboardScreen() {
   const dayIndex = new Date().getDate();
   const tips = [TIPS[dayIndex % TIPS.length], TIPS[(dayIndex + 1) % TIPS.length]];
 
+  // Accompagnement : tendance, focus et cadence de scan
+  const prev = reports[1];
+  const delta = last && prev ? last.global_score - prev.global_score : null;
+  const focusKey = last
+    ? (["texture", "radiance", "imperfections"] as const).reduce((a, b) =>
+        last[a] <= last[b] ? a : b,
+      )
+    : null;
+  const daysSinceScan = last
+    ? Math.floor((Date.now() - new Date(last.created_at).getTime()) / 86400000)
+    : null;
+  const nextScanIn = daysSinceScan !== null ? Math.max(0, 7 - daysSinceScan) : null;
+
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
@@ -189,6 +218,13 @@ export default function DashboardScreen() {
               <View style={styles.scoreRow}>
                 <Text style={styles.scoreValue}>{last.global_score}</Text>
                 <Text style={styles.scoreMax}>/ 100</Text>
+                {delta !== null && delta !== 0 ? (
+                  <View style={[styles.trendChip, delta > 0 ? styles.trendUp : styles.trendDown]}>
+                    <Text style={styles.trendText} testID="dashboard-trend">
+                      {delta > 0 ? "▲" : "▼"} {delta > 0 ? "+" : ""}{delta}
+                    </Text>
+                  </View>
+                ) : null}
               </View>
               <View style={styles.pillsRow}>
                 <View style={styles.pill}>
@@ -211,6 +247,19 @@ export default function DashboardScreen() {
           </FadeIn>
         )}
 
+        {/* Focus personnalisé — basé sur la métrique la plus faible */}
+        {!loading && last && focusKey ? (
+          <FadeIn delay={110}>
+            <View style={styles.focusCard} testID="dashboard-focus">
+              <Text style={styles.focusEyebrow}>VOTRE FOCUS ACTUEL</Text>
+              <Text style={styles.focusTitle}>
+                {FOCUS_INFO[focusKey].label} · {last[focusKey]}/100
+              </Text>
+              <Text style={styles.focusTip}>{FOCUS_INFO[focusKey].tip}</Text>
+            </View>
+          </FadeIn>
+        ) : null}
+
         {/* Chart */}
         {!loading && reports.length > 0 ? (
           <FadeIn delay={140}>
@@ -219,6 +268,13 @@ export default function DashboardScreen() {
               <View style={styles.chartWrap}>
                 <ScoreChart scores={chartScores} />
               </View>
+              {nextScanIn !== null ? (
+                <Text style={styles.nextScan} testID="dashboard-next-scan">
+                  {nextScanIn === 0
+                    ? "C'est le moment idéal pour un nouveau bilan."
+                    : `Prochain bilan conseillé dans ${nextScanIn} jour${nextScanIn > 1 ? "s" : ""} — la peau évolue sur 7 jours.`}
+                </Text>
+              ) : null}
             </View>
           </FadeIn>
         ) : null}
@@ -402,6 +458,58 @@ const styles = StyleSheet.create({
     fontFamily: fonts.headingMedium,
     fontSize: 13,
     color: colors.accent,
+  },
+  trendChip: {
+    marginLeft: spacing.s,
+    marginBottom: 14,
+    borderRadius: radius.pill,
+    paddingVertical: 3,
+    paddingHorizontal: 10,
+  },
+  trendUp: { backgroundColor: colors.limeSoft },
+  trendDown: { backgroundColor: colors.accentSofter },
+  trendText: {
+    fontFamily: fonts.bodyMedium,
+    color: colors.fg,
+    fontSize: 11,
+    letterSpacing: 0.5,
+  },
+  focusCard: {
+    backgroundColor: colors.surface,
+    borderLeftWidth: 3,
+    borderLeftColor: colors.accent,
+    borderRadius: radius.md,
+    padding: spacing.m,
+    marginBottom: spacing.xl,
+    ...shadow.card,
+  },
+  focusEyebrow: {
+    fontFamily: fonts.bodyMedium,
+    color: colors.accent,
+    fontSize: 9,
+    letterSpacing: 2.5,
+    marginBottom: 4,
+  },
+  focusTitle: {
+    fontFamily: fonts.heading,
+    color: colors.fg,
+    fontSize: 18,
+    letterSpacing: -0.3,
+    marginBottom: 6,
+  },
+  focusTip: {
+    fontFamily: fonts.body,
+    color: colors.fgMuted,
+    fontSize: 13,
+    lineHeight: 19,
+  },
+  nextScan: {
+    fontFamily: fonts.body,
+    color: colors.fgMuted,
+    fontSize: 11,
+    lineHeight: 16,
+    marginTop: spacing.s,
+    letterSpacing: 0.3,
   },
   chartCard: {
     backgroundColor: colors.surface,

@@ -31,6 +31,32 @@ import { FadeIn } from "@/src/components/ui/FadeIn";
 import { AnimatedPressable } from "@/src/components/ui/AnimatedPressable";
 
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
+
+// Accompagnement : chaque métrique est expliquée en langage clair
+const METRIC_INFO: Record<string, { title: string; what: string; advice: string }> = {
+  texture: {
+    title: "Texture",
+    what: "La régularité du grain de peau : micro-reliefs, rugosités et finesse des pores, mesurés par l'analyse des contrastes de surface de votre photo.",
+    advice: "Une exfoliation douce hebdomadaire et une hydratation régulière lissent progressivement le grain de peau.",
+  },
+  radiance: {
+    title: "Éclat",
+    what: "L'uniformité et la luminosité de votre teint, évaluées dans l'espace colorimétrique de la photo. Un score bas traduit un teint terne ou irrégulier.",
+    advice: "La vitamine C le matin, une bonne hydratation et un sommeil régulier ravivent l'éclat naturel.",
+  },
+  imperfections: {
+    title: "Imperfections",
+    what: "Les lésions repérées par notre détecteur entraîné (boutons, points noirs) et le grade clinique estimé de l'acné, de peau nette à sévère.",
+    advice: "Niacinamide ou acide salicylique le soir, et surtout : ne percez pas — laissez les actifs travailler.",
+  },
+};
+
+function scoreInterpretation(score: number): string {
+  if (score >= 80) return "Peau équilibrée — continuez ainsi";
+  if (score >= 65) return "Bon équilibre, à entretenir";
+  if (score >= 50) return "Des besoins ciblés — suivez votre routine";
+  return "Votre peau réclame de l'attention";
+}
 const { width: SCREEN_W } = Dimensions.get("window");
 const RING = Math.min(SCREEN_W - spacing.xl * 2, 240);
 const STROKE = 6;
@@ -97,11 +123,13 @@ function MetricCell({
   value,
   variant,
   delay,
+  onInfo,
 }: {
   label: string;
   value: number;
   variant: "tall" | "small";
   delay: number;
+  onInfo?: () => void;
 }) {
   const sv = useSharedValue(0);
   useEffect(() => {
@@ -113,15 +141,54 @@ function MetricCell({
   }));
   return (
     <Animated.View style={[styles.metricCell, styles[variant], aStyle]}>
-      <View
-        style={[
-          styles.metricDot,
-          { backgroundColor: value > 70 ? colors.lime : colors.accent },
-        ]}
-      />
-      <Text style={styles.metricLabel}>{label}</Text>
-      <Text style={styles.metricValue}>{value}</Text>
+      <TouchableOpacity
+        style={{ flex: 1, justifyContent: "space-between" }}
+        onPress={onInfo}
+        activeOpacity={0.7}
+        testID={`metric-${label}`}
+      >
+        <View
+          style={[
+            styles.metricDot,
+            { backgroundColor: value > 70 ? colors.lime : colors.accent },
+          ]}
+        />
+        <Text style={styles.metricLabel}>{label}</Text>
+        <View>
+          <Text style={styles.metricValue}>{value}</Text>
+          <Text style={styles.metricHint}>Comprendre ⓘ</Text>
+        </View>
+      </TouchableOpacity>
     </Animated.View>
+  );
+}
+
+function MetricInfoSheet({
+  metricKey,
+  onClose,
+}: {
+  metricKey: string | null;
+  onClose: () => void;
+}) {
+  if (!metricKey) return null;
+  const info = METRIC_INFO[metricKey];
+  if (!info) return null;
+  return (
+    <TouchableOpacity
+      style={styles.infoOverlay}
+      activeOpacity={1}
+      onPress={onClose}
+      testID="metric-info-sheet"
+    >
+      <View style={styles.infoCard}>
+        <Text style={styles.infoTitle}>{info.title}</Text>
+        <Text style={styles.infoSectionLabel}>CE QUE ÇA MESURE</Text>
+        <Text style={styles.infoText}>{info.what}</Text>
+        <Text style={styles.infoSectionLabel}>NOTRE CONSEIL</Text>
+        <Text style={styles.infoText}>{info.advice}</Text>
+        <Text style={styles.infoClose}>Toucher pour fermer</Text>
+      </View>
+    </TouchableOpacity>
   );
 }
 
@@ -156,7 +223,20 @@ function ProductCard({ product, index }: { product: ProductReco; index: number }
           )}
         </View>
         <View style={styles.productBody}>
-          <Text style={styles.productStep}>{product.step_label}</Text>
+          <View style={styles.productMetaRow}>
+            <Text style={styles.productStep}>{product.step_label}</Text>
+            <View
+              style={[
+                styles.momentBadge,
+                product.moment === "soir" && styles.momentBadgeNight,
+              ]}
+            >
+              <Text style={styles.momentText}>
+                {product.moment === "matin" ? "☀ " : product.moment === "soir" ? "☾ " : "☀☾ "}
+                {product.moment_label || "Matin & soir"}
+              </Text>
+            </View>
+          </View>
           <Text style={styles.productName} numberOfLines={2}>
             {product.brand} — {product.name}
           </Text>
@@ -180,18 +260,27 @@ export default function ReportScreen() {
   const [loading, setLoading] = useState(true);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [lowLight, setLowLight] = useState(false);
+  const [metricInfo, setMetricInfo] = useState<string | null>(null);
+  const [delta, setDelta] = useState<number | null>(null);
 
   const sheetY = useSharedValue(1);
 
   useEffect(() => {
     (async () => {
       try {
+        const list = await api.listReports();
+        let current: any = null;
         if (id) {
-          const r = await api.getReport(id);
-          setReport(r);
+          current = list.find((r: any) => r.id === id) || (await api.getReport(id));
         } else {
-          const list = await api.listReports();
-          setReport(list[0] || null);
+          current = list[0] || null;
+        }
+        setReport(current);
+        // Delta vs bilan précédent (accompagnement : voir sa progression)
+        if (current) {
+          const idx = list.findIndex((r: any) => r.id === current.id);
+          const prev = idx >= 0 ? list[idx + 1] : list[1];
+          if (prev) setDelta(current.global_score - prev.global_score);
         }
       } finally {
         setLoading(false);
@@ -307,6 +396,16 @@ export default function ReportScreen() {
         <FadeIn delay={100} distance={20}>
           <View style={styles.ringWrap}>
             <ScoreRing value={report.global_score} />
+            <Text style={styles.interpretation} testID="report-interpretation">
+              {scoreInterpretation(report.global_score)}
+            </Text>
+            {delta !== null && delta !== 0 ? (
+              <View style={[styles.deltaChip, delta > 0 ? styles.deltaUp : styles.deltaDown]}>
+                <Text style={styles.deltaText} testID="report-delta">
+                  {delta > 0 ? "▲" : "▼"} {delta > 0 ? "+" : ""}{delta} depuis votre dernier bilan
+                </Text>
+              </View>
+            ) : null}
           </View>
         </FadeIn>
 
@@ -318,6 +417,7 @@ export default function ReportScreen() {
               value={report.texture}
               variant="tall"
               delay={150}
+              onInfo={() => setMetricInfo("texture")}
             />
             <View style={styles.column}>
               <MetricCell
@@ -325,12 +425,14 @@ export default function ReportScreen() {
                 value={report.radiance}
                 variant="small"
                 delay={300}
+                onInfo={() => setMetricInfo("radiance")}
               />
               <MetricCell
                 label="Imperfections"
                 value={report.imperfections}
                 variant="small"
                 delay={450}
+                onInfo={() => setMetricInfo("imperfections")}
               />
             </View>
           </View>
@@ -373,6 +475,9 @@ export default function ReportScreen() {
       >
         <Text style={styles.finishText}>Terminer et Sauvegarder</Text>
       </AnimatedPressable>
+
+      {/* Metric explanation overlay */}
+      <MetricInfoSheet metricKey={metricInfo} onClose={() => setMetricInfo(null)} />
 
       {/* Recommendations sheet */}
       <Animated.View
@@ -542,6 +647,101 @@ const styles = StyleSheet.create({
     color: colors.accent,
     fontSize: 48,
     letterSpacing: -1,
+  },
+  metricHint: {
+    fontFamily: fonts.body,
+    color: colors.fgDim,
+    fontSize: 10,
+    letterSpacing: 0.5,
+    marginTop: 2,
+  },
+  interpretation: {
+    fontFamily: fonts.bodyMedium,
+    color: colors.fg,
+    fontSize: 13,
+    letterSpacing: 0.3,
+    marginTop: spacing.m,
+    textAlign: "center",
+  },
+  deltaChip: {
+    marginTop: spacing.s,
+    borderRadius: radius.pill,
+    paddingVertical: 5,
+    paddingHorizontal: 14,
+  },
+  deltaUp: { backgroundColor: colors.limeSoft },
+  deltaDown: { backgroundColor: colors.accentSofter },
+  deltaText: {
+    fontFamily: fonts.bodyMedium,
+    color: colors.fg,
+    fontSize: 11,
+    letterSpacing: 0.5,
+  },
+  infoOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(45,31,26,0.45)",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: spacing.xl,
+    zIndex: 20,
+  },
+  infoCard: {
+    backgroundColor: colors.surfaceRaised,
+    borderRadius: radius.lg,
+    padding: spacing.l,
+    width: "100%",
+    maxWidth: 420,
+    ...shadow.raised,
+  },
+  infoTitle: {
+    fontFamily: fonts.heading,
+    color: colors.fg,
+    fontSize: 26,
+    letterSpacing: -0.5,
+    marginBottom: spacing.s,
+  },
+  infoSectionLabel: {
+    fontFamily: fonts.bodyMedium,
+    color: colors.accent,
+    fontSize: 10,
+    letterSpacing: 2,
+    marginTop: spacing.m,
+    marginBottom: 4,
+  },
+  infoText: {
+    fontFamily: fonts.body,
+    color: colors.fg,
+    fontSize: 14,
+    lineHeight: 21,
+  },
+  infoClose: {
+    fontFamily: fonts.body,
+    color: colors.fgDim,
+    fontSize: 11,
+    letterSpacing: 1,
+    textAlign: "center",
+    marginTop: spacing.l,
+    textTransform: "uppercase",
+  },
+  productMetaRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  momentBadge: {
+    backgroundColor: colors.limeSoft,
+    borderRadius: radius.pill,
+    paddingVertical: 2,
+    paddingHorizontal: 8,
+  },
+  momentBadgeNight: {
+    backgroundColor: colors.accentSofter,
+  },
+  momentText: {
+    fontFamily: fonts.bodyMedium,
+    color: colors.fg,
+    fontSize: 9,
+    letterSpacing: 0.5,
   },
   aiChipsRow: {
     flexDirection: "row",

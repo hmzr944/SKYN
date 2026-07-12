@@ -82,6 +82,8 @@ class ProductReco(BaseModel):
     brand: str
     step: str
     step_label: str
+    moment: str = "matin_soir"          # "matin" | "soir" | "matin_soir"
+    moment_label: str = "Matin & soir"
     why: str
     key_ingredients: List[str] = Field(default_factory=list)
     price_eur: float
