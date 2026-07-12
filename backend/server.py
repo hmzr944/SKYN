@@ -330,9 +330,12 @@ async def skyn_engine_analyze(payload: AnalyzeRequest, authorization: Optional[s
 
     profile_doc = await db.profiles.find_one({"user_id": user.user_id}, {"_id": 0}) or {}
 
+    from fastapi.concurrency import run_in_threadpool
     from skyn_engine import analyze_skin, recommend_products
     try:
-        out = analyze_skin(payload.image_base64, profile_doc)
+        # Inference CPU lourde : hors de l'event loop pour ne pas bloquer
+        # les autres requêtes pendant l'analyse.
+        out = await run_in_threadpool(analyze_skin, payload.image_base64, profile_doc)
     except Exception as e:
         logger.warning(f"SKYN Engine failure, returning safe defaults: {e}")
         try:

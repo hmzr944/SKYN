@@ -155,16 +155,24 @@ export default function AnalysisScreen() {
       }
     };
 
-    // Wait for analysis to complete OR 6.5s timeout, whichever later
+    // Après la cinématique (6,5 s), attendre la VRAIE réponse du moteur
+    // (jusqu'à 60 s — premier réveil du serveur = chargement des modèles),
+    // au lieu de générer un rapport avec des scores par défaut.
+    let poll: ReturnType<typeof setInterval> | null = null;
     const t4 = setTimeout(() => {
-      const elapsed = Date.now() - startedAt.current;
-      const wait = Math.max(0, 6500 - elapsed);
-      setTimeout(finalize, wait);
+      const waitStart = Date.now();
+      poll = setInterval(() => {
+        if (analysisRef.current || Date.now() - waitStart > 60000) {
+          if (poll) clearInterval(poll);
+          finalize();
+        }
+      }, 500);
     }, 6500);
 
     return () => {
       cancelled = true;
       if (hapticInt.current) clearInterval(hapticInt.current);
+      if (poll) clearInterval(poll);
       clearTimeout(t1);
       clearTimeout(t2);
       clearTimeout(t3);

@@ -62,7 +62,9 @@ export default function CameraScreen() {
 
   const finalize = async (base64: string | null) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-    await storage.setItem("skyn_last_capture_b64", base64 || "");
+    // Sur le web, expo-camera/image-picker peuvent renvoyer une data-URI complète
+    const clean = base64?.startsWith("data:") ? base64.split(",", 2)[1] : base64;
+    await storage.setItem("skyn_last_capture_b64", clean || "");
     router.replace("/analysis");
   };
 
@@ -77,7 +79,18 @@ export default function CameraScreen() {
         quality: 0.55,
         skipProcessing: true,
       });
-      finalize(photo?.base64 || null);
+      // Web : selon les versions, l'image est dans .base64 ou dans .uri (data-URI)
+      let b64 = photo?.base64 || null;
+      if (!b64 && photo?.uri?.startsWith("data:")) b64 = photo.uri;
+      if (!b64 && photo?.uri?.startsWith("blob:")) {
+        const blob = await (await fetch(photo.uri)).blob();
+        b64 = await new Promise<string>((resolve) => {
+          const fr = new FileReader();
+          fr.onloadend = () => resolve(String(fr.result || ""));
+          fr.readAsDataURL(blob);
+        });
+      }
+      finalize(b64);
     } catch {
       finalize(null);
     }
@@ -102,7 +115,8 @@ export default function CameraScreen() {
     }
   };
 
-  const canUseCamera = permission?.granted && Platform.OS !== "web";
+  // expo-camera fonctionne aussi sur le web (getUserMedia) — HTTPS requis
+  const canUseCamera = !!permission?.granted;
 
   return (
     <SafeAreaView style={styles.container} edges={["top", "bottom"]}>
@@ -118,11 +132,10 @@ export default function CameraScreen() {
         ) : (
           <View style={[StyleSheet.absoluteFill, styles.placeholder]}>
             <Text style={styles.placeholderText}>
-              {Platform.OS === "web"
-                ? "Aperçu caméra non disponible sur le web."
-                : "Permission caméra requise."}
+              Permission caméra requise — autorisez l'accès ou choisissez une
+              photo depuis la galerie.
             </Text>
-            {!permission?.granted && Platform.OS !== "web" ? (
+            {!permission?.granted ? (
               <TouchableOpacity style={styles.permBtn} onPress={requestPermission}>
                 <Text style={styles.permBtnText}>Autoriser</Text>
               </TouchableOpacity>

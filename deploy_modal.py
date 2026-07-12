@@ -59,6 +59,8 @@ app = modal.App("skyn")
     memory=3072,           # les 3 modèles (torch CPU) tiennent dans ~2,5 Go
     scaledown_window=900,  # reste chaud 15 min après la dernière visite
     timeout=120,
+    max_containers=1,      # base démo en mémoire → un seul conteneur, sinon
+                           # un rapport créé ici est introuvable là-bas (404)
 )
 @modal.concurrent(max_inputs=10)
 @modal.asgi_app(label="skyn")

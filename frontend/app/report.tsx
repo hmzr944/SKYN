@@ -533,8 +533,8 @@ const styles = StyleSheet.create({
   metricLabel: {
     fontFamily: fonts.bodyMedium,
     color: colors.fgDim,
-    fontSize: 10,
-    letterSpacing: 3,
+    fontSize: 9,
+    letterSpacing: 1.5,
     textTransform: "uppercase",
   },
   metricValue: {
