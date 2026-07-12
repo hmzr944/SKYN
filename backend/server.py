@@ -481,15 +481,24 @@ if WEB_DIR.is_dir():
     from starlette.exceptions import HTTPException as StarletteHTTPException
 
     class SPAStaticFiles(StaticFiles):
-        """Static files with SPA fallback: unknown paths serve index.html so
-        expo-router deep links (e.g. /report) work on hard refresh."""
+        """Static files with SPA fallback: unknown ROUTES serve index.html so
+        expo-router deep links (e.g. /report) work on hard refresh. Missing
+        assets (paths with an extension) stay 404 instead of masking errors.
+        Cache: hashed bundles = 1 an immuable ; le reste = revalidation."""
         async def get_response(self, path: str, scope):
             try:
-                return await super().get_response(path, scope)
+                resp = await super().get_response(path, scope)
             except StarletteHTTPException as e:
-                if e.status_code == 404:
-                    return await super().get_response("index.html", scope)
+                if e.status_code == 404 and "." not in path.rsplit("/", 1)[-1]:
+                    resp = await super().get_response("index.html", scope)
+                    resp.headers["Cache-Control"] = "no-cache"
+                    return resp
                 raise
+            if "/_expo/static/" in path or path.startswith("_expo/static/"):
+                resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+            else:
+                resp.headers["Cache-Control"] = "no-cache"
+            return resp
 
     app.mount("/", SPAStaticFiles(directory=str(WEB_DIR), html=True), name="webapp")
 
