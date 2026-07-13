@@ -75,9 +75,9 @@ venv/
 *.pt
 *.safetensors
 *.onnx
-backend/skyn_engine/models/
-# … sauf le YOLO fine-tuné SKYN (52 Mo, unique — pas retéléchargeable)
-!backend/skyn_engine/models/acne_yolo/
+# … tout le dossier models sauf le YOLO fine-tuné SKYN (52 Mo, unique)
+backend/skyn_engine/models/*
+!backend/skyn_engine/models/acne_yolo
 backend/skyn_engine/models/acne_yolo/*
 !backend/skyn_engine/models/acne_yolo/acne.pt
 runs/
