@@ -36,19 +36,31 @@ const GRAIN_DOTS = Array.from({ length: 80 }).map((_, i) => {
 });
 
 // Guidage temps réel (web) : états de cadrage du visage
-type GuideState = "searching" | "too_far" | "too_close" | "off_center" | "perfect";
+type GuideState =
+  | "searching" | "too_far" | "too_close" | "off_center"
+  | "turn_more" | "turn_other" | "perfect";
 
 const GUIDE_MSG: Record<GuideState, string> = {
   searching: "Placez votre visage\ndans l'ovale.",
   too_far: "Rapprochez-vous\ndoucement.",
   too_close: "Éloignez-vous\nun peu.",
   off_center: "Centrez votre visage\ndans l'ovale.",
-  perfect: "Parfait —\nne bougez plus.",
+  turn_more: "Tournez un peu plus\nla tête.",
+  turn_other: "Tournez de\nl'autre côté.",
+  perfect: "Parfait —\ncapturez.",
 };
+
+// Scan en 3 prises : face, puis profils pour couvrir joues et tempes
+const STEPS = [
+  { label: "Face", instruction: "Placez votre visage\nau centre de l'ovale." },
+  { label: "Profil droit", instruction: "Tournez la tête\nvers la droite." },
+  { label: "Profil gauche", instruction: "Tournez la tête\nvers la gauche." },
+];
 
 const SCAN_TIPS = [
   { icon: "☀", title: "Lumière naturelle", text: "Placez-vous face à une fenêtre, sans contre-jour ni lampe directe." },
   { icon: "⌖", title: "30 cm de distance", text: "Le visage remplit l'ovale, regard vers l'objectif, cheveux dégagés." },
+  { icon: "↻", title: "3 prises : face, droite, gauche", text: "Tournez la tête entre chaque photo — les profils révèlent joues et tempes pour un résultat optimal." },
   { icon: "✧", title: "Peau nue", text: "Sans maquillage ni crème fraîchement appliquée, pour une analyse fidèle." },
 ];
 
@@ -59,6 +71,14 @@ export default function CameraScreen() {
   const [ready, setReady] = useState(false);
   const [showTips, setShowTips] = useState(false);
   const cameraRef = useRef<CameraView>(null);
+
+  // Séquence multi-angles : 0 = face, 1 = profil droit, 2 = profil gauche
+  const [step, setStep] = useState(0);
+  const stepRef = useRef(0);
+  useEffect(() => { stepRef.current = step; }, [step]);
+  const capturesRef = useRef<string[]>([]);
+  const yawRef = useRef(0);        // orientation courante de la tête (-1..1)
+  const sideSignRef = useRef(0);   // signe du yaw enregistré au profil droit
 
   // Coaching photo : affiché automatiquement au premier scan
   useEffect(() => {
@@ -112,11 +132,38 @@ export default function CameraScreen() {
                 const hRatio = bb.height / v.videoHeight;
                 const cx = (bb.originX + bb.width / 2) / v.videoWidth;
                 const cy = (bb.originY + bb.height / 2) / v.videoHeight;
-                if (hRatio < 0.3) setGuide("too_far");
-                else if (hRatio > 0.62) setGuide("too_close");
-                else if (Math.abs(cx - 0.5) > 0.14 || Math.abs(cy - 0.5) > 0.16)
-                  setGuide("off_center");
-                else setGuide("perfect");
+                // Yaw : position du nez entre les deux yeux (-1 = profil, 0 = face)
+                const k = d.keypoints || [];
+                let yaw = 0;
+                if (k.length >= 3) {
+                  const eyeMid = (k[0].x + k[1].x) / 2;
+                  const inter = Math.abs(k[1].x - k[0].x) || 0.001;
+                  yaw = (k[2].x - eyeMid) / inter;
+                }
+                yawRef.current = yaw;
+
+                const st = stepRef.current;
+                if (st === 0) {
+                  // Face : cadrage strict, tête droite
+                  if (hRatio < 0.3) setGuide("too_far");
+                  else if (hRatio > 0.62) setGuide("too_close");
+                  else if (Math.abs(cx - 0.5) > 0.14 || Math.abs(cy - 0.5) > 0.16)
+                    setGuide("off_center");
+                  else if (Math.abs(yaw) > 0.22) setGuide("off_center");
+                  else setGuide("perfect");
+                } else {
+                  // Profils : la tête doit être tournée (≥ 0.25), et au profil
+                  // gauche dans le sens opposé au profil droit
+                  if (hRatio < 0.24) setGuide("too_far");
+                  else if (Math.abs(yaw) < 0.25) setGuide("turn_more");
+                  else if (
+                    st === 2 &&
+                    sideSignRef.current !== 0 &&
+                    Math.sign(yaw) === sideSignRef.current
+                  )
+                    setGuide("turn_other");
+                  else setGuide("perfect");
+                }
               }
             } catch {
               /* frame suivante */
@@ -156,12 +203,38 @@ export default function CameraScreen() {
     }
   }, [permission, requestPermission]);
 
-  const finalize = async (base64: string | null) => {
+  const cleanB64 = (base64: string | null) =>
+    base64?.startsWith("data:") ? base64.split(",", 2)[1] : base64;
+
+  const finalizeAll = async (captures: string[]) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-    // Sur le web, expo-camera/image-picker peuvent renvoyer une data-URI complète
-    const clean = base64?.startsWith("data:") ? base64.split(",", 2)[1] : base64;
-    await storage.setItem("skyn_last_capture_b64", clean || "");
+    await storage.setItem("skyn_last_capture_b64", captures[0] || "");
+    await storage.setItem("skyn_last_captures", JSON.stringify(captures));
     router.replace("/analysis");
+  };
+
+  // Une image (galerie ou échec caméra) : analyse simple, sans profils
+  const finalize = async (base64: string | null) => {
+    const clean = cleanB64(base64);
+    await finalizeAll(clean ? [clean] : []);
+  };
+
+  const onCaptured = async (base64: string | null) => {
+    const clean = cleanB64(base64);
+    if (!clean) {
+      // Capture impossible : on termine avec ce qu'on a
+      await finalizeAll(capturesRef.current);
+      return;
+    }
+    capturesRef.current.push(clean);
+    const st = stepRef.current;
+    if (st === 1) sideSignRef.current = Math.sign(yawRef.current) || 1;
+    if (st < 2) {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      setStep(st + 1);
+    } else {
+      await finalizeAll(capturesRef.current);
+    }
   };
 
   // La caméra frontale capture en miroir : on remet la photo à l'endroit
@@ -211,9 +284,9 @@ export default function CameraScreen() {
           fr.readAsDataURL(blob);
         });
       }
-      finalize(b64 ? await unmirror(b64) : null);
+      onCaptured(b64 ? await unmirror(b64) : null);
     } catch {
-      finalize(null);
+      onCaptured(null);
     }
   };
 
@@ -363,13 +436,20 @@ export default function CameraScreen() {
       {/* Bottom controls */}
       <View style={styles.bottomBar} pointerEvents="box-none">
         <FadeIn distance={10}>
+          <View style={styles.stepBadge} testID="camera-step">
+            <Text style={styles.stepBadgeText}>
+              {step + 1}/3 · {STEPS[step].label}
+            </Text>
+          </View>
           <Text
             style={[styles.guide, isPerfect && { color: colors.lime }]}
             testID="camera-guide"
           >
-            {Platform.OS === "web"
+            {Platform.OS === "web" && guide !== "searching" && step === 0
               ? GUIDE_MSG[guide]
-              : "Placez votre visage\nau centre de l'ovale."}
+              : Platform.OS === "web" && step > 0 && (guide === "turn_more" || guide === "turn_other" || guide === "perfect" || guide === "too_far")
+                ? GUIDE_MSG[guide]
+                : STEPS[step].instruction}
           </Text>
           <Text style={styles.conditions}>
             Lumière naturelle · Distance 30 cm
@@ -512,6 +592,21 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     alignItems: "center",
+  },
+  stepBadge: {
+    alignSelf: "center",
+    backgroundColor: "rgba(255,255,255,0.12)",
+    borderRadius: radius.pill,
+    paddingVertical: 4,
+    paddingHorizontal: 14,
+    marginBottom: spacing.s,
+  },
+  stepBadgeText: {
+    fontFamily: fonts.bodyMedium,
+    color: colors.white,
+    fontSize: 10,
+    letterSpacing: 2,
+    textTransform: "uppercase",
   },
   guide: {
     fontFamily: fonts.heading,

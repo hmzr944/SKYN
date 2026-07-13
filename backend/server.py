@@ -125,7 +125,9 @@ MAX_IMAGE_B64_LEN = 6_000_000
 
 
 class AnalyzeRequest(BaseModel):
-    image_base64: str
+    image_base64: str = ""
+    # Scan multi-angles : [face, profil droit, profil gauche] — la face d'abord
+    images_base64: Optional[List[str]] = None
 
 
 class AnalyzeResponse(BaseModel):
@@ -144,6 +146,7 @@ class AnalyzeResponse(BaseModel):
     skin_type_confidence: float = 0.0
     acne_severity_level: Optional[int] = None
     acne_severity_label: Optional[str] = None
+    angles_analyzed: int = 1
     source: str
 
 
@@ -327,17 +330,21 @@ async def skyn_engine_analyze(payload: AnalyzeRequest, authorization: Optional[s
     """
     user = await get_current_user(authorization)
 
-    if len(payload.image_base64) > MAX_IMAGE_B64_LEN:
+    images = payload.images_base64 or [payload.image_base64]
+    images = [i for i in images if i][:3]
+    if any(len(i) > MAX_IMAGE_B64_LEN for i in images):
         raise HTTPException(status_code=413, detail="Image too large")
+    if not images:
+        images = [""]
 
     profile_doc = await db.profiles.find_one({"user_id": user.user_id}, {"_id": 0}) or {}
 
     from fastapi.concurrency import run_in_threadpool
-    from skyn_engine import analyze_skin, recommend_products
+    from skyn_engine import analyze_skin_multi, recommend_products
     try:
         # Inference CPU lourde : hors de l'event loop pour ne pas bloquer
         # les autres requêtes pendant l'analyse.
-        out = await run_in_threadpool(analyze_skin, payload.image_base64, profile_doc)
+        out = await run_in_threadpool(analyze_skin_multi, images, profile_doc)
     except Exception as e:
         logger.warning(f"SKYN Engine failure, returning safe defaults: {e}")
         try:
@@ -377,6 +384,7 @@ async def skyn_engine_analyze(payload: AnalyzeRequest, authorization: Optional[s
         skin_type_confidence=out.skin_type_confidence,
         acne_severity_level=out.acne_severity_level,
         acne_severity_label=out.acne_severity_label,
+        angles_analyzed=out.angles_analyzed,
         source=out.source,
     )
 

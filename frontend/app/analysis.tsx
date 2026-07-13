@@ -57,11 +57,19 @@ export default function AnalysisScreen() {
     let cancelled = false;
     (async () => {
       const b = (await storage.getItem("skyn_last_capture_b64", "")) as string;
+      const rawList = (await storage.getItem("skyn_last_captures", "")) as string;
+      let images: string[] = [];
+      try {
+        images = JSON.parse(rawList || "[]");
+      } catch {
+        images = [];
+      }
+      if (!images.length && b) images = [b];
       if (cancelled) return;
       if (b) setImageB64(b);
-      if (b) {
+      if (images.length) {
         try {
-          const data = await api.analyze(b);
+          const data = await api.analyze(images);
           if (!cancelled) setAnalysis(data);
         } catch {
           /* keep null → fallback path */

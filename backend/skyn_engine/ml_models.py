@@ -73,7 +73,8 @@ class AcneDetector:
         max_n: int = 5,
         conf_threshold: float = 0.25,
     ) -> List[dict]:
-        results = self.model.predict(rgb, conf=conf_threshold, verbose=False)
+        # augment=True : test-time augmentation (flip/échelles) — meilleur rappel
+        results = self.model.predict(rgb, conf=conf_threshold, augment=True, verbose=False)
         bx, by, bw, bh = bbox
         bw = max(1, bw)
         bh = max(1, bh)
@@ -115,13 +116,16 @@ class _VitClassifier:
         self.model.eval()
 
     def classify(self, rgb: np.ndarray) -> Tuple[str, float]:
+        """Prédiction moyennée image + miroir : plus stable qu'une passe unique."""
         import torch
         from PIL import Image
         img = Image.fromarray(rgb)
-        inputs = self.processor(images=img, return_tensors="pt")
+        inputs = self.processor(
+            images=[img, img.transpose(Image.FLIP_LEFT_RIGHT)], return_tensors="pt",
+        )
         with torch.no_grad():
             logits = self.model(**inputs).logits
-        probs = torch.softmax(logits, dim=-1)[0]
+        probs = torch.softmax(logits, dim=-1).mean(dim=0)
         idx = int(probs.argmax())
         label = self.model.config.id2label[idx]
         return label, float(probs[idx])

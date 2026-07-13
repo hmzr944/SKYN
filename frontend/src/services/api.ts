@@ -74,7 +74,7 @@ export const api = {
       "/api/recommendations",
       { method: "POST", body: JSON.stringify(data) },
     ),
-  analyze: (image_base64: string) =>
+  analyze: (image_base64: string | string[]) =>
     request<{
       detected: boolean;
       low_light: boolean;
@@ -91,10 +91,15 @@ export const api = {
       skin_type_confidence: number;
       acne_severity_level: number | null;
       acne_severity_label: string | null;
+      angles_analyzed: number;
       source: string;
     }>("/api/analyze", {
       method: "POST",
-      body: JSON.stringify({ image_base64 }),
+      body: JSON.stringify(
+        Array.isArray(image_base64)
+          ? { image_base64: image_base64[0] || "", images_base64: image_base64 }
+          : { image_base64 },
+      ),
     }),
 };
 
