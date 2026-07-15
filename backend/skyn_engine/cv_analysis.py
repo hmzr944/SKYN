@@ -97,6 +97,19 @@ def analyze(pre: Preprocessed) -> CVMetrics:
     skin_a = _stat_on_mask(a.astype(np.float32), pre.skin_mask)
     redness = max(0.0, (skin_a["mean"] - 128.0)) if skin_a["n"] > 0 else 0.0
 
+    # Sébum — reflets spéculaires (pixels très clairs) zone T vs joues.
+    # Une zone T brillante avec des joues mates signe une peau mixte ;
+    # brillance partout = peau grasse.
+    Lf = L.astype(np.float32)
+    shine_thr = min(252.0, L_mean + 2.0 * max(8.0, L_std))
+    def _shine_ratio(mask: np.ndarray) -> float:
+        n = int((mask > 0).sum())
+        if n == 0:
+            return 0.0
+        return float(((Lf > shine_thr) & (mask > 0)).sum()) / n
+    shine_t = _shine_ratio(pre.t_zone_mask)
+    shine_u = _shine_ratio(pre.u_zone_mask)
+
     return CVMetrics(
         texture=texture_score,
         radiance=radiance_score,
@@ -109,5 +122,7 @@ def analyze(pre: Preprocessed) -> CVMetrics:
             "L_mean": L_mean,
             "L_std": L_std,
             "dark_ratio": dark_ratio,
+            "shine_t": shine_t,
+            "shine_u": shine_u,
         },
     )

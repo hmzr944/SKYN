@@ -10,6 +10,7 @@ Public API: recommend_products(metrics, profile_dict) -> List[dict]
 """
 from __future__ import annotations
 
+import hashlib
 from typing import Dict, List, Optional
 
 # Routine steps, in application order
@@ -220,11 +221,196 @@ CATALOG: List[dict] = [
         "brand": "La Roche-Posay",
         "step": "protection",
         "key_ingredients": ["Mexoryl 400", "Filtres UVB/UVA large spectre"],
-        "skin_types": ["Normale", "Mixte", "Grasse", "Sèche"],
+        "skin_types": ["Normale", "Mixte", "Sèche"],
         "concerns": {"aging": 2, "radiance": 1, "imperfections": 1},
         "price_eur": 20.0,
         "image_url": "https://incidecoder-content.storage.googleapis.com/bbf408ac-123f-45b7-bbea-398090ab5f2f/products/la-roche-posay-anthelio-uvmune-400-invisible-fluid-spf50/la-roche-posay-anthelio-uvmune-400-invisible-fluid-spf50_front_photo_300x300@2x.webp",
         "url": "https://incidecoder.com/products/la-roche-posay-anthelios-uvmune-400-invisible-fluid-spf50",
+    },
+    {
+        "id": 'lrp-effaclar-gel',
+        "moment": 'matin_soir',
+        "name": 'Effaclar Gel Moussant Purifiant',
+        "brand": 'La Roche-Posay',
+        "step": 'nettoyant',
+        "key_ingredients": ['Zinc pidolate', 'Eau thermale'],
+        "skin_types": ['Mixte', 'Grasse'],
+        "concerns": {'imperfections': 2, 'texture': 1},
+        "price_eur": 13.0,
+        "image_url": 'https://incidecoder-content.storage.googleapis.com/551abc1e-acba-4853-8100-279848b0f19c/products/la-roche-posay-effaclar-purifying-foaming-gel/la-roche-posay-effaclar-purifying-foaming-gel_front_photo_300x300@1x.webp',
+        "url": 'https://incidecoder.com/products/la-roche-posay-effaclar-purifying-foaming-gel',
+    },
+    {
+        "id": 'lrp-toleriane-cleanser',
+        "moment": 'matin_soir',
+        "name": 'Toleriane Gel Nettoyant Apaisant',
+        "brand": 'La Roche-Posay',
+        "step": 'nettoyant',
+        "key_ingredients": ['Niacinamide', 'Céramides', 'Prébiotiques'],
+        "skin_types": ['Normale', 'Sèche'],
+        "concerns": {'redness': 2, 'hydration': 1},
+        "price_eur": 15.0,
+        "image_url": 'https://incidecoder-content.storage.googleapis.com/593227fd-9495-43da-bf4c-0f6e76e2855a/products/la-roche-posay-toleriane-hydrating-gentle-cleanser/la-roche-posay-toleriane-hydrating-gentle-cleanser_front_photo_300x300@1x.webp',
+        "url": 'https://incidecoder.com/products/la-roche-posay-toleriane-hydrating-gentle-cleanser',
+    },
+    {
+        "id": 'cerave-sa-cleanser',
+        "moment": 'matin_soir',
+        "name": 'SA Gel Nettoyant Anti-Rugosités',
+        "brand": 'CeraVe',
+        "step": 'nettoyant',
+        "key_ingredients": ['Acide salicylique', 'Céramides'],
+        "skin_types": ['Mixte', 'Grasse'],
+        "concerns": {'texture': 2, 'imperfections': 1},
+        "price_eur": 13.0,
+        "image_url": 'https://incidecoder-content.storage.googleapis.com/48091d69-2d2b-4fd1-bdef-8525fa21eed7/products/cerave-sa-smoothing-cleanser/cerave-sa-smoothing-cleanser_front_photo_300x300@1x.webp',
+        "url": 'https://incidecoder.com/products/cerave-sa-smoothing-cleanser',
+    },
+    {
+        "id": 'to-azelaic',
+        "moment": 'soir',
+        "name": 'Azelaic Acid Suspension 10%',
+        "brand": 'The Ordinary',
+        "step": 'serum',
+        "key_ingredients": ['Acide azélaïque 10%'],
+        "skin_types": ['Normale', 'Mixte', 'Grasse'],
+        "concerns": {'redness': 2, 'imperfections': 2, 'radiance': 1},
+        "price_eur": 9.0,
+        "image_url": 'https://incidecoder-content.storage.googleapis.com/05329251-c6ce-4ecc-8736-1ce3e5e7f96a/products/the-ordinary-azelaic-acid-suspension-10/the-ordinary-azelaic-acid-suspension-10_front_photo_300x300@1x.webp',
+        "url": 'https://incidecoder.com/products/the-ordinary-azelaic-acid-suspension-10',
+    },
+    {
+        "id": 'to-alpha-arbutin',
+        "moment": 'matin_soir',
+        "name": 'Alpha Arbutin 2% + HA',
+        "brand": 'The Ordinary',
+        "step": 'serum',
+        "key_ingredients": ['Alpha-arbutine 2%', 'Acide hyaluronique'],
+        "skin_types": ['Normale', 'Mixte', 'Grasse', 'Sèche'],
+        "concerns": {'radiance': 2, 'aging': 1},
+        "price_eur": 10.0,
+        "image_url": 'https://incidecoder-content.storage.googleapis.com/75ff4cd0-b6dc-4ab2-ba9a-5211dbf35e6d/products/the-ordinary-alpha-arbutin-2-ha/the-ordinary-alpha-arbutin-2-ha_front_photo_300x300@1x.webp',
+        "url": 'https://incidecoder.com/products/the-ordinary-alpha-arbutin-2-ha',
+    },
+    {
+        "id": 'lrp-hyalu-b5',
+        "moment": 'matin_soir',
+        "name": 'Hyalu B5 Sérum',
+        "brand": 'La Roche-Posay',
+        "step": 'serum',
+        "key_ingredients": ['Acide hyaluronique pur', 'Vitamine B5', 'Madécassoside'],
+        "skin_types": ['Normale', 'Sèche'],
+        "concerns": {'hydration': 2, 'aging': 2},
+        "price_eur": 40.0,
+        "image_url": 'https://incidecoder-content.storage.googleapis.com/ec7c83cd-8867-4116-81d5-a82da03e582e/products/la-roche-posay-hyalu-b5-serum/la-roche-posay-hyalu-b5-serum_front_photo_300x300@1x.webp',
+        "url": 'https://incidecoder.com/products/la-roche-posay-hyalu-b5-serum',
+    },
+    {
+        "id": 'cerave-retinol-serum',
+        "moment": 'soir',
+        "name": 'Sérum Anti-Marques Rétinol',
+        "brand": 'CeraVe',
+        "step": 'serum',
+        "key_ingredients": ['Rétinol encapsulé', 'Niacinamide', 'Céramides'],
+        "skin_types": ['Normale', 'Mixte', 'Grasse'],
+        "concerns": {'imperfections': 2, 'texture': 2, 'aging': 1},
+        "min_age": '25-40',
+        "avoid_if_reactive": True,
+        "price_eur": 20.0,
+        "image_url": 'https://incidecoder-content.storage.googleapis.com/5eaab1a4-6021-42c6-a109-c73b7546495f/products/cerave-resurfacing-retinol-serum/cerave-resurfacing-retinol-serum_front_photo_300x300@1x.webp',
+        "url": 'https://incidecoder.com/products/cerave-resurfacing-retinol-serum',
+    },
+    {
+        "id": 'to-lactic-5',
+        "moment": 'soir',
+        "name": 'Lactic Acid 5% + HA',
+        "brand": 'The Ordinary',
+        "step": 'traitement',
+        "key_ingredients": ['Acide lactique 5%', 'Acide hyaluronique', 'Tasmannia'],
+        "skin_types": ['Normale', 'Sèche', 'Mixte'],
+        "concerns": {'texture': 3, 'radiance': 1},
+        "avoid_if_reactive": True,
+        "price_eur": 8.0,
+        "image_url": 'https://incidecoder-content.storage.googleapis.com/b6da0449-91b1-4047-90bc-7eb374e937a4/products/ordinary-lactic-acid-5-ha/ordinary-lactic-acid-5-ha_front_photo_300x300@1x.webp',
+        "url": 'https://incidecoder.com/products/the-ordinary-lactic-acid-5-ha-3',
+    },
+    {
+        "id": 'lrp-effaclar-mat',
+        "moment": 'matin_soir',
+        "name": 'Effaclar Mat Hydratant Sébo-Régulateur',
+        "brand": 'La Roche-Posay',
+        "step": 'hydratant',
+        "key_ingredients": ['Sebulyse', 'Microexfoliants', 'Eau thermale'],
+        "skin_types": ['Mixte', 'Grasse'],
+        "concerns": {'imperfections': 2, 'texture': 1},
+        "price_eur": 16.0,
+        "image_url": 'https://incidecoder-content.storage.googleapis.com/8ec453d6-82a2-4b73-9687-6b7194b61af1/products/la-roche-posay-effaclar-mat/la-roche-posay-effaclar-mat_front_photo_300x300@1x.webp',
+        "url": 'https://incidecoder.com/products/la-roche-posay-effaclar-mat',
+    },
+    {
+        "id": 'neutrogena-hydro-boost',
+        "moment": 'matin_soir',
+        "name": 'Hydro Boost Gel-Crème',
+        "brand": 'Neutrogena',
+        "step": 'hydratant',
+        "key_ingredients": ['Acide hyaluronique', 'Tréhalose'],
+        "skin_types": ['Normale', 'Mixte', 'Grasse'],
+        "concerns": {'hydration': 2, 'radiance': 1},
+        "price_eur": 12.0,
+        "image_url": 'https://incidecoder-content.storage.googleapis.com/a76d235a-b5a3-4203-978f-51c47e550744/products/neutrogena-hydro-boost-water-gel/neutrogena-hydro-boost-water-gel_front_photo_300x300@1x.webp',
+        "url": 'https://incidecoder.com/products/neutrogena-hydro-boost-water-gel',
+    },
+    {
+        "id": 'cerave-moisturising-cream',
+        "moment": 'matin_soir',
+        "name": 'Crème Hydratante Riche',
+        "brand": 'CeraVe',
+        "step": 'hydratant',
+        "key_ingredients": ['Céramides', 'Acide hyaluronique', 'Technologie MVE'],
+        "skin_types": ['Sèche'],
+        "concerns": {'hydration': 3, 'redness': 1},
+        "price_eur": 12.0,
+        "image_url": 'https://incidecoder-content.storage.googleapis.com/9945d0b5-7d9d-47a5-af2b-967b65bb1600/products/cerave-moisturising-cream/cerave-moisturising-cream_front_photo_300x300@1x.webp',
+        "url": 'https://incidecoder.com/products/cerave-moisturising-cream',
+    },
+    {
+        "id": 'avene-tolerance-control',
+        "moment": 'matin_soir',
+        "name": 'Tolérance Control Crème Apaisante',
+        "brand": 'Avène',
+        "step": 'hydratant',
+        "key_ingredients": ['D-Sensinose', "Eau thermale d'Avène"],
+        "skin_types": ['Normale', 'Sèche'],
+        "concerns": {'redness': 3, 'hydration': 2},
+        "price_eur": 17.0,
+        "image_url": 'https://incidecoder-content.storage.googleapis.com/2f8cedb5-6956-4cf3-b651-c2a6ce620c20/products/avene-tolerance-control-soothing-skin-recovery-cream/avene-tolerance-control-soothing-skin-recovery-cream_front_photo_300x300@1x.webp',
+        "url": 'https://incidecoder.com/products/avene-tolerance-control-soothing-skin-recovery-cream',
+    },
+    {
+        "id": 'vichy-aqualia-rich',
+        "moment": 'matin_soir',
+        "name": 'Aqualia Thermal Crème Riche',
+        "brand": 'Vichy',
+        "step": 'hydratant',
+        "key_ingredients": ['Acide hyaluronique', 'Eau volcanique'],
+        "skin_types": ['Normale', 'Sèche'],
+        "concerns": {'hydration': 2, 'radiance': 1},
+        "price_eur": 20.0,
+        "image_url": 'https://incidecoder-content.storage.googleapis.com/04ad2936-4c8c-43e2-b52c-21b853e2f64f/products/vichy-aqualia-thermal-rich-cream/vichy-aqualia-thermal-rich-cream_front_photo_300x300@1x.webp',
+        "url": 'https://incidecoder.com/products/vichy-aqualia-thermal-rich-cream',
+    },
+    {
+        "id": 'avene-cleanance-spf50',
+        "moment": 'matin',
+        "name": 'Cleanance Solaire SPF 50+',
+        "brand": 'Avène',
+        "step": 'protection',
+        "key_ingredients": ['Filtres très haute protection', 'Comedoclastin'],
+        "skin_types": ['Mixte', 'Grasse'],
+        "concerns": {'imperfections': 1, 'aging': 2},
+        "price_eur": 18.0,
+        "image_url": 'https://incidecoder-content.storage.googleapis.com/b38f2437-1b8d-47c5-844d-5b2e1b15638f/products/avene-very-high-protection-cleanance-spf50/avene-very-high-protection-cleanance-spf50_front_photo_300x300@1x.webp',
+        "url": 'https://incidecoder.com/products/avene-very-high-protection-cleanance-spf50',
     },
 ]
 
@@ -295,6 +481,11 @@ def _user_needs(metrics: Dict[str, float], profile_dict: dict) -> Dict[str, floa
     if c:
         needs[c] += 0.20
 
+    # Sébum mesuré sur la zone T (reflets spéculaires) → besoin de régulation
+    shine_t = float(metrics.get("shine_t", 0.0))
+    if shine_t > 0.03:
+        needs["imperfections"] += min(0.25, shine_t * 2.5)
+
     return needs
 
 
@@ -312,12 +503,21 @@ def _score_product(p: dict, needs: Dict[str, float], profile_dict: dict) -> floa
 
     score = sum(w * needs.get(c, 0.0) for c, w in p["concerns"].items())
 
-    # Skin-type affinity: exact match rewarded, mismatch penalised (soft)
+    # Skin-type affinity: strong signal now that every step of the catalogue
+    # offers alternatives per skin type
     if skin_type:
         if skin_type in p["skin_types"]:
-            score += 0.5
+            score += 0.8
         else:
-            score -= 0.8
+            score -= 1.5
+
+    # Tiebreak déterministe par utilisateur : à scores quasi égaux, deux
+    # utilisateurs différents ne reçoivent pas la même liste (jitter ≤ 0.15,
+    # trop faible pour renverser une vraie préférence)
+    uid = str(profile_dict.get("user_id") or "")
+    if uid:
+        h = int(hashlib.md5(f"{uid}:{p['id']}".encode()).hexdigest()[:6], 16)
+        score += (h % 97) / 650.0
 
     return score
 

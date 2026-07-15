@@ -120,6 +120,17 @@ def analyze_skin(image_b64: str, profile_dict: Optional[dict] = None) -> Analysi
             except Exception:
                 pass
 
+        # Peau mixte : le ViT ne connaît que sèche/normale/grasse. Une zone T
+        # brillante avec des joues mates est la signature d'une peau mixte —
+        # elle prime sur un verdict "normale/sèche" peu differencié.
+        shine_t = float(metrics.raw.get("shine_t", 0.0))
+        shine_u = float(metrics.raw.get("shine_u", 0.0))
+        if shine_t >= 0.05 and (shine_t - shine_u) >= 0.03:
+            if skin_type_detected in (None, "Normale", "Sèche") or skin_type_conf < 0.38:
+                skin_type_detected = "Mixte"
+                skin_type_conf = max(skin_type_conf, 0.55)
+                ml_used = True
+
     # Refine imperfections score by penalising for #detections
     n_det = len(dets)
     imperf_score = _clamp_score(metrics.imperfections_pre - n_det * 4)
@@ -155,11 +166,12 @@ def analyze_skin(image_b64: str, profile_dict: Optional[dict] = None) -> Analysi
         "radiance": radiance,
         "imperfections": imperf_score,
         "redness": metrics.redness,
+        "shine_t": float(metrics.raw.get("shine_t", 0.0)),
     }
     # Type de peau effectif : déclaré par l'utilisateur, sinon détecté sur la
     # photo (si confiance suffisante) — alimente les règles du système expert.
     profile.skin_type = (profile_dict or {}).get("skin_type") or (
-        skin_type_detected if skin_type_conf >= 0.5 else None
+        skin_type_detected if skin_type_conf >= 0.38 else None
     )
 
     diag = diagnose(metrics_d, profile)
@@ -171,7 +183,7 @@ def analyze_skin(image_b64: str, profile_dict: Optional[dict] = None) -> Analysi
     # Personalisation: the detected skin type completes the questionnaire when
     # the user hasn't declared one (photo evidence > missing data).
     product_profile = dict(profile_dict or {})
-    if not product_profile.get("skin_type") and skin_type_detected and skin_type_conf >= 0.5:
+    if not product_profile.get("skin_type") and skin_type_detected and skin_type_conf >= 0.38:
         product_profile["skin_type"] = skin_type_detected
     products = recommend_products(metrics_d, product_profile)
 

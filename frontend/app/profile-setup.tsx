@@ -25,6 +25,7 @@ import {
   PromiseIllustration,
   TechIllustration,
   PrivacyIllustration,
+  CaptureIllustration,
 } from "@/src/components/illustrations/OnboardingIllustrations";
 
 const AGE_OPTIONS = ["Moins de 25", "25 – 40", "40 – 60", "60 +"];
@@ -36,6 +37,13 @@ const ENV_OPTIONS = [
   { label: "Variable", value: "Variable" },
 ];
 const PRIORITY_OPTIONS = ["Éclat", "Ridules", "Imperfections", "Sensibilité"];
+const SKIN_OPTIONS = [
+  { label: "Normale", value: "Normale" },
+  { label: "Mixte (zone T brillante)", value: "Mixte" },
+  { label: "Grasse", value: "Grasse" },
+  { label: "Sèche", value: "Sèche" },
+  { label: "Je ne sais pas — détectez-le", value: "auto" },
+];
 
 export default function ProfileSetupScreen() {
   const { width: SCREEN_W, height: SCREEN_H } = useWindowDimensions();
@@ -47,6 +55,7 @@ export default function ProfileSetupScreen() {
   const [page, setPage] = useState(0);
   const [ageRange, setAgeRange] = useState<string | null>(null);
   const [environment, setEnvironment] = useState<string | null>(null);
+  const [skinType, setSkinType] = useState<string | null>(null);
   const [priority, setPriority] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -69,7 +78,8 @@ export default function ProfileSetupScreen() {
   const canNext = () => {
     if (page === 0) return ageRange !== null;
     if (page === 1) return environment !== null;
-    if (page === 2) return priority !== null;
+    if (page === 2) return skinType !== null;
+    if (page === 3) return priority !== null;
     return false;
   };
 
@@ -81,6 +91,8 @@ export default function ProfileSetupScreen() {
       await api.updateProfile({
         age_range: ageRange,
         environment,
+        // "auto" = l'utilisateur laisse la photo décider (ViT + sébum zones)
+        skin_type: skinType && skinType !== "auto" ? skinType : null,
         priority,
         onboarded: true,
       });
@@ -144,10 +156,10 @@ export default function ProfileSetupScreen() {
       {/* Header */}
       <View style={styles.header}>
         <View style={{ flex: 1 }} />
-        {page < 2 ? (
+        {page < 3 ? (
           <TouchableOpacity
             testID="profile-skip-btn"
-            onPress={() => goToPage(2)}
+            onPress={() => goToPage(3)}
             hitSlop={8}
           >
             <Text style={styles.skip}>Passer</Text>
@@ -237,7 +249,38 @@ export default function ProfileSetupScreen() {
           {renderOptions(ENV_OPTIONS, environment, setEnvironment, "env")}
         </ScrollView>
 
-        {/* Q3 — Priority */}
+        {/* Q3 — Skin type */}
+        <ScrollView
+          style={{ width: SCREEN_W }}
+          contentContainerStyle={styles.page}
+          showsVerticalScrollIndicator={false}
+        >
+          <FadeIn distance={16}>
+            <View
+              style={[
+                styles.illustration,
+                {
+                  width: illustrationSize,
+                  height: illustrationSize,
+                  marginBottom: isShort ? spacing.s : spacing.m,
+                },
+              ]}
+            >
+              <CaptureIllustration size={illustrationSize} />
+            </View>
+          </FadeIn>
+          <FadeIn delay={60} distance={16}>
+            <Text style={[styles.question, isShort && styles.questionShort]}>{"Votre type\nde peau"}</Text>
+          </FadeIn>
+          <FadeIn delay={120}>
+            <Text style={[styles.helper, isShort && { marginTop: spacing.s, fontSize: 14 }]}>
+              {"Le critère n°1 pour vos produits. En cas de doute, notre analyse photo le détecte pour vous."}
+            </Text>
+          </FadeIn>
+          {renderOptions(SKIN_OPTIONS, skinType, setSkinType, "skin")}
+        </ScrollView>
+
+        {/* Q4 — Priority */}
         <ScrollView
           style={{ width: SCREEN_W }}
           contentContainerStyle={styles.page}
@@ -307,7 +350,7 @@ export default function ProfileSetupScreen() {
         )}
 
         <View style={styles.dotsRow}>
-          {[0, 1, 2].map((i) => (
+          {[0, 1, 2, 3].map((i) => (
             <View key={i} style={[styles.dot, page === i && styles.dotActive]} />
           ))}
         </View>
@@ -316,7 +359,7 @@ export default function ProfileSetupScreen() {
           testID="profile-next-btn"
           disabled={!canNext() || saving}
           onPress={() => {
-            if (page < 2) goToPage(page + 1);
+            if (page < 3) goToPage(page + 1);
             else finish();
           }}
           style={[styles.nextBtn, (!canNext() || saving) && styles.nextBtnDisabled]}
@@ -325,7 +368,7 @@ export default function ProfileSetupScreen() {
             <ActivityIndicator color={colors.onAccent} size="small" />
           ) : (
             <Text style={styles.nextText}>
-              {page < 2 ? "Suivant" : "Terminer"}
+              {page < 3 ? "Suivant" : "Terminer"}
             </Text>
           )}
         </AnimatedPressable>
