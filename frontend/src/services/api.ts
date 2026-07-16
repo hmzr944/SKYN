@@ -118,6 +118,26 @@ type PendingReport = {
   created_at: string;
 };
 
+const LOCAL_REPORT_PREFIX = "skyn_local_report_";
+
+/** Sauvegarde immédiate et locale du résultat complet d'une analyse — permet
+ * d'afficher le rapport même si l'enregistrement côté serveur échoue
+ * (réseau, session). C'est la copie "vue" ; queuePendingReport gère elle la
+ * resynchronisation vers le serveur en arrière-plan. */
+export async function saveLocalReport(localId: string, report: any): Promise<void> {
+  await storage.setItem(`${LOCAL_REPORT_PREFIX}${localId}`, JSON.stringify(report));
+}
+
+export async function getLocalReport(localId: string): Promise<any | null> {
+  const raw = (await storage.getItem(`${LOCAL_REPORT_PREFIX}${localId}`, "")) as string;
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
 export async function queuePendingReport(r: Omit<PendingReport, "local_id" | "created_at">) {
   const raw = await storage.getItem(PENDING_REPORTS_KEY, "[]");
   const list: any[] = JSON.parse((raw as string) || "[]");

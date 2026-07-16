@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -15,6 +15,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
 import Svg, { Path } from "react-native-svg";
+import Animated, { useAnimatedStyle, useSharedValue, withSpring } from "react-native-reanimated";
 
 import { colors, fonts, spacing, radius, shadow } from "@/src/theme";
 import { api } from "@/src/services/api";
@@ -50,6 +51,62 @@ const SKIN_OPTIONS = [
   { label: "Je ne sais pas — détectez-le", value: "auto" },
 ];
 
+/** Une option du questionnaire : la coche "pop" avec un léger effet ressort
+ * à la sélection — un retour physique plus vivant qu'un simple changement
+ * de couleur instantané. */
+function OptionRow({
+  label,
+  selected,
+  isShort,
+  testID,
+  onPress,
+  delay,
+}: {
+  label: string;
+  selected: boolean;
+  isShort: boolean;
+  testID: string;
+  onPress: () => void;
+  delay: number;
+}) {
+  const pop = useSharedValue(selected ? 1 : 0);
+  useEffect(() => {
+    pop.value = withSpring(selected ? 1 : 0, { damping: 12, stiffness: 220 });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected]);
+  const checkStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: 0.5 + pop.value * 0.5 }],
+    opacity: pop.value,
+  }));
+
+  return (
+    <FadeIn delay={delay} distance={10}>
+      <AnimatedPressable
+        testID={testID}
+        style={[styles.option, isShort && { paddingVertical: spacing.s }, selected && styles.optionSelected]}
+        scaleTo={0.98}
+        onPress={onPress}
+      >
+        <View style={[styles.checkbox, selected && styles.checkboxSelected]}>
+          <Animated.View style={checkStyle}>
+            <Svg width={12} height={10} viewBox="0 0 12 10">
+              <Path
+                d="M1 5 L4.3 8.3 L11 1"
+                stroke={colors.onAccent}
+                strokeWidth={1.8}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                fill="none"
+              />
+            </Svg>
+          </Animated.View>
+        </View>
+        <Text style={[styles.optionText, selected && styles.optionTextSelected]}>{label}</Text>
+      </AnimatedPressable>
+    </FadeIn>
+  );
+}
+
 export default function ProfileSetupScreen() {
   const { width: SCREEN_W, height: SCREEN_H } = useWindowDimensions();
   const isShort = SCREEN_H < 700;
@@ -66,6 +123,7 @@ export default function ProfileSetupScreen() {
   const [howItWorksVisible, setHowItWorksVisible] = useState(false);
 
   const goToPage = (p: number) => {
+    if (autoAdvanceTimer.current) clearTimeout(autoAdvanceTimer.current);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     scrollRef.current?.scrollTo({ x: p * SCREEN_W, animated: true });
     setPage(p);
@@ -113,54 +171,44 @@ export default function ProfileSetupScreen() {
     }
   };
 
+  // Avance automatique : après un choix, la question suivante s'ouvre seule
+  // (question 4/priorité exclue — on garde un "Terminer" explicite pour la
+  // soumission finale). Un nouveau choix pendant la fenêtre d'attente annule
+  // et relance le minuteur, pour ne jamais bousculer un changement d'avis.
+  const autoAdvanceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scheduleAutoAdvance = (fromPage: number) => {
+    if (autoAdvanceTimer.current) clearTimeout(autoAdvanceTimer.current);
+    if (fromPage >= 3) return;
+    autoAdvanceTimer.current = setTimeout(() => goToPage(fromPage + 1), 420);
+  };
+  useEffect(() => () => {
+    if (autoAdvanceTimer.current) clearTimeout(autoAdvanceTimer.current);
+  }, []);
+
   const renderOptions = (
     options: { label: string; value: string }[],
     current: string | null,
     setter: (v: string) => void,
     testPrefix: string,
+    autoAdvance = true,
   ) => (
     <View style={[styles.optionList, isShort && { marginTop: spacing.l }]}>
       {options.map((opt, i) => {
         const selected = current === opt.value;
         return (
-          <FadeIn key={opt.value} delay={120 + i * 60} distance={10}>
-            <AnimatedPressable
-              testID={`${testPrefix}-${opt.value}`}
-              style={[
-                styles.option,
-                isShort && { paddingVertical: spacing.s },
-                selected && styles.optionSelected,
-              ]}
-              scaleTo={0.98}
-              onPress={() => {
-                setter(opt.value);
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              }}
-            >
-              <View style={[styles.checkbox, selected && styles.checkboxSelected]}>
-                {selected ? (
-                  <Svg width={12} height={10} viewBox="0 0 12 10">
-                    <Path
-                      d="M1 5 L4.3 8.3 L11 1"
-                      stroke={colors.onAccent}
-                      strokeWidth={1.8}
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      fill="none"
-                    />
-                  </Svg>
-                ) : null}
-              </View>
-              <Text
-                style={[
-                  styles.optionText,
-                  selected && styles.optionTextSelected,
-                ]}
-              >
-                {opt.label}
-              </Text>
-            </AnimatedPressable>
-          </FadeIn>
+          <OptionRow
+            key={opt.value}
+            label={opt.label}
+            selected={selected}
+            isShort={isShort}
+            testID={`${testPrefix}-${opt.value}`}
+            delay={120 + i * 60}
+            onPress={() => {
+              setter(opt.value);
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              if (autoAdvance) scheduleAutoAdvance(page);
+            }}
+          />
         );
       })}
     </View>
@@ -292,6 +340,7 @@ export default function ProfileSetupScreen() {
             priority,
             setPriority,
             "priority",
+            false,
           )}
           <TouchableOpacity
             testID="profile-how-it-works-link"

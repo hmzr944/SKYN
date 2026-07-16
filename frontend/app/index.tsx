@@ -43,7 +43,10 @@ export default function Index() {
     const t = setTimeout(async () => {
       if (!user) {
         if (cancelled) return;
-        router.replace("/auth");
+        // /onboarding porte déjà toutes les options de connexion (Google,
+        // invité) sur sa dernière page — /auth n'était qu'un écran de
+        // transition sans valeur ajoutée, retiré du parcours.
+        router.replace("/onboarding");
       } else if (!profile?.onboarded) {
         router.replace("/profile-setup");
       } else {

@@ -12,9 +12,10 @@ import { CameraView, useCameraPermissions } from "expo-camera";
 import * as ImagePicker from "expo-image-picker";
 import * as Haptics from "expo-haptics";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import Svg, { Ellipse, Defs, Mask, Rect, Circle } from "react-native-svg";
+import Svg, { Ellipse, Defs, Mask, Rect, Circle, Path } from "react-native-svg";
 import Animated, {
   useAnimatedStyle,
+  useAnimatedProps,
   useSharedValue,
   withRepeat,
   withTiming,
@@ -27,6 +28,11 @@ import { FadeIn } from "@/src/components/ui/FadeIn";
 import { AnimatedPressable } from "@/src/components/ui/AnimatedPressable";
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get("window");
+
+const AnimatedCircle = Animated.createAnimatedComponent(Circle);
+const CAPTURE_RING_SIZE = 96;
+const CAPTURE_RING_R = (CAPTURE_RING_SIZE - 3) / 2;
+const CAPTURE_RING_CIRC = 2 * Math.PI * CAPTURE_RING_R;
 
 const GRAIN_DOTS = Array.from({ length: 80 }).map((_, i) => {
   const x = ((i * 73) % 100) / 100;
@@ -47,7 +53,7 @@ const GUIDE_MSG: Record<GuideState, string> = {
   off_center: "Centrez votre visage\ndans l'ovale.",
   turn_more: "Tournez un peu plus\nla tête.",
   turn_other: "Tournez de\nl'autre côté.",
-  perfect: "Parfait —\ncapturez.",
+  perfect: "Parfait —\nne bougez plus…",
 };
 
 // Scan en 3 prises : face, puis profils pour couvrir joues et tempes
@@ -185,6 +191,63 @@ export default function CameraScreen() {
 
   const isPerfect = guide === "perfect";
 
+  // Auto-capture : dès que le cadrage est "parfait" pendant ~900ms sans
+  // interruption, la photo se déclenche seule. Un anneau lumineux autour du
+  // bouton visualise le compte à rebours ; l'appui manuel reste toujours
+  // possible en secours (utile en cas de doute ou sur les appareils sans
+  // guidage live, où l'anneau ne se déclenche simplement jamais).
+  const AUTO_CAPTURE_MS = 900;
+  const perfectSinceRef = useRef<number | null>(null);
+  const capturingRef = useRef(false);
+  const countdown = useSharedValue(0);
+  const ringAnimatedProps = useAnimatedProps(() => ({
+    strokeDashoffset: CAPTURE_RING_CIRC * (1 - countdown.value),
+  }));
+
+  // Flash plein écran au moment exact de la capture — signal fort et bref,
+  // indispensable maintenant que la prise de vue peut être silencieuse (auto).
+  const flash = useSharedValue(0);
+  const flashStyle = useAnimatedStyle(() => ({ opacity: flash.value }));
+  const triggerFlash = () => {
+    flash.value = withTiming(1, { duration: 60 }, () => {
+      flash.value = withTiming(0, { duration: 260 });
+    });
+  };
+
+  useEffect(() => {
+    // Une nouvelle étape (face → profil…) repart avec un compteur neutre
+    perfectSinceRef.current = null;
+    capturingRef.current = false;
+    countdown.value = 0;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step]);
+
+  useEffect(() => {
+    if (Platform.OS !== "web") return;
+    let raf = 0;
+    const tick = () => {
+      if (guide === "perfect" && !showTips && !capturingRef.current) {
+        if (perfectSinceRef.current === null) perfectSinceRef.current = Date.now();
+        const elapsed = Date.now() - perfectSinceRef.current;
+        const progress = Math.min(1, elapsed / AUTO_CAPTURE_MS);
+        countdown.value = progress;
+        if (progress >= 1) {
+          countdown.value = 0;
+          perfectSinceRef.current = null;
+          // eslint-disable-next-line @typescript-eslint/no-use-before-define
+          capture();
+        }
+      } else {
+        perfectSinceRef.current = null;
+        countdown.value = withTiming(0, { duration: 200 });
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [guide, showTips]);
+
   const pulse = useSharedValue(0);
   useEffect(() => {
     pulse.value = withRepeat(
@@ -263,7 +326,10 @@ export default function CameraScreen() {
   };
 
   const capture = async () => {
+    if (capturingRef.current) return; // évite un double déclenchement auto+manuel
+    capturingRef.current = true;
     if (!cameraRef.current) {
+      capturingRef.current = false;
       finalize(null);
       return;
     }
@@ -273,6 +339,8 @@ export default function CameraScreen() {
         quality: 0.55,
         skipProcessing: true,
       });
+      triggerFlash();
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
       // Web : selon les versions, l'image est dans .base64 ou dans .uri (data-URI)
       let b64 = photo?.base64 || null;
       if (!b64 && photo?.uri?.startsWith("data:")) b64 = photo.uri;
@@ -284,9 +352,11 @@ export default function CameraScreen() {
           fr.readAsDataURL(blob);
         });
       }
-      onCaptured(b64 ? await unmirror(b64) : null);
+      await onCaptured(b64 ? await unmirror(b64) : null);
     } catch {
-      onCaptured(null);
+      await onCaptured(null);
+    } finally {
+      capturingRef.current = false;
     }
   };
 
@@ -363,16 +433,37 @@ export default function CameraScreen() {
             opacity={0.78}
             mask="url(#ovalMask)"
           />
-          {/* Oval contour — vert quand le cadrage est parfait */}
+          {/* Oval contour — fin, presque effacé : le cadrage est surtout
+              porté par les repères d'angle ci-dessous, plus abstraits
+              qu'un simple pointillé de forme */}
           <Ellipse
             cx={SCREEN_W / 2}
             cy={SCREEN_H / 2 - 40}
             rx={SCREEN_W * 0.36}
             ry={SCREEN_H * 0.26}
-            stroke={isPerfect ? colors.lime : colors.accent}
-            strokeWidth={isPerfect ? 3 : 2}
+            stroke={isPerfect ? colors.lime : "rgba(255,255,255,0.25)"}
+            strokeWidth={isPerfect ? 2 : 1}
             fill="transparent"
           />
+          {/* Repères d'angle façon viseur technique — identité propre à cet
+              écran, plus graphique qu'un contour uni */}
+          {(() => {
+            const cx = SCREEN_W / 2;
+            const cy = SCREEN_H / 2 - 40;
+            const rx = SCREEN_W * 0.36 + 14;
+            const ry = SCREEN_H * 0.26 + 14;
+            const len = 20;
+            const c = isPerfect ? colors.lime : colors.accent;
+            const w = isPerfect ? 3 : 2;
+            return (
+              <>
+                <Path d={`M ${cx - rx},${cy - ry + len} L ${cx - rx},${cy - ry} L ${cx - rx + len},${cy - ry}`} stroke={c} strokeWidth={w} fill="none" strokeLinecap="round" />
+                <Path d={`M ${cx + rx - len},${cy - ry} L ${cx + rx},${cy - ry} L ${cx + rx},${cy - ry + len}`} stroke={c} strokeWidth={w} fill="none" strokeLinecap="round" />
+                <Path d={`M ${cx - rx},${cy + ry - len} L ${cx - rx},${cy + ry} L ${cx - rx + len},${cy + ry}`} stroke={c} strokeWidth={w} fill="none" strokeLinecap="round" />
+                <Path d={`M ${cx + rx - len},${cy + ry} L ${cx + rx},${cy + ry} L ${cx + rx},${cy + ry - len}`} stroke={c} strokeWidth={w} fill="none" strokeLinecap="round" />
+              </>
+            );
+          })()}
           {GRAIN_DOTS.map((g, i) => (
             <Circle
               key={i}
@@ -411,7 +502,10 @@ export default function CameraScreen() {
         >
           <Text style={styles.closeText}>✕</Text>
         </AnimatedPressable>
-        <Text style={styles.topTitle}>Bilan</Text>
+        <View style={styles.liveBadge}>
+          <View style={styles.liveDot} />
+          <Text style={styles.topTitle}>SCAN</Text>
+        </View>
         <AnimatedPressable
           testID="camera-tips-btn"
           onPress={() => setShowTips(true)}
@@ -436,10 +530,23 @@ export default function CameraScreen() {
       {/* Bottom controls */}
       <View style={styles.bottomBar} pointerEvents="box-none">
         <FadeIn distance={10}>
-          <View style={styles.stepBadge} testID="camera-step">
-            <Text style={styles.stepBadgeText}>
-              {step + 1}/3 · {STEPS[step].label}
-            </Text>
+          <View style={styles.stepper} testID="camera-step">
+            {STEPS.map((s, i) => (
+              <View key={s.label} style={styles.stepperItem}>
+                <View
+                  style={[
+                    styles.stepperSegment,
+                    i < step && styles.stepperSegmentDone,
+                    i === step && styles.stepperSegmentActive,
+                  ]}
+                />
+                <Text
+                  style={[styles.stepperLabel, i === step && styles.stepperLabelActive]}
+                >
+                  {s.label}
+                </Text>
+              </View>
+            ))}
           </View>
           <Text
             style={[styles.guide, isPerfect && { color: colors.lime }]}
@@ -465,20 +572,40 @@ export default function CameraScreen() {
             <Text style={styles.galleryText}>GALERIE</Text>
           </AnimatedPressable>
 
-          <AnimatedPressable
-            testID="camera-capture-btn"
-            onPress={capture}
-            style={styles.captureOuter}
-            disabled={canUseCamera ? !ready : false}
-            scaleTo={0.92}
-          >
-            <View style={styles.captureInner} />
-          </AnimatedPressable>
+          <View style={styles.captureRingWrap}>
+            <Svg width={CAPTURE_RING_SIZE} height={CAPTURE_RING_SIZE} style={StyleSheet.absoluteFill}>
+              <AnimatedCircle
+                cx={CAPTURE_RING_SIZE / 2}
+                cy={CAPTURE_RING_SIZE / 2}
+                r={CAPTURE_RING_R}
+                stroke={colors.lime}
+                strokeWidth={3}
+                fill="transparent"
+                strokeDasharray={`${CAPTURE_RING_CIRC} ${CAPTURE_RING_CIRC}`}
+                animatedProps={ringAnimatedProps}
+                strokeLinecap="round"
+                transform={`rotate(-90, ${CAPTURE_RING_SIZE / 2}, ${CAPTURE_RING_SIZE / 2})`}
+              />
+            </Svg>
+            <AnimatedPressable
+              testID="camera-capture-btn"
+              onPress={capture}
+              style={[styles.captureOuter, isPerfect && styles.captureOuterPerfect]}
+              disabled={canUseCamera ? !ready : false}
+              scaleTo={0.92}
+            >
+              <View style={[styles.captureInner, isPerfect && styles.captureInnerPerfect]} />
+            </AnimatedPressable>
+          </View>
 
           <View style={{ width: 72 }} />
         </View>
 
-        <Text style={styles.hint}>Appuyez pour démarrer l'analyse</Text>
+        <Text style={styles.hint}>
+          {Platform.OS === "web"
+            ? "Capture automatique dès le bon cadrage — ou appuyez"
+            : "Appuyez pour capturer"}
+        </Text>
       </View>
 
       {/* Coaching photo — premier scan ou via "?" */}
@@ -508,6 +635,13 @@ export default function CameraScreen() {
           </View>
         </View>
       ) : null}
+
+      {/* Flash — signal bref au moment exact de la capture */}
+      <Animated.View
+        style={[styles.flashOverlay, flashStyle]}
+        pointerEvents="none"
+        testID="camera-flash"
+      />
     </SafeAreaView>
   );
 }
@@ -566,6 +700,17 @@ const styles = StyleSheet.create({
     fontSize: 11,
     textTransform: "uppercase",
   },
+  liveBadge: { flexDirection: "row", alignItems: "center", gap: 6 },
+  liveDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: colors.lime,
+  },
+  flashOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: colors.white,
+  },
   notice: {
     position: "absolute",
     top: 80,
@@ -593,21 +738,29 @@ const styles = StyleSheet.create({
     right: 0,
     alignItems: "center",
   },
-  stepBadge: {
-    alignSelf: "center",
-    backgroundColor: "rgba(255,255,255,0.12)",
-    borderRadius: radius.pill,
-    paddingVertical: 4,
-    paddingHorizontal: 14,
-    marginBottom: spacing.s,
+  stepper: {
+    flexDirection: "row",
+    gap: spacing.s,
+    marginBottom: spacing.m,
+    paddingHorizontal: spacing.l,
   },
-  stepBadgeText: {
+  stepperItem: { flex: 1, alignItems: "center", gap: 6 },
+  stepperSegment: {
+    width: "100%",
+    height: 3,
+    borderRadius: 1.5,
+    backgroundColor: "rgba(255,255,255,0.2)",
+  },
+  stepperSegmentDone: { backgroundColor: colors.lime },
+  stepperSegmentActive: { backgroundColor: colors.accent },
+  stepperLabel: {
     fontFamily: fonts.bodyMedium,
-    color: colors.white,
-    fontSize: 10,
-    letterSpacing: 2,
+    color: "rgba(255,255,255,0.45)",
+    fontSize: 9,
+    letterSpacing: 1.5,
     textTransform: "uppercase",
   },
+  stepperLabelActive: { color: colors.white },
   guide: {
     fontFamily: fonts.heading,
     color: colors.white,
@@ -647,6 +800,12 @@ const styles = StyleSheet.create({
     fontSize: 9,
     letterSpacing: 2,
   },
+  captureRingWrap: {
+    width: CAPTURE_RING_SIZE,
+    height: CAPTURE_RING_SIZE,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   captureOuter: {
     width: 80,
     height: 80,
@@ -656,12 +815,14 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  captureOuterPerfect: { borderColor: colors.lime },
   captureInner: {
     width: 62,
     height: 62,
     borderRadius: 31,
     backgroundColor: colors.accent,
   },
+  captureInnerPerfect: { backgroundColor: colors.lime },
   hint: {
     marginTop: spacing.m,
     fontFamily: fonts.body,

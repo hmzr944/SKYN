@@ -13,7 +13,7 @@ import Animated, {
 import Svg, { Circle, Ellipse, Line, Path } from "react-native-svg";
 
 import { colors, fonts, spacing } from "@/src/theme";
-import { api, queuePendingReport } from "@/src/services/api";
+import { api, queuePendingReport, saveLocalReport } from "@/src/services/api";
 import { pushReportToSupabase } from "@/src/services/supabase";
 import { storage } from "@/src/utils/storage";
 import { useAuth } from "@/src/contexts/AuthContext";
@@ -144,6 +144,19 @@ export default function AnalysisScreen() {
 
       await storage.setItem("skyn_last_low_light", a?.low_light ? "1" : "");
 
+      // Le résultat est écrit en local AVANT toute tentative réseau : quoi
+      // qu'il arrive côté serveur, l'utilisateur voit son bilan. On tente
+      // ensuite l'enregistrement cloud ; en cas d'échec, la copie locale
+      // sert de rapport définitif et sera resynchronisée plus tard.
+      const localId = `local-${Date.now()}`;
+      const localReport = {
+        id: localId,
+        user_id: user?.user_id || "",
+        created_at: new Date().toISOString(),
+        ...payload,
+      };
+      await saveLocalReport(localId, localReport);
+
       try {
         const report = await api.createReport(payload);
         pushReportToSupabase({
@@ -159,7 +172,7 @@ export default function AnalysisScreen() {
         router.replace(`/report?id=${report.id}`);
       } catch {
         await queuePendingReport(payload as any);
-        router.replace("/dashboard");
+        router.replace(`/report?id=${localId}`);
       }
     };
 
@@ -215,10 +228,16 @@ export default function AnalysisScreen() {
     <SafeAreaView style={styles.container} edges={["top", "bottom"]}>
       <FadeIn distance={10}>
         <View style={styles.header}>
-          <Text style={styles.eyebrow}>ANALYSE EN COURS</Text>
-          <Text style={styles.phaseText} testID={`analysis-phase-${phase}`}>
-            {PHASES[phase]}
-          </Text>
+          <View style={styles.liveBadge}>
+            <View style={styles.liveDot} />
+            <Text style={styles.eyebrow}>ANALYSE EN COURS</Text>
+          </View>
+          <View style={styles.phaseRow}>
+            <Text style={styles.phaseNum}>0{phase + 1}</Text>
+            <Text style={styles.phaseText} testID={`analysis-phase-${phase}`}>
+              {PHASES[phase]}
+            </Text>
+          </View>
         </View>
       </FadeIn>
 
@@ -284,11 +303,28 @@ export default function AnalysisScreen() {
             cy={FRAME / 2}
             rx={FRAME * 0.42}
             ry={FRAME * 0.48}
-            stroke={colors.accent}
-            strokeWidth={1.5}
-            strokeDasharray="3 6"
+            stroke="rgba(255,248,242,0.3)"
+            strokeWidth={1}
             fill="transparent"
           />
+          {/* Repères d'angle — même signature que l'écran caméra, le fil
+              visuel qui relie la prise de vue et son analyse */}
+          {(() => {
+            const cx = FRAME / 2;
+            const cy = FRAME / 2;
+            const bx = FRAME * 0.46;
+            const by = FRAME * 0.52;
+            const len = FRAME * 0.09;
+            const c = colors.accent;
+            return (
+              <>
+                <Path d={`M ${cx - bx},${cy - by + len} L ${cx - bx},${cy - by} L ${cx - bx + len},${cy - by}`} stroke={c} strokeWidth={1.5} fill="none" strokeLinecap="round" />
+                <Path d={`M ${cx + bx - len},${cy - by} L ${cx + bx},${cy - by} L ${cx + bx},${cy - by + len}`} stroke={c} strokeWidth={1.5} fill="none" strokeLinecap="round" />
+                <Path d={`M ${cx - bx},${cy + by - len} L ${cx - bx},${cy + by} L ${cx - bx + len},${cy + by}`} stroke={c} strokeWidth={1.5} fill="none" strokeLinecap="round" />
+                <Path d={`M ${cx + bx - len},${cy + by} L ${cx + bx},${cy + by} L ${cx + bx},${cy + by - len}`} stroke={c} strokeWidth={1.5} fill="none" strokeLinecap="round" />
+              </>
+            );
+          })()}
         </Svg>
 
         {phase === 0 ? (
@@ -405,19 +441,34 @@ const styles = StyleSheet.create({
   },
   stepLabelActive: { color: colors.accent },
   stepLabelDone: { color: colors.fg },
+  liveBadge: { flexDirection: "row", alignItems: "center", gap: 6 },
+  liveDot: { width: 5, height: 5, borderRadius: 2.5, backgroundColor: colors.accent },
   eyebrow: {
     fontFamily: fonts.bodyMedium,
     color: colors.fgMuted,
     fontSize: 10,
     letterSpacing: 4,
   },
+  phaseRow: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    gap: 10,
+    marginTop: spacing.s,
+  },
+  phaseNum: {
+    fontFamily: fonts.heading,
+    color: colors.accentSoft,
+    fontSize: 34,
+    letterSpacing: -1,
+    lineHeight: 34,
+  },
   phaseText: {
     fontFamily: fonts.heading,
     color: colors.fg,
     fontSize: 26,
-    marginTop: spacing.s,
     letterSpacing: -0.5,
-    textAlign: "center",
+    lineHeight: 30,
+    textAlign: "left",
   },
   frame: {
     position: "relative",

@@ -25,7 +25,7 @@ import Animated, {
 import * as Haptics from "expo-haptics";
 
 import { colors, fonts, spacing, radius, shadow } from "@/src/theme";
-import { api, ProductReco } from "@/src/services/api";
+import { api, getLocalReport, ProductReco } from "@/src/services/api";
 import { storage } from "@/src/utils/storage";
 import { FadeIn } from "@/src/components/ui/FadeIn";
 import { AnimatedPressable } from "@/src/components/ui/AnimatedPressable";
@@ -304,6 +304,14 @@ export default function ReportScreen() {
   useEffect(() => {
     (async () => {
       try {
+        // Rapport local (créé quand la sauvegarde cloud a échoué juste après
+        // le scan) : jamais d'appel réseau, on l'affiche tel quel.
+        if (id?.startsWith("local-")) {
+          const local = await getLocalReport(id);
+          setReport(local);
+          return;
+        }
+
         const list = await api.listReports();
         let current: any = null;
         if (id) {
