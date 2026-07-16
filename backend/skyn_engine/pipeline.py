@@ -167,6 +167,8 @@ def analyze_skin(image_b64: str, profile_dict: Optional[dict] = None) -> Analysi
         "imperfections": imperf_score,
         "redness": metrics.redness,
         "shine_t": float(metrics.raw.get("shine_t", 0.0)),
+        "pore_density": float(metrics.raw.get("pore_density", 0.0)),
+        "fine_lines": float(metrics.raw.get("fine_lines", 0.0)),
     }
     # Type de peau effectif : déclaré par l'utilisateur, sinon détecté sur la
     # photo (si confiance suffisante) — alimente les règles du système expert.

@@ -10,6 +10,9 @@ export type ProductReco = {
   moment: string;
   moment_label: string;
   why: string;
+  match_confidence: number;
+  confidence_label: string;
+  match_reasons: string[];
   key_ingredients: string[];
   price_eur: number;
   image_url: string;

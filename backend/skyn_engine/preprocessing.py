@@ -38,6 +38,7 @@ class Preprocessed:
     skin_mask: np.ndarray      # uint8 [0..255] over full image (only skin pixels)
     t_zone_mask: np.ndarray    # uint8
     u_zone_mask: np.ndarray    # uint8
+    forehead_mask: np.ndarray  # uint8 — forehead only (subset of t_zone), for wrinkle analysis
     luminance_mean: float      # 0..255
     detected: bool             # face found?
     roll_deg: float            # in-plane rotation in degrees
@@ -82,6 +83,7 @@ def preprocess(image_b64: str) -> Preprocessed:
             face_bbox=(0, 0, 10, 10),
             skin_mask=empty,
             t_zone_mask=empty,
+            forehead_mask=empty,
             u_zone_mask=empty,
             luminance_mean=0.0,
             detected=False,
@@ -111,6 +113,7 @@ def preprocess(image_b64: str) -> Preprocessed:
             face_bbox=(0, 0, w, h),
             skin_mask=empty,
             t_zone_mask=empty,
+            forehead_mask=empty,
             u_zone_mask=empty,
             luminance_mean=luminance_mean,
             detected=False,
@@ -149,6 +152,7 @@ def preprocess(image_b64: str) -> Preprocessed:
     # Restrict ROIs to skin area
     t_zone_mask = cv2.bitwise_and(t_zone_mask, skin_mask)
     u_zone_mask = cv2.bitwise_and(u_zone_mask, skin_mask)
+    forehead_mask = cv2.bitwise_and(forehead, skin_mask)
 
     return Preprocessed(
         rgb=rgb,
@@ -156,6 +160,7 @@ def preprocess(image_b64: str) -> Preprocessed:
         skin_mask=skin_mask,
         t_zone_mask=t_zone_mask,
         u_zone_mask=u_zone_mask,
+        forehead_mask=forehead_mask,
         luminance_mean=luminance_mean,
         detected=True,
         roll_deg=roll_deg,

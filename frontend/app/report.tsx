@@ -192,8 +192,16 @@ function MetricInfoSheet({
   );
 }
 
+function confidenceColor(score: number): string {
+  if (score >= 85) return colors.lime;
+  if (score >= 65) return colors.accent;
+  if (score >= 45) return colors.accentSoft;
+  return colors.fgDim;
+}
+
 function ProductCard({ product, index }: { product: ProductReco; index: number }) {
   const [imgFailed, setImgFailed] = useState(false);
+  const [showReasons, setShowReasons] = useState(false);
 
   const openLink = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -243,6 +251,34 @@ function ProductCard({ product, index }: { product: ProductReco; index: number }
           <Text style={styles.productWhy} numberOfLines={3}>
             {product.why}
           </Text>
+
+          {typeof product.match_confidence === "number" ? (
+            <TouchableOpacity
+              onPress={() => setShowReasons((s) => !s)}
+              activeOpacity={0.7}
+              testID={`product-confidence-${index}`}
+            >
+              <View style={styles.confidenceRow}>
+                <View
+                  style={[
+                    styles.confidenceDot,
+                    { backgroundColor: confidenceColor(product.match_confidence) },
+                  ]}
+                />
+                <Text style={styles.confidenceText}>
+                  {product.match_confidence}% adapté à votre peau — {product.confidence_label}
+                </Text>
+              </View>
+              {showReasons && product.match_reasons?.length ? (
+                <View style={styles.reasonsBox}>
+                  {product.match_reasons.map((r, i) => (
+                    <Text key={i} style={styles.reasonItem}>• {r}</Text>
+                  ))}
+                </View>
+              ) : null}
+            </TouchableOpacity>
+          ) : null}
+
           <View style={styles.productFooter}>
             <Text style={styles.productPrice}>≈ {product.price_eur.toFixed(0)} €</Text>
             <Text style={styles.productLink}>Voir le produit →</Text>
@@ -829,6 +865,34 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 17,
     marginTop: 4,
+  },
+  confidenceRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginTop: 6,
+  },
+  confidenceDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  confidenceText: {
+    fontFamily: fonts.bodyMedium,
+    color: colors.fg,
+    fontSize: 10.5,
+    letterSpacing: 0.2,
+  },
+  reasonsBox: {
+    marginTop: 6,
+    paddingLeft: 12,
+    gap: 2,
+  },
+  reasonItem: {
+    fontFamily: fonts.body,
+    color: colors.fgMuted,
+    fontSize: 11,
+    lineHeight: 16,
   },
   productFooter: {
     flexDirection: "row",

@@ -85,6 +85,9 @@ class ProductReco(BaseModel):
     moment: str = "matin_soir"          # "matin" | "soir" | "matin_soir"
     moment_label: str = "Matin & soir"
     why: str
+    match_confidence: int = 70          # 0-100, indice de confiance dermo-conseil
+    confidence_label: str = "Bonne correspondance"
+    match_reasons: List[str] = Field(default_factory=list)
     key_ingredients: List[str] = Field(default_factory=list)
     price_eur: float
     image_url: str

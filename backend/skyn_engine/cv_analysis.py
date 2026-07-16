@@ -8,8 +8,18 @@ Radiance & oiliness: convert to LAB and HSV, look at the L (lightness) channel
 on the whole skin area. Dull skin = low L mean. Sebaceous shine = isolated
 peaks of high L on the T-zone.
 
-Hydration proxy: combination of low local variance (= flat dull skin) on the
-cheeks with redness in LAB-a channel.
+Sebum by zone: fraction of near-specular highlight pixels (very high L, low
+saturation) on T-zone vs U-zone — a T-zone-only shine signature is the classic
+dermatological marker of combination skin, independent of the ViT classifier.
+
+Pores: morphological black-hat transform (small dark structures against a
+locally bright background) on the T-zone — the standard classical-CV proxy for
+visible/dilated pores, distinct from general roughness.
+
+Fine lines: forehead-only edge-orientation analysis. Horizontal edges that
+dominate over vertical ones at moderate-to-high gradient magnitude are the
+signature of expression lines — far more specific to wrinkles than overall
+texture roughness.
 """
 from __future__ import annotations
 
@@ -110,6 +120,36 @@ def analyze(pre: Preprocessed) -> CVMetrics:
     shine_t = _shine_ratio(pre.t_zone_mask)
     shine_u = _shine_ratio(pre.u_zone_mask)
 
+    # Pores — black-hat morphologique (petites structures sombres sur fond
+    # localement clair) sur la zone T, où les pores dilatés sont les plus
+    # visibles. Standard en vision par ordinateur dermatologique.
+    pore_density = 0.0
+    if pre.t_zone_mask.sum() > 0:
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (9, 9))
+        blackhat = cv2.morphologyEx(gray, cv2.MORPH_BLACKHAT, kernel)
+        t_n = int((pre.t_zone_mask > 0).sum())
+        bh_t = blackhat[pre.t_zone_mask > 0]
+        bh_thr = max(6.0, float(bh_t.mean()) + float(bh_t.std()))
+        pore_density = float((bh_t > bh_thr).sum()) / max(1.0, t_n)
+
+    # Rides fines — sur le front, les lignes d'expression sont des arêtes à
+    # dominante horizontale. On compare l'énergie de gradient horizontale à la
+    # verticale : un excès d'horizontal à forte magnitude = rides marquées.
+    fine_lines = 0.0
+    if pre.forehead_mask.sum() > 0:
+        fh = pre.forehead_mask > 0
+        gx_f = gx[fh]
+        gy_f = gy[fh]
+        h_energy = float(np.mean(np.abs(gy_f)))   # gradient vertical = arête horizontale
+        v_energy = float(np.mean(np.abs(gx_f))) + 1e-3
+        line_ratio = h_energy / v_energy
+        # Normalisé : ratio ~1 (isotrope) -> 0 ride ; ratio >1.6 -> rides nettes
+        fine_lines = max(0.0, min(1.0, (line_ratio - 1.0) / 0.9))
+
+    # Les pores dilatés sont un défaut de texture à part entière : on affine
+    # le score texture déjà calculé (Laplacian/Sobel) avec ce signal dédié.
+    texture_score = _clamp(texture_score - pore_density * 35.0)
+
     return CVMetrics(
         texture=texture_score,
         radiance=radiance_score,
@@ -124,5 +164,7 @@ def analyze(pre: Preprocessed) -> CVMetrics:
             "dark_ratio": dark_ratio,
             "shine_t": shine_t,
             "shine_u": shine_u,
+            "pore_density": pore_density,
+            "fine_lines": fine_lines,
         },
     )
