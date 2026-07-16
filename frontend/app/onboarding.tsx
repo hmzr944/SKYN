@@ -41,31 +41,46 @@ import {
 const PAGE_COUNT = 5;
 const CONTENT_MAX_W = 480;
 
+// Chaque slide a sa propre identité : kicker éditorial, accent dominant
+// (corail/lime en alternance, jamais de nouvelle teinte), et un très grand
+// numéro en filigrane qui sert de signature visuelle récurrente mais jamais
+// identique — c'est le fil qui tient l'ensemble sans le rendre répétitif.
 const SLIDES = [
   {
+    kicker: "01 — LE CONSTAT",
+    accent: "coral" as const,
+    cover: true,
     title: "Votre peau,\ndécryptée.",
     helper:
       "SKYN analyse votre peau en quelques secondes et vous révèle ce qu'elle a vraiment à dire.",
   },
   {
+    kicker: "02 — SUR MESURE",
+    accent: "lime" as const,
     Illustration: PromiseIllustration,
     title: "Un diagnostic\nqui vous ressemble",
     helper:
       "Calibré sur votre âge, votre environnement et vos priorités pour des recommandations vraiment personnalisées.",
   },
   {
+    kicker: "03 — LA TECHNOLOGIE",
+    accent: "coral" as const,
     Illustration: TechIllustration,
     title: "Une technologie\nde pointe",
     helper:
       "Notre moteur cartographie votre peau zone par zone et détecte les micro-patterns invisibles à l'œil nu.",
   },
   {
+    kicker: "04 — CONFIDENTIEL",
+    accent: "lime" as const,
     Illustration: PrivacyIllustration,
     title: "Vos données\nvous appartiennent",
     helper:
       "Vos photos sont analysées puis immédiatement supprimées. Rien n'est partagé, rien n'est conservé.",
   },
   {
+    kicker: "05 — À VOUS DE JOUER",
+    accent: "coral" as const,
     Illustration: CaptureIllustration,
     title: "Prêt à découvrir\nvotre peau ?",
     helper: "Créez votre dossier cutané chiffré pour commencer votre premier bilan.",
@@ -194,6 +209,9 @@ export default function OnboardingScreen() {
       >
         {SLIDES.map((slide, i) => {
           const Illustration = "Illustration" in slide ? slide.Illustration : null;
+          const isCover = "cover" in slide && slide.cover;
+          const haloColor = slide.accent === "lime" ? colors.limeSofter : colors.accentSofter;
+          const kickerColor = slide.accent === "lime" ? colors.fg : colors.accent;
           return (
             <ScrollView
               key={i}
@@ -211,8 +229,20 @@ export default function OnboardingScreen() {
                   },
                 ]}
               >
+                {/* Filigrane numéroté — signature récurrente, jamais identique */}
+                <Text
+                  style={[styles.watermark, isCover && styles.watermarkCover]}
+                  pointerEvents="none"
+                >
+                  {slide.kicker.slice(0, 2)}
+                </Text>
+
+                <FadeIn distance={10}>
+                  <Text style={[styles.kicker, { color: kickerColor }]}>{slide.kicker}</Text>
+                </FadeIn>
+
                 {Illustration ? (
-                  <FadeIn distance={16}>
+                  <FadeIn distance={16} delay={40}>
                     <View
                       style={[
                         styles.illustration,
@@ -223,33 +253,48 @@ export default function OnboardingScreen() {
                         },
                       ]}
                     >
+                      <View
+                        style={[
+                          styles.illustrationHalo,
+                          {
+                            backgroundColor: haloColor,
+                            width: illustrationSize * 1.3,
+                            height: illustrationSize * 1.3,
+                            borderRadius: (illustrationSize * 1.3) / 2,
+                          },
+                        ]}
+                      />
                       <Illustration size={illustrationSize} />
                     </View>
                   </FadeIn>
                 ) : (
-                  <FadeIn distance={16}>
+                  <FadeIn distance={16} delay={40}>
                     <View
                       style={[
-                        styles.hairlineWrap,
-                        {
-                          height: illustrationSize,
-                          marginBottom: isShort ? spacing.s : spacing.m,
-                        },
+                        styles.coverHairlineWrap,
+                        { marginBottom: isShort ? spacing.m : spacing.l },
                       ]}
                     >
                       <View style={styles.hairline} />
                     </View>
                   </FadeIn>
                 )}
-                <FadeIn delay={60} distance={16}>
-                  <Text style={[styles.title, { fontSize: titleSize, lineHeight: titleLineHeight }]}>
+                <FadeIn delay={90} distance={16}>
+                  <Text
+                    style={[
+                      styles.title,
+                      isCover && styles.titleCover,
+                      { fontSize: isCover ? titleSize * 1.15 : titleSize, lineHeight: isCover ? titleLineHeight * 1.15 : titleLineHeight },
+                    ]}
+                  >
                     {slide.title}
                   </Text>
                 </FadeIn>
-                <FadeIn delay={120}>
+                <FadeIn delay={150}>
                   <Text
                     style={[
                       styles.helper,
+                      isCover && styles.helperCover,
                       {
                         fontSize: isShort ? 14 : 15,
                         lineHeight: isShort ? 20 : 22,
@@ -430,6 +475,23 @@ const styles = StyleSheet.create({
     alignItems: "center",
     alignSelf: "center",
   },
+  watermark: {
+    position: "absolute",
+    top: -18,
+    alignSelf: "center",
+    fontFamily: fonts.heading,
+    fontSize: 210,
+    color: colors.fg,
+    opacity: 0.035,
+    letterSpacing: -8,
+  },
+  watermarkCover: { top: -6, fontSize: 240 },
+  kicker: {
+    fontFamily: fonts.bodyMedium,
+    fontSize: 11,
+    letterSpacing: 3,
+    marginBottom: spacing.m,
+  },
   illustration: {
     width: 160,
     height: 160,
@@ -437,8 +499,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  hairlineWrap: {
-    height: 160,
+  illustrationHalo: {
+    position: "absolute",
+  },
+  coverHairlineWrap: {
+    height: 8,
     marginBottom: spacing.m,
     alignItems: "center",
     justifyContent: "center",
@@ -456,6 +521,12 @@ const styles = StyleSheet.create({
     lineHeight: 42,
     letterSpacing: -0.5,
     textAlign: "center",
+  },
+  titleCover: {
+    letterSpacing: -1.2,
+  },
+  helperCover: {
+    fontFamily: fonts.bodyMedium,
   },
   helper: {
     fontFamily: fonts.body,

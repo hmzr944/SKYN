@@ -14,6 +14,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
+import Svg, { Path } from "react-native-svg";
 
 import { colors, fonts, spacing, radius, shadow } from "@/src/theme";
 import { api } from "@/src/services/api";
@@ -21,12 +22,16 @@ import { useAuth } from "@/src/contexts/AuthContext";
 import { FadeIn } from "@/src/components/ui/FadeIn";
 import { AnimatedPressable } from "@/src/components/ui/AnimatedPressable";
 import { HowItWorksModal } from "@/src/components/HowItWorksModal";
-import {
-  PromiseIllustration,
-  TechIllustration,
-  PrivacyIllustration,
-  CaptureIllustration,
-} from "@/src/components/illustrations/OnboardingIllustrations";
+
+// Questionnaire = un "cahier" : identité propre (numérotation en grand,
+// barre de progression pleine largeur, cases à cocher carrées) qui le
+// distingue nettement du récit illustré de l'onboarding.
+const QUESTIONS_META = [
+  { n: "01", label: "ÂGE" },
+  { n: "02", label: "ENVIRONNEMENT" },
+  { n: "03", label: "TYPE DE PEAU" },
+  { n: "04", label: "PRIORITÉ" },
+];
 
 const AGE_OPTIONS = ["Moins de 25", "25 – 40", "40 – 60", "60 +"];
 const AGE_VALUES = ["<25", "25-40", "40-60", "60+"];
@@ -48,7 +53,6 @@ const SKIN_OPTIONS = [
 export default function ProfileSetupScreen() {
   const { width: SCREEN_W, height: SCREEN_H } = useWindowDimensions();
   const isShort = SCREEN_H < 700;
-  const illustrationSize = isShort ? 104 : 160;
   const router = useRouter();
   const { refreshProfile } = useAuth();
   const scrollRef = useRef<ScrollView>(null);
@@ -133,6 +137,20 @@ export default function ProfileSetupScreen() {
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
               }}
             >
+              <View style={[styles.checkbox, selected && styles.checkboxSelected]}>
+                {selected ? (
+                  <Svg width={12} height={10} viewBox="0 0 12 10">
+                    <Path
+                      d="M1 5 L4.3 8.3 L11 1"
+                      stroke={colors.onAccent}
+                      strokeWidth={1.8}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      fill="none"
+                    />
+                  </Svg>
+                ) : null}
+              </View>
               <Text
                 style={[
                   styles.optionText,
@@ -141,9 +159,6 @@ export default function ProfileSetupScreen() {
               >
                 {opt.label}
               </Text>
-              <View style={[styles.radio, selected && styles.radioSelected]}>
-                {selected && <View style={styles.radioDot} />}
-              </View>
             </AnimatedPressable>
           </FadeIn>
         );
@@ -153,20 +168,27 @@ export default function ProfileSetupScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={["top", "bottom"]}>
-      {/* Header */}
+      {/* Header — barre de progression pleine largeur, motif "cahier" */}
       <View style={styles.header}>
-        <View style={{ flex: 1 }} />
-        {page < 3 ? (
-          <TouchableOpacity
-            testID="profile-skip-btn"
-            onPress={() => goToPage(3)}
-            hitSlop={8}
-          >
-            <Text style={styles.skip}>Passer</Text>
-          </TouchableOpacity>
-        ) : (
-          <View style={{ height: 18 }} />
-        )}
+        <View style={styles.progressTrack}>
+          <View style={[styles.progressFill, { width: `${((page + 1) / 4) * 100}%` }]} />
+        </View>
+        <View style={styles.headerRow}>
+          <Text style={styles.qCounter}>
+            {QUESTIONS_META[page].n}<Text style={styles.qCounterMax}> / 04</Text>
+          </Text>
+          {page < 3 ? (
+            <TouchableOpacity
+              testID="profile-skip-btn"
+              onPress={() => goToPage(3)}
+              hitSlop={8}
+            >
+              <Text style={styles.skip}>Passer</Text>
+            </TouchableOpacity>
+          ) : (
+            <View style={{ height: 18 }} />
+          )}
+        </View>
       </View>
 
       {/* Pages */}
@@ -187,19 +209,8 @@ export default function ProfileSetupScreen() {
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-          <FadeIn distance={16}>
-            <View
-              style={[
-                styles.illustration,
-                {
-                  width: illustrationSize,
-                  height: illustrationSize,
-                  marginBottom: isShort ? spacing.s : spacing.m,
-                },
-              ]}
-            >
-              <PromiseIllustration size={illustrationSize} />
-            </View>
+          <FadeIn distance={10}>
+            <Text style={styles.qLabel}>{QUESTIONS_META[0].label}</Text>
           </FadeIn>
           <FadeIn delay={60} distance={16}>
             <Text style={[styles.question, isShort && styles.questionShort]}>{"Votre\ntranche d'âge"}</Text>
@@ -224,19 +235,8 @@ export default function ProfileSetupScreen() {
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-          <FadeIn distance={16}>
-            <View
-              style={[
-                styles.illustration,
-                {
-                  width: illustrationSize,
-                  height: illustrationSize,
-                  marginBottom: isShort ? spacing.s : spacing.m,
-                },
-              ]}
-            >
-              <TechIllustration size={illustrationSize} />
-            </View>
+          <FadeIn distance={10}>
+            <Text style={styles.qLabel}>{QUESTIONS_META[1].label}</Text>
           </FadeIn>
           <FadeIn delay={60} distance={16}>
             <Text style={[styles.question, isShort && styles.questionShort]}>{"Votre\nenvironnement\nquotidien"}</Text>
@@ -255,19 +255,8 @@ export default function ProfileSetupScreen() {
           contentContainerStyle={styles.page}
           showsVerticalScrollIndicator={false}
         >
-          <FadeIn distance={16}>
-            <View
-              style={[
-                styles.illustration,
-                {
-                  width: illustrationSize,
-                  height: illustrationSize,
-                  marginBottom: isShort ? spacing.s : spacing.m,
-                },
-              ]}
-            >
-              <CaptureIllustration size={illustrationSize} />
-            </View>
+          <FadeIn distance={10}>
+            <Text style={styles.qLabel}>{QUESTIONS_META[2].label}</Text>
           </FadeIn>
           <FadeIn delay={60} distance={16}>
             <Text style={[styles.question, isShort && styles.questionShort]}>{"Votre type\nde peau"}</Text>
@@ -287,19 +276,8 @@ export default function ProfileSetupScreen() {
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-          <FadeIn distance={16}>
-            <View
-              style={[
-                styles.illustration,
-                {
-                  width: illustrationSize,
-                  height: illustrationSize,
-                  marginBottom: isShort ? spacing.s : spacing.m,
-                },
-              ]}
-            >
-              <PrivacyIllustration size={illustrationSize} />
-            </View>
+          <FadeIn distance={10}>
+            <Text style={styles.qLabel}>{QUESTIONS_META[3].label}</Text>
           </FadeIn>
           <FadeIn delay={60} distance={16}>
             <Text style={[styles.question, isShort && styles.questionShort]}>{"Votre priorité\nmajeure"}</Text>
@@ -349,11 +327,7 @@ export default function ProfileSetupScreen() {
           <View style={{ width: 80 }} />
         )}
 
-        <View style={styles.dotsRow}>
-          {[0, 1, 2, 3].map((i) => (
-            <View key={i} style={[styles.dot, page === i && styles.dotActive]} />
-          ))}
-        </View>
+        <View />
 
         <AnimatedPressable
           testID="profile-next-btn"
@@ -385,13 +359,38 @@ export default function ProfileSetupScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
   header: {
-    flexDirection: "row",
-    justifyContent: "flex-end",
-    alignItems: "center",
     paddingHorizontal: spacing.xl,
     paddingTop: spacing.s,
-    paddingBottom: spacing.xs,
-    minHeight: 36,
+    paddingBottom: spacing.s,
+  },
+  progressTrack: {
+    height: 3,
+    borderRadius: 1.5,
+    backgroundColor: colors.borderSubtle,
+    overflow: "hidden",
+    marginBottom: spacing.m,
+  },
+  progressFill: {
+    height: 3,
+    borderRadius: 1.5,
+    backgroundColor: colors.accent,
+  },
+  headerRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    minHeight: 24,
+  },
+  qCounter: {
+    fontFamily: fonts.heading,
+    fontSize: 15,
+    color: colors.fg,
+    letterSpacing: -0.3,
+  },
+  qCounterMax: {
+    fontFamily: fonts.body,
+    fontSize: 12,
+    color: colors.fgDim,
   },
   skip: {
     fontFamily: fonts.body,
@@ -402,22 +401,23 @@ const styles = StyleSheet.create({
     minHeight: "100%",
     paddingHorizontal: spacing.xl,
     paddingBottom: spacing.l,
-    alignItems: "center",
+    paddingTop: spacing.xl,
+    alignItems: "flex-start",
   },
-  illustration: {
-    width: 160,
-    height: 160,
-    marginBottom: spacing.m,
-    alignItems: "center",
-    justifyContent: "center",
+  qLabel: {
+    fontFamily: fonts.bodyMedium,
+    fontSize: 11,
+    letterSpacing: 2.5,
+    color: colors.accent,
+    marginBottom: spacing.s,
   },
   question: {
     fontFamily: fonts.heading,
     color: colors.fg,
+    textAlign: "left",
     fontSize: 36,
     lineHeight: 42,
     letterSpacing: -0.5,
-    textAlign: "center",
   },
   questionShort: {
     fontSize: 27,
@@ -429,26 +429,27 @@ const styles = StyleSheet.create({
     fontSize: 15,
     marginTop: spacing.m,
     lineHeight: 22,
-    textAlign: "center",
+    textAlign: "left",
   },
   optionList: { marginTop: spacing.xl, gap: spacing.s, width: "100%" },
   option: {
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
+    gap: spacing.m,
     paddingVertical: spacing.m,
     paddingHorizontal: spacing.m,
     backgroundColor: colors.surface,
     borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.borderSubtle,
+    borderLeftWidth: 3,
+    borderLeftColor: "transparent",
     ...shadow.card,
   },
   optionSelected: {
-    borderColor: colors.accent,
+    borderLeftColor: colors.accent,
     backgroundColor: colors.accentSofter,
   },
   optionText: {
+    flex: 1,
     fontFamily: fonts.body,
     color: colors.fgMuted,
     fontSize: 16,
@@ -458,22 +459,17 @@ const styles = StyleSheet.create({
     color: colors.fg,
     fontFamily: fonts.bodyMedium,
   },
-  radio: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
+  checkbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
     borderWidth: 1.5,
-    borderColor: colors.borderSubtle,
+    borderColor: colors.borderMid,
     alignItems: "center",
     justifyContent: "center",
   },
-  radioSelected: {
+  checkboxSelected: {
     borderColor: colors.accent,
-  },
-  radioDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
     backgroundColor: colors.accent,
   },
   howLink: { marginTop: spacing.l },
