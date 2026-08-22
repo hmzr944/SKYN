@@ -10,13 +10,15 @@ import { AnimatedPressable } from "@/src/components/ui/AnimatedPressable";
 
 const TAB_ICONS: Record<string, keyof typeof Ionicons.glyphMap> = {
   dashboard: "home",
+  routine: "checkmark-circle",
   history: "time",
   profile: "person",
 };
 
 const TAB_LABELS: Record<string, string> = {
   dashboard: "Accueil",
-  history: "Historique",
+  routine: "Routine",
+  history: "Suivi",
   profile: "Profil",
 };
 
@@ -71,6 +73,7 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
       ]}
     >
       {renderTab("dashboard")}
+      {renderTab("routine")}
 
       <AnimatedPressable
         testID="tab-analyser"
@@ -97,6 +100,7 @@ export default function TabsLayout() {
       screenOptions={{ headerShown: false }}
     >
       <Tabs.Screen name="dashboard" />
+      <Tabs.Screen name="routine" />
       <Tabs.Screen name="history" />
       <Tabs.Screen name="profile" />
     </Tabs>

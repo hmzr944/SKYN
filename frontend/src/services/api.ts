@@ -1,5 +1,6 @@
 import { storage } from "@/src/utils/storage";
 import { supabase } from "@/src/services/supabase";
+import type { FaceAnalysis } from "@/src/types/analysis";
 
 const BASE = process.env.EXPO_PUBLIC_BACKEND_URL;
 const PENDING_REPORTS_KEY = "skyn_pending_reports";
@@ -69,6 +70,17 @@ export const api = {
     }>("/api/analyze", {
       method: "POST",
       body: JSON.stringify({ image_base64 }),
+    }),
+
+  /**
+   * Moteur v2 : analyse multi-zones et routine personnalisee.
+   * `extraImages` accepte jusqu'a deux angles complementaires (profils), qui
+   * exposent des zones que la vue de face aplatit.
+   */
+  analyzeV2: (image_base64: string, extraImages: string[] = []) =>
+    request<FaceAnalysis>("/api/analyze/v2", {
+      method: "POST",
+      body: JSON.stringify({ image_base64, extra_images: extraImages }),
     }),
 };
 

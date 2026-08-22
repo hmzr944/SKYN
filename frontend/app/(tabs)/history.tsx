@@ -8,6 +8,7 @@ import { colors, fonts, spacing, radius, shadow } from "@/src/theme";
 import { api, syncPendingReports } from "@/src/services/api";
 import { FadeIn } from "@/src/components/ui/FadeIn";
 import { AnimatedPressable } from "@/src/components/ui/AnimatedPressable";
+import { ProgressTimeline } from "@/src/components/analysis/ProgressTimeline";
 
 const FILTERS = [
   { label: "7j", days: 7 },
@@ -91,6 +92,7 @@ export default function HistoryScreen() {
         <FlatList
           data={filtered}
           keyExtractor={(item) => item.id}
+          ListHeaderComponent={<ProgressTimeline />}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />
           }

@@ -63,7 +63,7 @@ export default function CameraScreen() {
   const finalize = async (base64: string | null) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
     await storage.setItem("skyn_last_capture_b64", base64 || "");
-    router.replace("/analysis");
+    router.replace("/scan-result");
   };
 
   const capture = async () => {
