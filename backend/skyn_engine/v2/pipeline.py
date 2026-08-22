@@ -54,29 +54,37 @@ class FaceAnalysis:
 
 # --------------------------------------------------------------------------
 CONCERN_FR = {
-    "acne_active": "lesions inflammatoires actives",
-    "comedons": "comedons",
-    "post_acne_marks": "marques post-acne",
-    "sebum": "production de sebum",
-    "pores": "pores dilates",
+    "acne_active": "lésions inflammatoires actives",
+    "comedons": "comédons",
+    "post_acne_marks": "marques post-acné",
+    "sebum": "production de sébum",
+    "pores": "pores dilatés",
     "redness": "rougeurs diffuses",
-    "sensitivity": "reactivite",
-    "dehydration": "deshydratation",
+    "sensitivity": "réactivité",
+    "dehydration": "déshydratation",
     "dullness": "teint terne",
-    "pigmentation": "irregularites pigmentaires",
-    "texture": "grain de peau irregulier",
-    "barrier_damage": "barriere cutanee alteree",
+    "pigmentation": "irrégularités pigmentaires",
+    "texture": "grain de peau irrégulier",
+    "barrier_damage": "barrière cutanée altérée",
     "aging": "signes de vieillissement",
 }
 
 ZONE_FR = {
     "front": "le front", "glabelle": "l'entre-sourcils", "nez": "le nez",
     "joue_g": "la joue gauche", "joue_d": "la joue droite",
-    "menton": "le menton", "machoire_g": "la machoire gauche",
-    "machoire_d": "la machoire droite", "peri_oral": "le pourtour de la bouche",
+    "menton": "le menton", "machoire_g": "la mâchoire gauche",
+    "machoire_d": "la mâchoire droite", "peri_oral": "le pourtour de la bouche",
     "tempe_g": "la tempe gauche", "tempe_d": "la tempe droite",
-    "sous_yeux_g": "le dessous de l'oeil gauche",
-    "sous_yeux_d": "le dessous de l'oeil droit",
+    "sous_yeux_g": "le dessous de l'œil gauche",
+    "sous_yeux_d": "le dessous de l'œil droit",
+}
+
+
+# Les types de peau circulent en interne comme identifiants ASCII ; ils ne
+# doivent jamais etre affiches tels quels a l'utilisateur.
+SKIN_TYPE_FR = {
+    "grasse": "grasse", "mixte": "mixte", "normale": "normale",
+    "seche": "sèche", "indetermine": "indéterminée",
 }
 
 
@@ -88,20 +96,20 @@ def _diagnosis(fp: SkinFingerprint, ph: Phenotype, lr: LesionReport) -> str:
     dominante, ce qui multiplie mecaniquement les combinaisons.
     """
     if not fp.top_concerns:
-        return f"Peau {ph.skin_type} equilibree"
+        return f"Peau {SKIN_TYPE_FR.get(ph.skin_type, ph.skin_type)} équilibrée"
 
     first = fp.top_concerns[0]
     if first == "acne_active":
         label = {
-            0: "sans lesion active", 1: "acne legere", 2: "acne moderee",
-            3: "acne severe", 4: "acne tres severe",
-        }.get(lr.severity_level, "acne")
-        base = f"Peau {ph.skin_type} — {label}"
+            0: "sans lésion active", 1: "acné légère", 2: "acné modérée",
+            3: "acné sévère", 4: "acné très sévère",
+        }.get(lr.severity_level, "acné")
+        base = f"Peau {SKIN_TYPE_FR.get(ph.skin_type, ph.skin_type)} — {label}"
         if lr.hormonal_pattern:
-            base += ", repartition mandibulaire"
+            base += ", répartition mandibulaire"
         return base
 
-    return f"Peau {ph.skin_type} — {CONCERN_FR.get(first, first)}"
+    return f"Peau {SKIN_TYPE_FR.get(ph.skin_type, ph.skin_type)} — {CONCERN_FR.get(first, first)}"
 
 
 def _summary(fp: SkinFingerprint, ph: Phenotype, lr: LesionReport,
@@ -113,37 +121,37 @@ def _summary(fp: SkinFingerprint, ph: Phenotype, lr: LesionReport,
     if tot:
         infl = lr.counts.get("papule", 0) + lr.counts.get("pustule", 0)
         where = ", ".join(ZONE_FR.get(z, z) for z in lr.dominant_zones[:2])
-        s = f"{tot} lesions reperees"
+        s = f"{tot} lésions repérées"
         if infl:
             s += f", dont {infl} inflammatoires"
         if where:
-            s += f", concentrees sur {where}"
+            s += f", concentrées sur {where}"
         bits.append(s + ".")
     else:
-        bits.append("Aucune lesion active reperee sur les zones analysees.")
+        bits.append("Aucune lésion active repérée sur les zones analysées.")
 
     if ph.skin_type == "mixte":
         bits.append(
             f"La zone T brille nettement plus que les joues "
-            f"(ecart {ph.shine_delta:+.2f}), signature d'une peau mixte."
+            f"(écart {ph.shine_delta:+.2f}), signature d'une peau mixte."
         )
     elif ph.skin_type == "grasse":
-        bits.append("Brillance homogene sur l'ensemble du visage, y compris les joues.")
+        bits.append("Brillance homogène sur l'ensemble du visage, y compris les joues.")
     elif ph.skin_type == "seche":
-        bits.append("Peu de reflexion speculaire et grain marque : peau seche.")
+        bits.append("Peu de réflexion spéculaire et grain marqué : peau sèche.")
 
     second = [c for c in fp.top_concerns[1:3]]
     if second:
         bits.append(
-            "Autres points releves : "
+            "Autres points relevés : "
             + ", ".join(CONCERN_FR.get(c, c) for c in second) + "."
         )
 
     if fm.quality.issues:
         bits.append(
-            "Qualite de prise de vue perfectible ("
+            "Qualité de prise de vue perfectible ("
             + ", ".join(i.replace("_", " ") for i in fm.quality.issues)
-            + ") : le resultat gagnerait a etre confirme par un nouveau scan."
+            + ") : le résultat gagnerait à être confirmé par un nouveau scan."
         )
     return " ".join(bits)
 
@@ -173,9 +181,9 @@ def analyze_face(image_b64: str, profile: Optional[dict] = None) -> FaceAnalysis
             skin_type="indetermine", skin_type_confidence=0.0,
             phototype="?", phototype_label="Indeterminee", ita_deg=0.0,
             severity_level=0, severity_label="indetermine", gags_score=0.0,
-            diagnosis="Visage non detecte",
+            diagnosis="Visage non détecté",
             summary=("Aucun visage exploitable sur cette image. Cadrez le visage "
-                     "de face, en lumiere naturelle, sans lunettes ni masque."),
+                     "de face, en lumière naturelle, sans lunettes ni masque."),
             quality=asdict(fm.quality),
             flags=fm.quality.issues,
             elapsed_ms=int((time.time() - t0) * 1000),
@@ -267,6 +275,6 @@ def analyze_multi(images: List[str], profile: Optional[dict] = None) -> FaceAnal
 
     base.per_zone = merged_zone
     base.lesion_counts = total_counts or base.lesion_counts
-    base.summary += f" Analyse consolidee sur {len(usable)} prises de vue."
+    base.summary += f" Analyse consolidée sur {len(usable)} prises de vue."
     base.confidence = min(0.95, base.confidence + 0.06 * (len(usable) - 1))
     return base

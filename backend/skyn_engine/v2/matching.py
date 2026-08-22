@@ -44,8 +44,8 @@ ESSENTIAL_STEPS = ("nettoyant", "hydratant", "protection")
 ACTIVE_STEPS = ("traitement", "serum")
 STEP_LABEL = {
     "nettoyant": "Nettoyage",
-    "serum": "Serum",
-    "traitement": "Traitement cible",
+    "serum": "Sérum",
+    "traitement": "Traitement ciblé",
     "hydratant": "Hydratation",
     "protection": "Protection solaire",
     "masque": "Masque",
@@ -146,24 +146,24 @@ def _fit_score(product: dict, fp: SkinFingerprint) -> Tuple[float, List[str]]:
 
 
 CONCERN_FR = {
-    "acne_active": "lesions inflammatoires actives",
-    "comedons": "comedons",
-    "post_acne_marks": "marques post-acne",
-    "sebum": "exces de sebum",
-    "pores": "pores dilates",
+    "acne_active": "lésions inflammatoires actives",
+    "comedons": "comédons",
+    "post_acne_marks": "marques post-acné",
+    "sebum": "excès de sébum",
+    "pores": "pores dilatés",
     "redness": "rougeurs",
-    "sensitivity": "reactivite cutanee",
-    "dehydration": "deshydratation",
+    "sensitivity": "réactivité cutanée",
+    "dehydration": "déshydratation",
     "dullness": "teint terne",
-    "pigmentation": "heterogeneite pigmentaire",
-    "texture": "grain irregulier",
-    "barrier_damage": "barriere alteree",
+    "pigmentation": "hétérogénéité pigmentaire",
+    "texture": "grain irrégulier",
+    "barrier_damage": "barrière altérée",
     "aging": "signes de vieillissement",
 }
 
 
 def _why_text(contribution: float, concern: str) -> str:
-    lvl = "fortement" if contribution > 0.45 else "notablement" if contribution > 0.25 else "legerement"
+    lvl = "fortement" if contribution > 0.45 else "notablement" if contribution > 0.25 else "légèrement"
     return f"cible {lvl} : {CONCERN_FR.get(concern, concern)}"
 
 
@@ -173,20 +173,20 @@ def _is_allowed(product: dict, ph: Phenotype, fp: SkinFingerprint,
     avoid = set(product.get("avoid_if", []) or [])
 
     if "grossesse" in avoid and (profile.get("pregnant") or "grossesse" in fp.flags):
-        return False, "deconseille pendant la grossesse"
+        return False, "déconseillé pendant la grossesse"
 
     very_sensitive = fp.get("sensitivity") > 0.6 or fp.get("barrier_damage") > 0.6
     if very_sensitive and "peau_tres_sensible" in avoid:
-        return False, "trop irritant pour une peau actuellement reactive"
+        return False, "trop irritant pour une peau actuellement réactive"
 
     if ph.phototype in ("V", "VI") and "phototype_5_6" in avoid:
-        return False, "inadapte aux phototypes fonces"
+        return False, "inadapté aux phototypes foncés"
 
     # Compatibilite de type de peau, quand le produit la precise
     st = product.get("skin_types") or []
     if st and ph.skin_type in ("grasse", "mixte", "normale", "seche"):
         if ph.skin_type not in st:
-            return False, f"non adapte a une peau {ph.skin_type}"
+            return False, f"non adapté à une peau {ph.skin_type}"
 
     return True, None
 
@@ -311,7 +311,7 @@ def _pick_for_step(cands: List[dict], step: str, moment: str,
         return None
 
     if essential and not why:
-        why = [_ESSENTIAL_WHY.get(step, "etape de base de la routine")]
+        why = [_ESSENTIAL_WHY.get(step, "étape de base de la routine")]
 
     return Pick(product=best_p, score=best_s, step=step, moment=moment, why=why)
 
@@ -363,8 +363,8 @@ def _essential_score(product: dict, concern_fit: float, ph: Phenotype,
 
 
 _ESSENTIAL_WHY = {
-    "nettoyant": "socle de la routine : retire sebum et residus sans decaper",
-    "hydratant": "maintient la barriere cutanee pendant le traitement",
+    "nettoyant": "socle de la routine : retire sébum et résidus sans décaper",
+    "hydratant": "maintient la barrière cutanée pendant le traitement",
     "protection": "indispensable sous actifs : ils photosensibilisent la peau",
 }
 
@@ -373,8 +373,8 @@ def _phototype_spf_note(ph: Phenotype, pick: Optional[Pick]) -> Optional[str]:
     if pick is None:
         return None
     if ph.phototype in ("IV", "V", "VI"):
-        return ("Phototype fonce : privilegier une texture fluide sans filtre "
-                "mineral blanchissant, et verifier l'absence de fini gris.")
+        return ("Phototype foncé : privilégier une texture fluide sans filtre "
+                "minéral blanchissant, et vérifier l'absence de fini gris.")
     return None
 
 
@@ -436,30 +436,30 @@ def build_routine(fp: SkinFingerprint, ph: Phenotype,
     # --- Avertissements ----------------------------------------------------
     if fp.get("acne_active") >= 0.75:
         cautions.append(
-            "Les lesions inflammatoires reperees sont nombreuses. Une acne de "
-            "ce niveau releve d'un avis dermatologique : les traitements "
-            "disponibles sans ordonnance ne suffisent generalement pas, et un "
-            "traitement precoce limite le risque de cicatrices."
+            "Les lésions inflammatoires repérées sont nombreuses. Une acné de "
+            "ce niveau relève d'un avis dermatologique : les traitements "
+            "disponibles sans ordonnance ne suffisent généralement pas, et un "
+            "traitement précoce limite le risque de cicatrices."
         )
     if fp.get("barrier_damage") > 0.55:
         cautions.append(
-            "La barriere cutanee parait alteree. Le protocole ci-dessous "
-            "commence volontairement par la reparer avant d'introduire tout "
+            "La barrière cutanée paraît altérée. Le protocole ci-dessous "
+            "commence volontairement par la réparer avant d'introduire tout "
             "actif exfoliant."
         )
     if profile.get("pregnant"):
         cautions.append(
-            "Grossesse declaree : retinoides et salicyles a forte dose sont "
-            "ecartes du protocole. A confirmer avec votre medecin."
+            "Grossesse déclarée : rétinoïdes et salicylés à forte dose sont "
+            "écartés du protocole. À confirmer avec votre médecin."
         )
     note = _phototype_spf_note(ph, next((p for p in am if p.step == "protection"), None))
     if note:
         cautions.append(note)
     if not any(p.step == "protection" for p in am):
         cautions.append(
-            "Aucune protection solaire n'a pu etre retenue dans le catalogue. "
-            "C'est pourtant le geste le plus determinant, en particulier sous "
-            "traitement anti-acne qui sensibilise au soleil."
+            "Aucune protection solaire n'a pu être retenue dans le catalogue. "
+            "C'est pourtant le geste le plus déterminant, en particulier sous "
+            "traitement anti-acné qui sensibilise au soleil."
         )
 
     return Routine(am=am, pm=pm, weekly=weekly, total_price=total_price,
@@ -493,9 +493,9 @@ def _build_schedule(am: List[Pick], pm: List[Pick], weekly: List[Pick],
             p.introduce_week = 1
         steps.append({
             "week": 1,
-            "title": "Socle : nettoyer, hydrater, proteger",
+            "title": "Socle : nettoyer, hydrater, protéger",
             "detail": "Deux semaines sans actif fort, pour installer l'habitude "
-                      "et verifier la tolerance de base.",
+                      "et vérifier la tolérance de base.",
             "products": [p.product["id"] for p in base],
         })
     wk = 1 + gap
@@ -506,7 +506,7 @@ def _build_schedule(am: List[Pick], pm: List[Pick], weekly: List[Pick],
             "week": wk,
             "title": f"Introduction : {p.product['name']}",
             "detail": f"{act}. Commencer un soir sur deux, puis tous les soirs "
-                      f"si la tolerance est bonne.",
+                      f"si la tolérance est bonne.",
             "products": [p.product["id"]],
         })
         wk += gap

@@ -172,6 +172,18 @@ export const ZONE_LABEL: Record<ZoneKey, string> = {
   machoire_d: "Mâchoire droite",
 };
 
+/**
+ * Le type de peau circule en identifiant ASCII cote moteur ; il ne doit jamais
+ * s'afficher tel quel ("seche" au lieu de "sèche").
+ */
+export const SKIN_TYPE_LABEL: Record<SkinType, string> = {
+  grasse: "grasse",
+  mixte: "mixte",
+  normale: "normale",
+  seche: "sèche",
+  indetermine: "indéterminée",
+};
+
 export const LESION_LABEL: Record<LesionType, string> = {
   comedon: "Comédons",
   papule: "Papules",

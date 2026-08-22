@@ -34,6 +34,7 @@ import {
   EVIDENCE_LABEL,
   LESION_LABEL,
   SEVERITY_LABEL,
+  SKIN_TYPE_LABEL,
   STEP_LABEL,
   ZONE_LABEL,
 } from "@/src/types/analysis";
@@ -321,7 +322,9 @@ export default function ScanResultScreen() {
             <Text style={styles.diagnosis}>{data.diagnosis}</Text>
             <View style={styles.tagRow}>
               <View style={styles.tag}>
-                <Text style={styles.tagText}>Peau {data.skin_type}</Text>
+                <Text style={styles.tagText}>
+                  Peau {SKIN_TYPE_LABEL[data.skin_type] ?? data.skin_type}
+                </Text>
               </View>
               <View style={styles.tag}>
                 <Text style={styles.tagText}>Phototype {data.phototype}</Text>

@@ -102,12 +102,12 @@ def build_fingerprint(ph: Phenotype, lr: LesionReport,
     if v["acne_active"] > 0:
         drivers["acne_active"] = (
             f"{lr.counts['papule']} papules et {lr.counts['pustule']} pustules "
-            f"reperees, severite {lr.severity_label.replace('_', ' ')}"
+            f"repérées, sévérité {lr.severity_label.replace('_', ' ')}"
         )
     if v["sebum"] > 0.4:
         drivers["sebum"] = (
             f"zone T nettement plus brillante que les joues "
-            f"(ecart {ph.shine_delta:+.2f})"
+            f"(écart {ph.shine_delta:+.2f})"
         )
     if v["post_acne_marks"] > 0.2:
         drivers["post_acne_marks"] = (
@@ -153,7 +153,7 @@ def build_fingerprint(ph: Phenotype, lr: LesionReport,
         if key in priority:
             for t in targets:
                 v[t] = _sat(v[t] + 0.15)
-            drivers["priorite"] = f"priorite declaree : {priority}"
+            drivers["priorite"] = f"priorité déclarée : {priority}"
             break
 
     env = str(profile.get("environment") or "").lower()

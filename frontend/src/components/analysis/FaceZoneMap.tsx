@@ -151,6 +151,14 @@ export function FaceZoneMap({
           {entries.map(({ key, shape, score }) => {
             const measured = typeof score === "number";
             const isSel = selected === key;
+            // L'opacite suit la charge de la zone, pas seulement sa teinte. Une
+            // zone saine doit s'effacer dans le fond : peindre en vert vif ce
+            // qui va bien attire l'oeil au mauvais endroit. Ce qui demande de
+            // l'attention est ce qui doit ressortir.
+            const burden = measured ? 1 - (score as number) / 100 : 0;
+            const opacity = measured
+              ? Math.min(0.92, 0.08 + burden * 0.78 + (isSel ? 0.18 : 0))
+              : 0;
             return (
               <Ellipse
                 key={key}
@@ -159,7 +167,7 @@ export function FaceZoneMap({
                 rx={shape.rx}
                 ry={shape.ry}
                 fill={measured ? scoreColor(score as number) : "transparent"}
-                opacity={measured ? (isSel ? 0.95 : 0.72) : 0}
+                opacity={opacity}
                 stroke={isSel ? colors.fg : "transparent"}
                 strokeWidth={isSel ? 1.6 : 0}
               />
