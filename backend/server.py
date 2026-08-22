@@ -1,6 +1,7 @@
 from fastapi import FastAPI, APIRouter, Header, HTTPException
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
+from starlette.concurrency import run_in_threadpool
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
@@ -323,6 +324,60 @@ async def skyn_engine_analyze(payload: AnalyzeRequest, authorization: Optional[s
         detections=[Detection(**d) for d in out.detections],
         source=out.source,
     )
+
+
+class AnalyzeV2Request(BaseModel):
+    image_base64: str
+    # Angles complementaires facultatifs (profil gauche, profil droit). Les vues
+    # laterales exposent des zones que la vue de face aplatit.
+    extra_images: List[str] = []
+
+
+@api_router.post("/analyze/v2")
+async def skyn_engine_analyze_v2(payload: AnalyzeV2Request,
+                                 authorization: Optional[str] = Header(None)):
+    """SKYN Engine v2 — analyse multi-zones et routine personnalisee.
+
+    Differences avec /analyze (v1) :
+      * 13 zones faciales au lieu d'un masque unique, sourcils/levres/pilosite
+        exclus du calcul ;
+      * type de peau mesure par differentiel zone T / zone U, et phototype
+        estime par angle typologique individuel ;
+      * lesions comptees sans plafond et classees (comedon, papule, pustule,
+        marque rouge, marque brune) ;
+      * routine matin/soir construite par correspondance sur le vecteur de
+        preoccupations mesure, avec controle des incompatibilites d'actifs et
+        introduction progressive.
+
+    La photo est traitee en memoire et n'est jamais ecrite sur disque.
+    """
+    user = await get_current_user(authorization)
+
+    images = [payload.image_base64] + list(payload.extra_images or [])
+    if any(len(i) > MAX_IMAGE_B64_LEN for i in images):
+        raise HTTPException(status_code=413, detail="Image too large")
+    if len(images) > 3:
+        raise HTTPException(status_code=400, detail="Three images maximum")
+
+    profile_doc = await db.profiles.find_one({"user_id": user.user_id}, {"_id": 0}) or {}
+
+    from skyn_engine.v2.pipeline import analyze_face, analyze_multi
+
+    def _run():
+        if len(images) > 1:
+            return analyze_multi(images, profile_doc)
+        return analyze_face(images[0], profile_doc)
+
+    try:
+        # Le pipeline est bloquant et gourmand en CPU : l'executer directement
+        # dans la coroutine figerait la boucle evenementielle pour toutes les
+        # autres requetes pendant plusieurs secondes.
+        out = await run_in_threadpool(_run)
+    except Exception as e:
+        logger.exception(f"SKYN Engine v2 failure: {e}")
+        raise HTTPException(status_code=500, detail="Analysis failed")
+
+    return out.to_dict()
 
 
 @api_router.post("/recommendations", response_model=RecommendationsResponse)
