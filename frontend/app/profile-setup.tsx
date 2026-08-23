@@ -5,8 +5,6 @@ import {
   StyleSheet,
   TouchableOpacity,
   ScrollView,
-  NativeSyntheticEvent,
-  NativeScrollEvent,
   ActivityIndicator,
   Platform,
   useWindowDimensions,
@@ -108,11 +106,10 @@ function OptionRow({
 }
 
 export default function ProfileSetupScreen() {
-  const { width: SCREEN_W, height: SCREEN_H } = useWindowDimensions();
+  const { height: SCREEN_H } = useWindowDimensions();
   const isShort = SCREEN_H < 700;
   const router = useRouter();
   const { refreshProfile } = useAuth();
-  const scrollRef = useRef<ScrollView>(null);
   const [page, setPage] = useState(0);
   const [ageRange, setAgeRange] = useState<string | null>(null);
   const [environment, setEnvironment] = useState<string | null>(null);
@@ -122,19 +119,19 @@ export default function ProfileSetupScreen() {
   const [error, setError] = useState<string | null>(null);
   const [howItWorksVisible, setHowItWorksVisible] = useState(false);
 
+  // La navigation était pilotée par un défilement horizontal programmatique
+  // (scrollTo) pendant que la barre de progression et le bouton dépendaient
+  // de l'état React `page` — deux sources de vérité qui pouvaient se
+  // désynchroniser (observé en conditions réelles sur iOS Safari : la barre
+  // de progression avançait à l'étape 3 tandis que l'écran restait affiché
+  // sur le contenu de l'étape 1, sans aucun moyen de s'en sortir puisque le
+  // défilement manuel était désactivé). La question affichée est désormais
+  // déterminée uniquement par `page` : il n'existe plus de position de
+  // défilement susceptible de diverger de l'état.
   const goToPage = (p: number) => {
     if (autoAdvanceTimer.current) clearTimeout(autoAdvanceTimer.current);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    scrollRef.current?.scrollTo({ x: p * SCREEN_W, animated: true });
     setPage(p);
-  };
-
-  const onMomentumEnd = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const p = Math.round(e.nativeEvent.contentOffset.x / SCREEN_W);
-    if (p !== page) {
-      setPage(p);
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    }
   };
 
   const canNext = () => {
@@ -214,6 +211,62 @@ export default function ProfileSetupScreen() {
     </View>
   );
 
+  // Une entrée par question : label, titre, aide et le bloc d'options propre
+  // à chacune (dernière question sans avance auto, et avec le lien "Comment
+  // ça marche ?"). Construit à chaque rendu — coût négligeable — pour que les
+  // callbacks ferment toujours sur l'état courant.
+  const QUESTIONS = [
+    {
+      kicker: QUESTIONS_META[0].label,
+      title: "Votre\ntranche d'âge",
+      helper: "Pour calibrer l'algorithme selon votre cycle cutané.",
+      body: renderOptions(
+        AGE_OPTIONS.map((l, i) => ({ label: l, value: AGE_VALUES[i] })),
+        ageRange,
+        setAgeRange,
+        "age",
+      ),
+    },
+    {
+      kicker: QUESTIONS_META[1].label,
+      title: "Votre\nenvironnement\nquotidien",
+      helper: "L'environnement influence directement l'état de votre peau.",
+      body: renderOptions(ENV_OPTIONS, environment, setEnvironment, "env"),
+    },
+    {
+      kicker: QUESTIONS_META[2].label,
+      title: "Votre type\nde peau",
+      helper:
+        "Le critère n°1 pour vos produits. En cas de doute, notre analyse photo le détecte pour vous.",
+      body: renderOptions(SKIN_OPTIONS, skinType, setSkinType, "skin"),
+    },
+    {
+      kicker: QUESTIONS_META[3].label,
+      title: "Votre priorité\nmajeure",
+      helper: "Nous personnaliserons vos recommandations en conséquence.",
+      body: (
+        <>
+          {renderOptions(
+            PRIORITY_OPTIONS.map((l) => ({ label: l, value: l })),
+            priority,
+            setPriority,
+            "priority",
+            false,
+          )}
+          <TouchableOpacity
+            testID="profile-how-it-works-link"
+            onPress={() => setHowItWorksVisible(true)}
+            style={styles.howLink}
+            hitSlop={8}
+          >
+            <Text style={styles.howLinkText}>Comment ça marche ?</Text>
+          </TouchableOpacity>
+        </>
+      ),
+    },
+  ];
+  const currentQuestion = QUESTIONS[page];
+
   return (
     <SafeAreaView style={styles.container} edges={["top", "bottom"]}>
       {/* Header — barre de progression pleine largeur, motif "cahier" */}
@@ -239,118 +292,30 @@ export default function ProfileSetupScreen() {
         </View>
       </View>
 
-      {/* Pages */}
+      {/* Question courante — un seul écran monté à la fois. `key={page}`
+          démonte et remonte le sous-arbre à chaque changement, ce qui
+          retrigger aussi l'entrée en fondu des FadeIn internes à chaque
+          visite (y compris via "Retour", qui ne rejouait aucune animation
+          dans l'ancienne version). */}
       <ScrollView
-        ref={scrollRef}
-        horizontal
-        pagingEnabled
-        showsHorizontalScrollIndicator={false}
-        onMomentumScrollEnd={onMomentumEnd}
-        keyboardShouldPersistTaps="handled"
-        scrollEnabled={false}
+        key={page}
         style={{ flex: 1 }}
+        contentContainerStyle={styles.page}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
       >
-        {/* Q1 — Age range */}
-        <ScrollView
-          style={{ width: SCREEN_W }}
-          contentContainerStyle={styles.page}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-        >
-          <FadeIn distance={10}>
-            <Text style={styles.qLabel}>{QUESTIONS_META[0].label}</Text>
-          </FadeIn>
-          <FadeIn delay={60} distance={16}>
-            <Text style={[styles.question, isShort && styles.questionShort]}>{"Votre\ntranche d'âge"}</Text>
-          </FadeIn>
-          <FadeIn delay={120}>
-            <Text style={[styles.helper, isShort && { marginTop: spacing.s, fontSize: 14 }]}>
-              {"Pour calibrer l'algorithme selon votre cycle cutané."}
-            </Text>
-          </FadeIn>
-          {renderOptions(
-            AGE_OPTIONS.map((l, i) => ({ label: l, value: AGE_VALUES[i] })),
-            ageRange,
-            setAgeRange,
-            "age",
-          )}
-        </ScrollView>
-
-        {/* Q2 — Environment */}
-        <ScrollView
-          style={{ width: SCREEN_W }}
-          contentContainerStyle={styles.page}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-        >
-          <FadeIn distance={10}>
-            <Text style={styles.qLabel}>{QUESTIONS_META[1].label}</Text>
-          </FadeIn>
-          <FadeIn delay={60} distance={16}>
-            <Text style={[styles.question, isShort && styles.questionShort]}>{"Votre\nenvironnement\nquotidien"}</Text>
-          </FadeIn>
-          <FadeIn delay={120}>
-            <Text style={[styles.helper, isShort && { marginTop: spacing.s, fontSize: 14 }]}>
-              {"L'environnement influence directement l'état de votre peau."}
-            </Text>
-          </FadeIn>
-          {renderOptions(ENV_OPTIONS, environment, setEnvironment, "env")}
-        </ScrollView>
-
-        {/* Q3 — Skin type */}
-        <ScrollView
-          style={{ width: SCREEN_W }}
-          contentContainerStyle={styles.page}
-          showsVerticalScrollIndicator={false}
-        >
-          <FadeIn distance={10}>
-            <Text style={styles.qLabel}>{QUESTIONS_META[2].label}</Text>
-          </FadeIn>
-          <FadeIn delay={60} distance={16}>
-            <Text style={[styles.question, isShort && styles.questionShort]}>{"Votre type\nde peau"}</Text>
-          </FadeIn>
-          <FadeIn delay={120}>
-            <Text style={[styles.helper, isShort && { marginTop: spacing.s, fontSize: 14 }]}>
-              {"Le critère n°1 pour vos produits. En cas de doute, notre analyse photo le détecte pour vous."}
-            </Text>
-          </FadeIn>
-          {renderOptions(SKIN_OPTIONS, skinType, setSkinType, "skin")}
-        </ScrollView>
-
-        {/* Q4 — Priority */}
-        <ScrollView
-          style={{ width: SCREEN_W }}
-          contentContainerStyle={styles.page}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-        >
-          <FadeIn distance={10}>
-            <Text style={styles.qLabel}>{QUESTIONS_META[3].label}</Text>
-          </FadeIn>
-          <FadeIn delay={60} distance={16}>
-            <Text style={[styles.question, isShort && styles.questionShort]}>{"Votre priorité\nmajeure"}</Text>
-          </FadeIn>
-          <FadeIn delay={120}>
-            <Text style={[styles.helper, isShort && { marginTop: spacing.s, fontSize: 14 }]}>
-              {"Nous personnaliserons vos recommandations en conséquence."}
-            </Text>
-          </FadeIn>
-          {renderOptions(
-            PRIORITY_OPTIONS.map((l) => ({ label: l, value: l })),
-            priority,
-            setPriority,
-            "priority",
-            false,
-          )}
-          <TouchableOpacity
-            testID="profile-how-it-works-link"
-            onPress={() => setHowItWorksVisible(true)}
-            style={styles.howLink}
-            hitSlop={8}
-          >
-            <Text style={styles.howLinkText}>Comment ça marche ?</Text>
-          </TouchableOpacity>
-        </ScrollView>
+        <FadeIn distance={10}>
+          <Text style={styles.qLabel}>{currentQuestion.kicker}</Text>
+        </FadeIn>
+        <FadeIn delay={60} distance={16}>
+          <Text style={[styles.question, isShort && styles.questionShort]}>{currentQuestion.title}</Text>
+        </FadeIn>
+        <FadeIn delay={120}>
+          <Text style={[styles.helper, isShort && { marginTop: spacing.s, fontSize: 14 }]}>
+            {currentQuestion.helper}
+          </Text>
+        </FadeIn>
+        {currentQuestion.body}
       </ScrollView>
 
       {error ? (
@@ -552,14 +517,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     letterSpacing: 0.5,
   },
-  dotsRow: { flexDirection: "row", gap: 6 },
-  dot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: colors.borderMid,
-  },
-  dotActive: { backgroundColor: colors.accent, width: 20 },
   nextBtn: {
     backgroundColor: colors.accent,
     paddingHorizontal: 32,
