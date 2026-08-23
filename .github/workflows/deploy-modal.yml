@@ -1,0 +1,94 @@
+name: Déployer sur Modal
+
+# Déclenchement manuel : depuis github.com (onglet Actions), y compris sur
+# téléphone. Le runner GitHub a un accès réseau complet, contrairement à
+# l'environnement de développement dont le proxy ne supporte pas gRPC — or le
+# client Modal est en gRPC.
+on:
+  workflow_dispatch:
+    inputs:
+      branche:
+        description: "Branche à déployer"
+        required: true
+        default: main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Récupérer le code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.branche }}
+          # Le détecteur YOLO (~50 Mo) est versionné dans le dépôt via LFS
+          # sur certaines configurations ; on s'assure de l'avoir vraiment.
+          lfs: true
+
+      - name: Vérifier que le modèle est présent
+        run: |
+          set -e
+          MODELE=backend/skyn_engine/models/acne_yolo/acne.pt
+          if [ ! -f "$MODELE" ]; then
+            echo "::warning::$MODELE absent — le moteur basculera sur la détection CV classique"
+          else
+            echo "Modèle trouvé : $(du -h "$MODELE" | cut -f1)"
+          fi
+
+      - name: Installer Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Installer les dépendances du front
+        working-directory: frontend
+        run: npm ci --no-audit --no-fund
+
+      - name: Construire l'application web
+        working-directory: frontend
+        # Aucune URL de backend n'est injectée : l'app appelle /api en
+        # relatif, et Modal sert l'app et l'API sur la même origine.
+        run: npx expo export --platform web
+
+      - name: Vérifier la sortie du build
+        run: |
+          set -e
+          test -f frontend/dist/index.html
+          echo "Build web : $(du -sh frontend/dist | cut -f1)"
+
+      - name: Installer Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Installer le client Modal
+        run: pip install --upgrade modal
+
+      - name: Déployer
+        env:
+          MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+          MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+        run: |
+          set -e
+          if [ -z "$MODAL_TOKEN_ID" ] || [ -z "$MODAL_TOKEN_SECRET" ]; then
+            echo "::error::Secrets manquants. Ajoutez MODAL_TOKEN_ID et MODAL_TOKEN_SECRET dans Settings > Secrets and variables > Actions."
+            exit 1
+          fi
+          modal deploy deploy_modal.py | tee /tmp/deploy.log
+
+      - name: Afficher l'URL de l'application
+        if: success()
+        run: |
+          URL=$(grep -oE 'https://[a-zA-Z0-9._-]+\.modal\.run' /tmp/deploy.log | head -1)
+          if [ -n "$URL" ]; then
+            echo "### Application déployée" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**$URL**" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Ouvrez ce lien sur votre téléphone, puis « Tester sans compte »." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "::warning::URL non trouvée dans la sortie du déploiement — consultez le log de l'étape précédente"
+          fi
