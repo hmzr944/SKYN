@@ -203,7 +203,15 @@ function ProductCard({ product, index }: { product: ProductReco; index: number }
   const [imgFailed, setImgFailed] = useState(false);
   const [showReasons, setShowReasons] = useState(false);
 
-  const openLink = () => {
+  // Le champ `url` mène à la fiche composition (liste INCI), pas à une
+  // boutique. Toucher la carte doit permettre de se procurer le produit ;
+  // la composition reste accessible par une action distincte.
+  const openBuy = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    Linking.openURL(product.buy_url || product.url).catch(() => {});
+  };
+
+  const openIngredients = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     Linking.openURL(product.url).catch(() => {});
   };
@@ -212,7 +220,7 @@ function ProductCard({ product, index }: { product: ProductReco; index: number }
     <FadeIn delay={index * 80} distance={10}>
       <AnimatedPressable
         style={styles.productCard}
-        onPress={openLink}
+        onPress={openBuy}
         scaleTo={0.98}
         testID={`product-card-${index}`}
       >
@@ -281,7 +289,21 @@ function ProductCard({ product, index }: { product: ProductReco; index: number }
 
           <View style={styles.productFooter}>
             <Text style={styles.productPrice}>≈ {product.price_eur.toFixed(0)} €</Text>
-            <Text style={styles.productLink}>Voir le produit →</Text>
+            <View style={styles.productActions}>
+              {/* La fiche composition n'est pas une boutique : on sépare
+                  « lire les ingrédients » et « se procurer le produit ». */}
+              <TouchableOpacity
+                onPress={openIngredients}
+                hitSlop={8}
+                activeOpacity={0.7}
+                testID={`product-ingredients-${index}`}
+              >
+                <Text style={styles.productLinkSecondary}>Composition</Text>
+              </TouchableOpacity>
+              <View style={styles.buyBtn}>
+                <Text style={styles.buyBtnText}>Acheter</Text>
+              </View>
+            </View>
           </View>
         </View>
       </AnimatedPressable>
@@ -592,7 +614,11 @@ const styles = StyleSheet.create({
     fontSize: 11,
     textTransform: "uppercase",
   },
-  scroll: { paddingHorizontal: spacing.xl, paddingBottom: spacing.xxl },
+  // Le bouton « Terminer et sauvegarder » flotte en position absolue au-dessus
+  // de la liste (bas 28 px, ~55 px de haut) et son fond est opaque : sans
+  // marge suffisante il recouvre la derniere carte produit, prix et boutons
+  // compris. On reserve sa hauteur plus une respiration.
+  scroll: { paddingHorizontal: spacing.xl, paddingBottom: 120 },
   dateTop: {
     fontFamily: fonts.body,
     color: colors.fgMuted,
@@ -837,15 +863,15 @@ const styles = StyleSheet.create({
     ...shadow.card,
   },
   productImageWrap: {
-    width: 72,
-    height: 72,
+    width: 96,
+    height: 96,
     borderRadius: radius.sm,
     backgroundColor: "#FFFFFF",
     alignItems: "center",
     justifyContent: "center",
     overflow: "hidden",
   },
-  productImage: { width: 64, height: 64 },
+  productImage: { width: 88, height: 88 },
   productImageFallback: {
     fontFamily: fonts.heading,
     color: colors.accent,
@@ -853,6 +879,29 @@ const styles = StyleSheet.create({
     opacity: 0.4,
   },
   productBody: { flex: 1 },
+  productActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.m,
+  },
+  productLinkSecondary: {
+    fontFamily: fonts.bodyMedium,
+    color: colors.fgMuted,
+    fontSize: 11,
+    textDecorationLine: "underline",
+  },
+  buyBtn: {
+    backgroundColor: colors.accent,
+    paddingHorizontal: spacing.m,
+    paddingVertical: 7,
+    borderRadius: radius.pill,
+  },
+  buyBtnText: {
+    fontFamily: fonts.bodyMedium,
+    color: colors.onAccent,
+    fontSize: 11,
+    letterSpacing: 0.8,
+  },
   productStep: {
     fontFamily: fonts.bodyMedium,
     color: colors.accent,

@@ -91,7 +91,10 @@ class ProductReco(BaseModel):
     key_ingredients: List[str] = Field(default_factory=list)
     price_eur: float
     image_url: str
+    # `url` = fiche composition (liste INCI). Ce n'est pas une boutique :
+    # `buy_url` est le lien pour se procurer reellement le produit.
     url: str
+    buy_url: Optional[str] = None
 
 
 class Report(BaseModel):
@@ -150,6 +153,9 @@ class AnalyzeResponse(BaseModel):
     acne_severity_level: Optional[int] = None
     acne_severity_label: Optional[str] = None
     angles_analyzed: int = 1
+    # Introduction progressive des actifs et charge irritante totale
+    routine_schedule: List[dict] = Field(default_factory=list)
+    irritation_load: float = 0.0
     source: str
 
 
@@ -388,6 +394,8 @@ async def skyn_engine_analyze(payload: AnalyzeRequest, authorization: Optional[s
         acne_severity_level=out.acne_severity_level,
         acne_severity_label=out.acne_severity_label,
         angles_analyzed=out.angles_analyzed,
+        routine_schedule=getattr(out, "routine_schedule", []) or [],
+        irritation_load=getattr(out, "irritation_load", 0.0) or 0.0,
         source=out.source,
     )
 

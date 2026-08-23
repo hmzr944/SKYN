@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import hashlib
 from typing import Dict, List, Optional
+from urllib.parse import quote_plus
 
 from . import actives as _actives
 
@@ -1601,6 +1602,24 @@ def _why(p: dict, needs: Dict[str, float], metrics: Dict[str, float]) -> str:
     )
 
 
+def buy_url(product: dict) -> str:
+    """Lien d'achat pour un produit.
+
+    Le champ `url` du catalogue pointe vers INCIDecoder, une base de
+    composition : très utile pour lire la liste INCI complète, mais on n'y
+    achète rien. L'utilisateur qui tape sur une carte produit veut pouvoir se
+    le procurer.
+
+    On renvoie une recherche marchande plutôt que la fiche d'une boutique
+    précise, pour trois raisons : la disponibilité varie d'une enseigne à
+    l'autre, une URL de fiche casse dès que le marchand réorganise son
+    catalogue, et l'utilisateur voit ainsi plusieurs prix au lieu d'être
+    envoyé chez un seul vendeur. Une recherche, elle, résout toujours.
+    """
+    q = quote_plus(f"{product.get('brand', '')} {product.get('name', '')}".strip())
+    return f"https://www.google.com/search?tbm=shop&hl=fr&gl=fr&q={q}"
+
+
 def recommend_products(
     metrics: Dict[str, float],
     profile_dict: Optional[dict] = None,
@@ -1609,7 +1628,7 @@ def recommend_products(
     """Return a personalised 4-5 product routine (nettoyant → SPF).
 
     Each entry: {id, name, brand, step, step_label, why, key_ingredients,
-    price_eur, image_url, url}.
+    price_eur, image_url, url, buy_url}.
     """
     profile_dict = profile_dict or {}
     needs = _user_needs(metrics, profile_dict)
@@ -1715,6 +1734,9 @@ def recommend_products(
             "key_ingredients": p["key_ingredients"],
             "price_eur": p["price_eur"],
             "image_url": p["image_url"],
+            # `url` = fiche composition (liste INCI complete) ;
+            # `buy_url` = ou se le procurer reellement.
             "url": p["url"],
+            "buy_url": buy_url(p),
         })
     return out

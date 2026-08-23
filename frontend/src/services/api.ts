@@ -16,7 +16,10 @@ export type ProductReco = {
   key_ingredients: string[];
   price_eur: number;
   image_url: string;
+  /** Fiche composition (liste INCI complete) — ce n'est pas une boutique. */
   url: string;
+  /** Recherche marchande : ou se procurer reellement le produit. */
+  buy_url?: string;
 };
 
 // Empty string = same origin (single-host deployment where the backend also
