@@ -108,6 +108,30 @@ export default function OnboardingScreen() {
   const titleSize = isShort || isNarrow ? 30 : 36;
   const titleLineHeight = isShort || isNarrow ? 35 : 42;
 
+  // Largeur reservee de part et d'autre des points, identique a gauche et a
+  // droite : c'est ce qui empeche les points de se decaler quand le bouton
+  // « Suivant » disparait sur le dernier ecran.
+  //
+  // Elle est calculee a partir de la place reellement disponible plutot que
+  // posee au jugé : avec une valeur fixe trop etroite, le bouton debordait de
+  // son emplacement et venait recouvrir les derniers points sur un ecran de
+  // 320 px.
+  const DOTS_W = 4 * 8 + 20 + 4 * 6; // quatre points, un point actif allonge, les ecarts
+  const sideSlotW = Math.max(
+    76,
+    Math.floor((SCREEN_W - horizontalPadding * 2 - DOTS_W - spacing.m) / 2),
+  );
+
+  // Le filigrane chiffre etait fige a 210 px. Sur un ecran de 320 px il
+  // depassait des deux cotes et se retrouvait tranche en plein milieu d'un
+  // glyphe, ce qui ressemblait a un bug d'affichage plutot qu'a un parti pris.
+  const watermarkSize = Math.round(Math.min(SCREEN_W * 0.62, 240));
+
+  // Meme probleme pour les bulles decoratives : 280 px fixes sur un ecran de
+  // 320 px recouvraient tout le coin superieur et passaient derriere le texte.
+  const blobA = Math.round(SCREEN_W * 0.78);
+  const blobB = Math.round(SCREEN_W * 0.66);
+
   const blobT = useSharedValue(0);
   useEffect(() => {
     blobT.value = withRepeat(
@@ -150,7 +174,15 @@ export default function OnboardingScreen() {
   return (
     <SafeAreaView style={styles.container} edges={["top", "bottom"]}>
       {/* Decorative animated blobs */}
-      <Animated.View style={[styles.blob, styles.blobA, blobStyleA]} pointerEvents="none">
+      <Animated.View
+        style={[
+          styles.blob,
+          styles.blobA,
+          { width: blobA, height: blobA, top: -blobA * 0.32, right: -blobA * 0.30 },
+          blobStyleA,
+        ]}
+        pointerEvents="none"
+      >
         <LinearGradient
           colors={[colors.accent, "rgba(255,77,109,0)"]}
           style={styles.blobFill}
@@ -158,7 +190,15 @@ export default function OnboardingScreen() {
           end={{ x: 1, y: 1 }}
         />
       </Animated.View>
-      <Animated.View style={[styles.blob, styles.blobB, blobStyleB]} pointerEvents="none">
+      <Animated.View
+        style={[
+          styles.blob,
+          styles.blobB,
+          { width: blobB, height: blobB, bottom: blobB * 0.22, left: -blobB * 0.42 },
+          blobStyleB,
+        ]}
+        pointerEvents="none"
+      >
         <LinearGradient
           colors={[colors.lime, "rgba(200,240,74,0)"]}
           style={styles.blobFill}
@@ -170,18 +210,7 @@ export default function OnboardingScreen() {
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.wordmark}>SKYN</Text>
-        {page === 0 ? (
-          <TouchableOpacity
-            testID="onboarding-signin-link"
-            onPress={() => {
-              finishOnboarding();
-              goToPage(PAGE_COUNT - 1);
-            }}
-            hitSlop={8}
-          >
-            <Text style={styles.skip}>Déjà un compte ?</Text>
-          </TouchableOpacity>
-        ) : !isLast ? (
+        {!isLast ? (
           <TouchableOpacity
             testID="onboarding-skip-btn"
             onPress={() => {
@@ -231,7 +260,11 @@ export default function OnboardingScreen() {
               >
                 {/* Filigrane numéroté — signature récurrente, jamais identique */}
                 <Text
-                  style={[styles.watermark, isCover && styles.watermarkCover]}
+                  style={[
+                    styles.watermark,
+                    { fontSize: watermarkSize, letterSpacing: -watermarkSize * 0.038 },
+                    isCover && styles.watermarkCover,
+                  ]}
                   pointerEvents="none"
                 >
                   {slide.kicker.slice(0, 2)}
@@ -272,7 +305,10 @@ export default function OnboardingScreen() {
                     <View
                       style={[
                         styles.coverHairlineWrap,
-                        { marginBottom: isShort ? spacing.m : spacing.l },
+                        {
+                          height: illustrationSize,
+                          marginBottom: isShort ? spacing.s : spacing.m,
+                        },
                       ]}
                     >
                       <View style={styles.hairline} />
@@ -360,81 +396,76 @@ export default function OnboardingScreen() {
         })}
       </ScrollView>
 
-      {/* Footer */}
-      {!isLast ? (
-        <View
-          style={[
-            styles.footer,
-            {
-              paddingHorizontal: horizontalPadding,
-              paddingTop: isShort ? spacing.s : spacing.m,
-              paddingBottom:
-                Platform.OS === "ios"
-                  ? isShort
-                    ? spacing.m
-                    : spacing.l
-                  : isShort
-                    ? spacing.m
-                    : spacing.xl,
-            },
-          ]}
-        >
+      {/* Barre de navigation — identique sur les cinq écrans.
+          Auparavant la dernière slide remplaçait cette barre par les seuls
+          points : le bouton « Retour » disparaissait (impossible de revenir en
+          arrière) et les points sautaient de la gauche au centre. Les deux
+          repères de progression bougeaient donc au moment précis où l'on
+          demande à l'utilisateur de s'engager.
+
+          Les trois emplacements gardent une largeur fixe, pour que les points
+          restent exactement au même endroit d'un écran à l'autre. */}
+      <View
+        style={[
+          styles.footer,
+          {
+            paddingHorizontal: horizontalPadding,
+            paddingTop: isShort ? spacing.s : spacing.m,
+            paddingBottom:
+              Platform.OS === "ios"
+                ? isShort
+                  ? spacing.m
+                  : spacing.l
+                : isShort
+                  ? spacing.m
+                  : spacing.xl,
+          },
+        ]}
+      >
+        <View style={[styles.footerSlot, { width: sideSlotW }]}>
           {page > 0 ? (
             <TouchableOpacity
               testID="onboarding-back-btn"
               onPress={() => goToPage(page - 1)}
               style={styles.backBtn}
               activeOpacity={0.6}
+              hitSlop={10}
             >
-              <Text style={styles.backText}>← Retour</Text>
+              <Text style={styles.backText} numberOfLines={1}>
+                {isNarrow ? "←" : "← Retour"}
+              </Text>
             </TouchableOpacity>
-          ) : (
-            <View style={{ width: 80 }} />
-          )}
-
-          <View style={styles.dotsRow}>
-            {Array.from({ length: PAGE_COUNT }).map((_, i) => (
-              <View key={i} style={[styles.dot, page === i && styles.dotActive]} />
-            ))}
-          </View>
-
-          <AnimatedPressable
-            testID="onboarding-next-btn"
-            onPress={() => goToPage(page + 1)}
-            style={[
-              styles.nextBtn,
-              {
-                minWidth: isNarrow ? 104 : 120,
-                paddingHorizontal: isNarrow ? spacing.l : spacing.xl,
-                paddingVertical: isShort ? 14 : 16,
-              },
-            ]}
-          >
-            <Text style={styles.nextText}>Suivant</Text>
-          </AnimatedPressable>
+          ) : null}
         </View>
-      ) : (
-        <View
-          style={[
-            styles.footerDots,
-            {
-              paddingTop: isShort ? spacing.s : spacing.m,
-              paddingBottom:
-                Platform.OS === "ios"
-                  ? isShort
-                    ? spacing.m
-                    : spacing.l
-                  : isShort
-                    ? spacing.m
-                    : spacing.xl,
-            },
-          ]}
-        >
+
+        <View style={styles.dotsRow}>
           {Array.from({ length: PAGE_COUNT }).map((_, i) => (
             <View key={i} style={[styles.dot, page === i && styles.dotActive]} />
           ))}
         </View>
-      )}
+
+        <View style={[styles.footerSlot, styles.footerSlotEnd, { width: sideSlotW }]}>
+          {/* Sur le dernier écran, l'action principale est la connexion, placée
+              dans le contenu : on laisse l'emplacement vide plutôt que d'offrir
+              deux boutons concurrents. */}
+          {!isLast ? (
+            <AnimatedPressable
+              testID="onboarding-next-btn"
+              onPress={() => goToPage(page + 1)}
+              style={[
+                styles.nextBtn,
+                {
+                  paddingHorizontal: isNarrow ? spacing.s : spacing.xl,
+                  paddingVertical: isShort ? 13 : 16,
+                  maxWidth: sideSlotW,
+                },
+              ]}
+            >
+              <Text style={styles.nextText}>Suivant</Text>
+            </AnimatedPressable>
+          ) : null}
+        </View>
+      </View>
     </SafeAreaView>
   );
 }
@@ -480,12 +511,10 @@ const styles = StyleSheet.create({
     top: -18,
     alignSelf: "center",
     fontFamily: fonts.heading,
-    fontSize: 210,
     color: colors.fg,
     opacity: 0.035,
-    letterSpacing: -8,
   },
-  watermarkCover: { top: -6, fontSize: 240 },
+  watermarkCover: { top: -6 },
   kicker: {
     fontFamily: fonts.bodyMedium,
     fontSize: 11,
@@ -599,13 +628,6 @@ const styles = StyleSheet.create({
     paddingTop: spacing.m,
     gap: spacing.s,
   },
-  footerDots: {
-    flexDirection: "row",
-    justifyContent: "center",
-    gap: 6,
-    paddingBottom: Platform.OS === "ios" ? spacing.l : spacing.xl,
-    paddingTop: spacing.m,
-  },
   backBtn: { paddingVertical: 12, paddingRight: spacing.m },
   backText: {
     fontFamily: fonts.body,
@@ -613,6 +635,10 @@ const styles = StyleSheet.create({
     fontSize: 14,
     letterSpacing: 0.5,
   },
+  // Emplacements lateraux de largeur fixe : les points restent alignes au
+  // meme endroit sur les cinq ecrans, meme quand un cote est vide.
+  footerSlot: { justifyContent: "center" },
+  footerSlotEnd: { alignItems: "flex-end" },
   dotsRow: { flexDirection: "row", gap: 6 },
   dot: {
     width: 8,
@@ -626,7 +652,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 32,
     paddingVertical: 16,
     borderRadius: radius.pill,
-    minWidth: 120,
     alignItems: "center",
     ...shadow.button,
   },
