@@ -13,6 +13,8 @@ from __future__ import annotations
 import hashlib
 from typing import Dict, List, Optional
 
+from . import actives as _actives
+
 # Routine steps, in application order. contour_yeux is optional (added only
 # when the aging concern justifies it — see recommend_products).
 STEP_ORDER = ["nettoyant", "serum", "traitement", "hydratant", "protection", "contour_yeux"]
@@ -1614,28 +1616,72 @@ def recommend_products(
 
     scored = [(p, _score_product(p, needs, profile_dict)) for p in CATALOG]
     scored = [(p, s) for p, s in scored if s >= 0]
+    # Contre-indications absolues (grossesse, isotrétinoïne) : le produit est
+    # écarté pour ce qu'il est, avant même toute question de combinaison.
+    scored = [(p, s) for p, s in scored
+              if not _actives.contraindicated(p, profile_dict)]
     scored.sort(key=lambda x: x[1], reverse=True)
 
     routine: List[dict] = []
     picked_steps: Dict[str, int] = {}
     quotas = {"nettoyant": 1, "serum": 1, "traitement": 1, "hydratant": 1, "protection": 1}
 
-    # One product per step, best-scored first
+    # Chaque étape choisissait auparavant son meilleur produit sans regarder
+    # les autres : un sérum au rétinol et un traitement au rétinol pouvaient
+    # donc atterrir dans la même routine. On vérifie désormais la
+    # compatibilité avec ce qui est déjà retenu, et la charge irritante totale.
+    budget = _actives.irritation_budget(needs, profile_dict)
+    load = 0.0
+
+    # Le socle (nettoyer, hydrater, protéger) ne porte pas d'actif fort et ne
+    # doit jamais sauter faute de budget : retirer la protection solaire d'une
+    # routine anti-acné serait un contresens, les actifs kératolytiques
+    # photosensibilisent la peau.
+    essential = ("nettoyant", "hydratant", "protection")
+
     for p, s in scored:
         step = p["step"]
         if picked_steps.get(step, 0) >= quotas.get(step, 0):
             continue
+        if _actives.conflicts(p, routine):
+            continue
+        cost = _actives.irritation(p)
+        if step not in essential and load + cost > budget:
+            continue
         picked_steps[step] = picked_steps.get(step, 0) + 1
         routine.append(p)
+        load += cost
 
-    # If some steps had no eligible product, complete with the next best actives
+    # Étape de socle restée vide parce que tous ses candidats ont été écartés :
+    # on la remplit avec l'option la plus douce encore compatible, plutôt que
+    # de livrer une routine trouée.
+    for step in essential:
+        if picked_steps.get(step, 0) >= quotas.get(step, 0):
+            continue
+        fallback = sorted(
+            (p for p, s in scored
+             if p["step"] == step and not _actives.conflicts(p, routine)),
+            key=_actives.irritation,
+        )
+        if fallback:
+            routine.append(fallback[0])
+            picked_steps[step] = 1
+            load += _actives.irritation(fallback[0])
+
+    # Complément d'actifs, dans la limite du budget et sans incompatibilité
     actives = [p for p in routine if p["step"] in ("serum", "traitement")]
     if len(actives) < max_actives:
         for p, s in scored:
             if p in routine or p["step"] not in ("serum", "traitement"):
                 continue
+            if _actives.conflicts(p, routine):
+                continue
+            cost = _actives.irritation(p)
+            if load + cost > budget:
+                continue
             routine.append(p)
             actives.append(p)
+            load += cost
             if len(actives) >= max_actives:
                 break
 
@@ -1645,7 +1691,7 @@ def recommend_products(
     age = profile_dict.get("age_range")
     if needs.get("aging", 0.0) >= 0.45 or age in ("40-60", "60+"):
         for p, s in scored:
-            if p["step"] == "contour_yeux":
+            if p["step"] == "contour_yeux" and not _actives.conflicts(p, routine):
                 routine.append(p)
                 break
 

@@ -32,6 +32,10 @@ class AnalysisOutput:
     acne_severity_level: Optional[int] = None     # -1 (nette) .. 3 (sévère)
     acne_severity_label: Optional[str] = None
     angles_analyzed: int = 1                      # 1 (face) à 3 (face + profils)
+    # Introduction progressive des actifs : tout commencer le même jour est la
+    # première cause d'abandon d'une routine anti-acné.
+    routine_schedule: List[dict] = field(default_factory=list)
+    irritation_load: float = 0.0
     source: str = "skyn_engine_v1"
     debug: Dict[str, float] = field(default_factory=dict)
 
@@ -188,6 +192,11 @@ def analyze_skin(image_b64: str, profile_dict: Optional[dict] = None) -> Analysi
     if not product_profile.get("skin_type") and skin_type_detected and skin_type_conf >= 0.38:
         product_profile["skin_type"] = skin_type_detected
     products = recommend_products(metrics_d, product_profile)
+    from .products import _user_needs
+    from . import actives as _actives
+    _needs = _user_needs(metrics_d, product_profile)
+    routine_schedule = _actives.introduction_schedule(products, _needs)
+    irritation_load = round(sum(_actives.irritation(p) for p in products), 2)
 
     return AnalysisOutput(
         detected=pre.detected,
@@ -202,6 +211,8 @@ def analyze_skin(image_b64: str, profile_dict: Optional[dict] = None) -> Analysi
         diagnosis=diag,
         recommendations=recs,
         products=products,
+        routine_schedule=routine_schedule,
+        irritation_load=irritation_load,
         skin_type_detected=skin_type_detected,
         skin_type_confidence=round(skin_type_conf, 3),
         acne_severity_level=severity_level,
