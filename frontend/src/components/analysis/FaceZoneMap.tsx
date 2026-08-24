@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { View, Text, StyleSheet, Pressable } from "react-native";
 import Svg, {
   Path,
@@ -10,6 +10,13 @@ import Svg, {
   LinearGradient,
   Stop,
 } from "react-native-svg";
+import Animated, {
+  Easing,
+  useAnimatedProps,
+  useSharedValue,
+  withDelay,
+  withTiming,
+} from "react-native-reanimated";
 
 import { colors, fonts, spacing } from "@/src/theme";
 import type { Lesion, ZoneKey } from "@/src/types/analysis";
@@ -106,6 +113,49 @@ interface Props {
   size?: number;
 }
 
+const AnimatedEllipse = Animated.createAnimatedComponent(Ellipse);
+
+/**
+ * Une zone qui s'allume.
+ *
+ * L'opacite est portee par une valeur animee plutot que posee directement :
+ * la carte se revele zone par zone, ce qui donne a lire un releve en train de
+ * se construire au lieu d'une image deja faite.
+ */
+function ZoneEllipse({
+  shape,
+  fill,
+  opacity,
+  selected,
+  delay,
+}: {
+  shape: ZoneShape;
+  fill: string;
+  opacity: number;
+  selected: boolean;
+  delay: number;
+}) {
+  const t = useSharedValue(0);
+  useEffect(() => {
+    t.value = withDelay(delay, withTiming(1, { duration: 460, easing: Easing.out(Easing.cubic) }));
+  }, [t, delay]);
+
+  const props = useAnimatedProps(() => ({ opacity: opacity * t.value }));
+
+  return (
+    <AnimatedEllipse
+      cx={shape.cx}
+      cy={shape.cy}
+      rx={shape.rx}
+      ry={shape.ry}
+      fill={fill}
+      stroke={selected ? colors.fg : "transparent"}
+      strokeWidth={selected ? 1.6 : 0}
+      animatedProps={props}
+    />
+  );
+}
+
 export function FaceZoneMap({
   zoneScores,
   lesions = [],
@@ -148,7 +198,7 @@ export function FaceZoneMap({
         <Path d={FACE_PATH} fill="url(#skinBase)" />
 
         <G clipPath="url(#faceClip)">
-          {entries.map(({ key, shape, score }) => {
+          {entries.map(({ key, shape, score }, i) => {
             const measured = typeof score === "number";
             const isSel = selected === key;
             // L'opacite suit la charge de la zone, pas seulement sa teinte. Une
@@ -160,16 +210,15 @@ export function FaceZoneMap({
               ? Math.min(0.92, 0.08 + burden * 0.78 + (isSel ? 0.18 : 0))
               : 0;
             return (
-              <Ellipse
+              <ZoneEllipse
                 key={key}
-                cx={shape.cx}
-                cy={shape.cy}
-                rx={shape.rx}
-                ry={shape.ry}
+                shape={shape}
                 fill={measured ? scoreColor(score as number) : "transparent"}
                 opacity={opacity}
-                stroke={isSel ? colors.fg : "transparent"}
-                strokeWidth={isSel ? 1.6 : 0}
+                selected={isSel}
+                // Les zones s'allument l'une apres l'autre : une carte qui
+                // apparait d'un bloc ressemble a une image, pas a un releve.
+                delay={i * 55}
               />
             );
           })}

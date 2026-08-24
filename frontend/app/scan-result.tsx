@@ -13,6 +13,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import Svg, { Circle } from "react-native-svg";
 import Animated, {
+  withDelay,
   useSharedValue,
   useAnimatedProps,
   withTiming,
@@ -99,11 +100,26 @@ function ScoreRing({ value, size = 168 }: { value: number; size?: number }) {
 /* ------------------------------------------------------------------ */
 /* Barre de préoccupation                                              */
 /* ------------------------------------------------------------------ */
-function ConcernRow({ k, v, driver }: { k: ConcernKey; v: number; driver?: string }) {
+function ConcernRow({
+  k,
+  v,
+  driver,
+  index = 0,
+}: {
+  k: ConcernKey;
+  v: number;
+  driver?: string;
+  index?: number;
+}) {
   const w = useSharedValue(0);
   useEffect(() => {
-    w.value = withTiming(v, { duration: 900, easing: Easing.out(Easing.cubic) });
-  }, [v, w]);
+    // Chaque barre part apres la precedente : on lit un calcul qui se deroule,
+    // pas un tableau qui s'affiche.
+    w.value = withDelay(
+      index * 90,
+      withTiming(v, { duration: 900, easing: Easing.out(Easing.cubic) }),
+    );
+  }, [v, w, index]);
   const barStyle = useAnimatedStyle(() => ({ width: `${w.value * 100}%` }));
   // Un axe très marqué doit se lire comme un point d'attention, donc en corail.
   const tone = scoreColor(Math.round((1 - v) * 100));
@@ -409,8 +425,8 @@ export default function ScanResultScreen() {
         <FadeIn delay={160}>
           <View style={styles.card}>
             <Text style={styles.cardEyebrow}>Votre empreinte cutanée</Text>
-            {data.top_concerns.map((k) => (
-              <ConcernRow key={k} k={k} v={data.concerns[k]} driver={data.drivers[k]} />
+            {data.top_concerns.map((k, i) => (
+              <ConcernRow key={k} k={k} v={data.concerns[k]} driver={data.drivers[k]} index={i} />
             ))}
           </View>
         </FadeIn>
