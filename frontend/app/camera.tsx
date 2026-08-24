@@ -35,6 +35,31 @@ import { storage } from "@/src/utils/storage";
 
 const AnimatedPath = Animated.createAnimatedComponent(Path);
 
+/**
+ * Neutralise le miroir de l'apercu, directement sur l'element video.
+ *
+ * expo-camera applique un scaleX(-1) sur la video en camera frontale et
+ * n'implemente pas la prop `mirror` sur le web. Deux approches ont ete
+ * ecartees avant celle-ci :
+ *   - compenser par une transformation opposee sur un conteneur parent :
+ *     correct dans Chromium, mais WebKit compose la video dans sa propre
+ *     couche, qui peut ignorer la transformation d'un ancetre ;
+ *   - poser la regle dans app/+html.tsx : ce fichier n'est pas applique par
+ *     `expo export --platform web`, l'index.html genere n'en contient rien.
+ *
+ * Reste l'injection a l'execution, qui vise l'element lui-meme et ne depend
+ * d'aucune indirection.
+ */
+const STYLE_ID = "skyn-unmirror";
+function neutraliseMiroir() {
+  if (Platform.OS !== "web" || typeof document === "undefined") return;
+  if (document.getElementById(STYLE_ID)) return;
+  const el = document.createElement("style");
+  el.id = STYLE_ID;
+  el.textContent = "[data-skyn-camera] video{transform:none !important;}";
+  document.head.appendChild(el);
+}
+
 /** Base64 nu, sans entete : c'est ce que le reste de l'app attend. */
 const cleanB64 = (b?: string | null) =>
   b ? (b.startsWith("data:") ? b.split(",")[1] ?? "" : b) : "";
@@ -47,11 +72,10 @@ const cleanB64 = (b?: string | null) =>
  * de Face ID. Le contour se remplit au fur et a mesure de la couverture ; quand
  * il est complet, l'analyse part.
  *
- * MIROIR — l'apercu n'est pas inverse. expo-camera applique un scaleX(-1) sur
- * la video en camera frontale et n'implemente pas la prop `mirror` sur le web :
- * on annule donc la transformation nous-memes. La capture, elle, est inversee
- * par la bibliotheque de son cote (isImageMirror) et reste corrigee par
- * unmirror() — ce sont deux transformations independantes.
+ * MIROIR — l'apercu n'est pas inverse : voir neutraliseMiroir() ci-dessous.
+ * La capture, elle, est inversee separement par la bibliotheque
+ * (isImageMirror) et reste corrigee par unmirror(). Ce sont deux
+ * transformations independantes, il faut traiter les deux.
  */
 export default function CameraScreen() {
   const router = useRouter();
@@ -77,6 +101,7 @@ export default function CameraScreen() {
   const canUseCamera = !!permission?.granted;
 
   useEffect(() => {
+    neutraliseMiroir();
     track("scan_started");
   }, []);
 
@@ -289,11 +314,6 @@ export default function CameraScreen() {
   const stroke = k > 0 ? 2.6 / k : 0;
   const laid = stage.w > 0 && stage.h > 0;
 
-  // expo-camera inverse l'apercu en camera frontale et ignore la prop `mirror`
-  // sur le web : on annule sa transformation par une transformation opposee.
-  const unmirrorPreview =
-    Platform.OS === "web" ? { transform: [{ scaleX: -1 as const }] } : undefined;
-
   return (
     <SafeAreaView style={styles.container} edges={["top", "bottom"]}>
       <View style={styles.header}>
@@ -323,7 +343,12 @@ export default function CameraScreen() {
 
       <View style={styles.stage} onLayout={onStageLayout}>
         {canUseCamera ? (
-          <View style={[StyleSheet.absoluteFill, unmirrorPreview]}>
+          // La marque data- est la cible de la regle CSS qui neutralise le
+          // miroir : voir app/+html.tsx.
+          <View
+            style={StyleSheet.absoluteFill}
+            {...(Platform.OS === "web" ? { dataSet: { skynCamera: "1" } } : {})}
+          >
             <CameraView
               ref={cameraRef}
               style={StyleSheet.absoluteFill}

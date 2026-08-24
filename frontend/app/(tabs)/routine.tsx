@@ -21,6 +21,7 @@ import { colors, fonts, spacing, radius, shadow } from "@/src/theme";
 import { FadeIn } from "@/src/components/ui/FadeIn";
 import { AnimatedPressable } from "@/src/components/ui/AnimatedPressable";
 import { IntroductionCard } from "@/src/components/IntroductionCard";
+import { BrandField } from "@/src/components/brand/BrandField";
 import { JournalCard } from "@/src/components/JournalCard";
 import { STEP_LABEL } from "@/src/types/analysis";
 import type { ProductPick } from "@/src/types/analysis";
@@ -146,6 +147,7 @@ export default function RoutineScreen() {
     return (
       <SafeAreaView style={styles.container} edges={["top"]}>
         <View style={styles.empty}>
+          <BrandField size={280} drift style={styles.emptyField} />
           <Text style={styles.emptyTitle}>Pas encore de routine</Text>
           <Text style={styles.emptyHelper}>
             {"Lancez un premier scan : votre routine du matin et du soir sera " +
@@ -314,6 +316,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     paddingHorizontal: spacing.l,
   },
+  emptyField: { position: "absolute", opacity: 0.9 },
   emptyCta: {
     marginTop: spacing.xl,
     backgroundColor: colors.accent,

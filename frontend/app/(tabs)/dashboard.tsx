@@ -12,6 +12,7 @@ import { CONCERN_LABEL, SKIN_TYPE_LABEL } from "@/src/types/analysis";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { FadeIn } from "@/src/components/ui/FadeIn";
 import { AnimatedPressable } from "@/src/components/ui/AnimatedPressable";
+import { BrandField } from "@/src/components/brand/BrandField";
 import { SkynLockup } from "@/src/components/brand/SkynLockup";
 import { AnimatedNumber } from "@/src/components/ui/AnimatedNumber";
 
@@ -143,6 +144,8 @@ export default function DashboardScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
+      {/* Le releve occupe le vide en haut a droite sans jamais passer devant. */}
+      <BrandField size={300} drift withPoint style={styles.field} />
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
         {/* Header */}
         <FadeIn distance={10}>
@@ -280,6 +283,7 @@ export default function DashboardScreen() {
 }
 
 const styles = StyleSheet.create({
+  field: { position: "absolute", top: -70, right: -110 },
   container: { flex: 1, backgroundColor: colors.bg },
   scroll: {
     paddingHorizontal: spacing.xl,
