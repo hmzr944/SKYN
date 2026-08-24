@@ -22,8 +22,11 @@ import Animated, {
   Easing,
 } from "react-native-reanimated";
 
+import { useRouter } from "expo-router";
+
 import { colors, fonts, spacing, radius, shadow } from "@/src/theme";
 import { storage } from "@/src/utils/storage";
+import { useAuth } from "@/src/contexts/AuthContext";
 import { FadeIn } from "@/src/components/ui/FadeIn";
 import { AnimatedPressable } from "@/src/components/ui/AnimatedPressable";
 import { GoogleLogo } from "@/src/components/icons/GoogleLogo";
@@ -39,31 +42,46 @@ import {
 const PAGE_COUNT = 5;
 const CONTENT_MAX_W = 480;
 
+// Chaque slide a sa propre identité : kicker éditorial, accent dominant
+// (corail/lime en alternance, jamais de nouvelle teinte), et un très grand
+// numéro en filigrane qui sert de signature visuelle récurrente mais jamais
+// identique — c'est le fil qui tient l'ensemble sans le rendre répétitif.
 const SLIDES = [
   {
+    kicker: "01 — LE CONSTAT",
+    accent: "coral" as const,
+    cover: true,
     title: "Votre peau,\ndécryptée.",
     helper:
       "SKYN analyse votre peau en quelques secondes et vous révèle ce qu'elle a vraiment à dire.",
   },
   {
+    kicker: "02 — SUR MESURE",
+    accent: "lime" as const,
     Illustration: PromiseIllustration,
     title: "Un diagnostic\nqui vous ressemble",
     helper:
       "Calibré sur votre âge, votre environnement et vos priorités pour des recommandations vraiment personnalisées.",
   },
   {
+    kicker: "03 — LA TECHNOLOGIE",
+    accent: "coral" as const,
     Illustration: TechIllustration,
     title: "Une technologie\nde pointe",
     helper:
       "Notre moteur cartographie votre peau zone par zone et détecte les micro-patterns invisibles à l'œil nu.",
   },
   {
+    kicker: "04 — CONFIDENTIEL",
+    accent: "lime" as const,
     Illustration: PrivacyIllustration,
     title: "Vos données\nvous appartiennent",
     helper:
       "Vos photos sont analysées puis immédiatement supprimées. Rien n'est partagé, rien n'est conservé.",
   },
   {
+    kicker: "05 — À VOUS DE JOUER",
+    accent: "coral" as const,
     Illustration: CaptureIllustration,
     title: "Prêt à découvrir\nvotre peau ?",
     helper: "Créez votre dossier cutané chiffré pour commencer votre premier bilan.",
@@ -75,12 +93,45 @@ export default function OnboardingScreen() {
   const scrollRef = useRef<ScrollView>(null);
   const [page, setPage] = useState(0);
   const { busy, error, handleGoogle } = useProviderAuth();
+  const { continueAsGuest } = useAuth();
+  const router = useRouter();
+
+  const handleGuest = async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    finishOnboarding();
+    await continueAsGuest();
+    router.replace("/profile-setup");
+  };
   const isNarrow = SCREEN_W < 380;
   const isShort = SCREEN_H < 700;
   const horizontalPadding = isNarrow ? spacing.m : spacing.xl;
   const illustrationSize = isShort ? 116 : isNarrow ? 136 : 160;
   const titleSize = isShort || isNarrow ? 30 : 36;
   const titleLineHeight = isShort || isNarrow ? 35 : 42;
+
+  // Largeur reservee de part et d'autre des points, identique a gauche et a
+  // droite : c'est ce qui empeche les points de se decaler quand le bouton
+  // « Suivant » disparait sur le dernier ecran.
+  //
+  // Elle est calculee a partir de la place reellement disponible plutot que
+  // posee au jugé : avec une valeur fixe trop etroite, le bouton debordait de
+  // son emplacement et venait recouvrir les derniers points sur un ecran de
+  // 320 px.
+  const DOTS_W = 4 * 8 + 20 + 4 * 6; // quatre points, un point actif allonge, les ecarts
+  const sideSlotW = Math.max(
+    76,
+    Math.floor((SCREEN_W - horizontalPadding * 2 - DOTS_W - spacing.m) / 2),
+  );
+
+  // Le filigrane chiffre etait fige a 210 px. Sur un ecran de 320 px il
+  // depassait des deux cotes et se retrouvait tranche en plein milieu d'un
+  // glyphe, ce qui ressemblait a un bug d'affichage plutot qu'a un parti pris.
+  const watermarkSize = Math.round(Math.min(SCREEN_W * 0.62, 240));
+
+  // Meme probleme pour les bulles decoratives : 280 px fixes sur un ecran de
+  // 320 px recouvraient tout le coin superieur et passaient derriere le texte.
+  const blobA = Math.round(SCREEN_W * 0.78);
+  const blobB = Math.round(SCREEN_W * 0.66);
 
   const blobT = useSharedValue(0);
   useEffect(() => {
@@ -124,7 +175,15 @@ export default function OnboardingScreen() {
   return (
     <SafeAreaView style={styles.container} edges={["top", "bottom"]}>
       {/* Decorative animated blobs */}
-      <Animated.View style={[styles.blob, styles.blobA, blobStyleA]} pointerEvents="none">
+      <Animated.View
+        style={[
+          styles.blob,
+          styles.blobA,
+          { width: blobA, height: blobA, top: -blobA * 0.32, right: -blobA * 0.30 },
+          blobStyleA,
+        ]}
+        pointerEvents="none"
+      >
         <LinearGradient
           colors={[colors.accent, "rgba(255,77,109,0)"]}
           style={styles.blobFill}
@@ -132,7 +191,15 @@ export default function OnboardingScreen() {
           end={{ x: 1, y: 1 }}
         />
       </Animated.View>
-      <Animated.View style={[styles.blob, styles.blobB, blobStyleB]} pointerEvents="none">
+      <Animated.View
+        style={[
+          styles.blob,
+          styles.blobB,
+          { width: blobB, height: blobB, bottom: blobB * 0.22, left: -blobB * 0.42 },
+          blobStyleB,
+        ]}
+        pointerEvents="none"
+      >
         <LinearGradient
           colors={[colors.accentSoft, "rgba(255, 77, 109, 0)"]}
           style={styles.blobFill}
@@ -144,18 +211,7 @@ export default function OnboardingScreen() {
       {/* Header */}
       <View style={styles.header}>
         <SkynLockup size={24} still />
-        {page === 0 ? (
-          <TouchableOpacity
-            testID="onboarding-signin-link"
-            onPress={() => {
-              finishOnboarding();
-              goToPage(PAGE_COUNT - 1);
-            }}
-            hitSlop={8}
-          >
-            <Text style={styles.skip}>Déjà un compte ?</Text>
-          </TouchableOpacity>
-        ) : !isLast ? (
+        {!isLast ? (
           <TouchableOpacity
             testID="onboarding-skip-btn"
             onPress={() => {
@@ -179,11 +235,20 @@ export default function OnboardingScreen() {
         showsHorizontalScrollIndicator={false}
         onMomentumScrollEnd={onMomentumEnd}
         scrollEnabled={false}
+        style={{ flex: 1 }}
       >
         {SLIDES.map((slide, i) => {
           const Illustration = "Illustration" in slide ? slide.Illustration : null;
+          const isCover = "cover" in slide && slide.cover;
+          const haloColor = slide.accent === "lime" ? colors.okSofter : colors.accentSofter;
+          const kickerColor = slide.accent === "lime" ? colors.fg : colors.accent;
           return (
-            <View key={i} style={[styles.page, { width: SCREEN_W }]}>
+            <ScrollView
+              key={i}
+              style={{ width: SCREEN_W }}
+              contentContainerStyle={[styles.page, { minHeight: "100%" }]}
+              showsVerticalScrollIndicator={false}
+            >
               <View
                 style={[
                   styles.pageContent,
@@ -194,8 +259,24 @@ export default function OnboardingScreen() {
                   },
                 ]}
               >
+                {/* Filigrane numéroté — signature récurrente, jamais identique */}
+                <Text
+                  style={[
+                    styles.watermark,
+                    { fontSize: watermarkSize, letterSpacing: -watermarkSize * 0.038 },
+                    isCover && styles.watermarkCover,
+                  ]}
+                  pointerEvents="none"
+                >
+                  {slide.kicker.slice(0, 2)}
+                </Text>
+
+                <FadeIn distance={10}>
+                  <Text style={[styles.kicker, { color: kickerColor }]}>{slide.kicker}</Text>
+                </FadeIn>
+
                 {Illustration ? (
-                  <FadeIn distance={16}>
+                  <FadeIn distance={16} delay={40}>
                     <View
                       style={[
                         styles.illustration,
@@ -206,14 +287,25 @@ export default function OnboardingScreen() {
                         },
                       ]}
                     >
+                      <View
+                        style={[
+                          styles.illustrationHalo,
+                          {
+                            backgroundColor: haloColor,
+                            width: illustrationSize * 1.3,
+                            height: illustrationSize * 1.3,
+                            borderRadius: (illustrationSize * 1.3) / 2,
+                          },
+                        ]}
+                      />
                       <Illustration />
                     </View>
                   </FadeIn>
                 ) : (
-                  <FadeIn distance={16}>
+                  <FadeIn distance={16} delay={40}>
                     <View
                       style={[
-                        styles.hairlineWrap,
+                        styles.coverHairlineWrap,
                         {
                           height: illustrationSize,
                           marginBottom: isShort ? spacing.s : spacing.m,
@@ -224,15 +316,22 @@ export default function OnboardingScreen() {
                     </View>
                   </FadeIn>
                 )}
-                <FadeIn delay={60} distance={16}>
-                  <Text style={[styles.title, { fontSize: titleSize, lineHeight: titleLineHeight }]}>
+                <FadeIn delay={90} distance={16}>
+                  <Text
+                    style={[
+                      styles.title,
+                      isCover && styles.titleCover,
+                      { fontSize: isCover ? titleSize * 1.15 : titleSize, lineHeight: isCover ? titleLineHeight * 1.15 : titleLineHeight },
+                    ]}
+                  >
                     {slide.title}
                   </Text>
                 </FadeIn>
-                <FadeIn delay={120}>
+                <FadeIn delay={150}>
                   <Text
                     style={[
                       styles.helper,
+                      isCover && styles.helperCover,
                       {
                         fontSize: isShort ? 14 : 15,
                         lineHeight: isShort ? 20 : 22,
@@ -276,6 +375,15 @@ export default function OnboardingScreen() {
                         </View>
                       </AnimatedPressable>
 
+                      <TouchableOpacity
+                        testID="onboarding-guest-button"
+                        onPress={handleGuest}
+                        style={styles.guestBtn}
+                        hitSlop={8}
+                      >
+                        <Text style={styles.guestText}>Tester sans compte →</Text>
+                      </TouchableOpacity>
+
                       <Text style={styles.gdpr} testID="onboarding-gdpr">
                         En continuant, vous créez votre dossier cutané chiffré. Vos photos
                         sont analysées puis immédiatement supprimées.
@@ -284,12 +392,20 @@ export default function OnboardingScreen() {
                   </FadeIn>
                 ) : null}
               </View>
-            </View>
+            </ScrollView>
           );
         })}
       </ScrollView>
 
-      {/* Footer */}
+      {/* Barre de navigation — identique sur les cinq écrans.
+          Auparavant la dernière slide remplaçait cette barre par les seuls
+          points : le bouton « Retour » disparaissait (impossible de revenir en
+          arrière) et les points sautaient de la gauche au centre. Les deux
+          repères de progression bougeaient donc au moment précis où l'on
+          demande à l'utilisateur de s'engager.
+
+          Les trois emplacements gardent une largeur fixe, pour que les points
+          restent exactement au même endroit d'un écran à l'autre. */}
       <View
         style={[
           styles.footer,
@@ -307,18 +423,21 @@ export default function OnboardingScreen() {
           },
         ]}
       >
-        {page > 0 ? (
-          <TouchableOpacity
-            testID="onboarding-back-btn"
-            onPress={() => goToPage(page - 1)}
-            style={styles.backBtn}
-            activeOpacity={0.6}
-          >
-            <Text style={styles.backText}>← Retour</Text>
-          </TouchableOpacity>
-        ) : (
-          <View style={{ width: 80 }} />
-        )}
+        <View style={[styles.footerSlot, { width: sideSlotW }]}>
+          {page > 0 ? (
+            <TouchableOpacity
+              testID="onboarding-back-btn"
+              onPress={() => goToPage(page - 1)}
+              style={styles.backBtn}
+              activeOpacity={0.6}
+              hitSlop={10}
+            >
+              <Text style={styles.backText} numberOfLines={1}>
+                {isNarrow ? "←" : "← Retour"}
+              </Text>
+            </TouchableOpacity>
+          ) : null}
+        </View>
 
         <View style={styles.dotsRow}>
           {Array.from({ length: PAGE_COUNT }).map((_, i) => (
@@ -326,44 +445,27 @@ export default function OnboardingScreen() {
           ))}
         </View>
 
-        {isLast ? (
-          <AnimatedPressable
-            testID="onboarding-start-btn"
-            style={[
-              styles.nextBtn,
-              {
-                minWidth: isNarrow ? 104 : 120,
-                paddingHorizontal: isNarrow ? spacing.l : spacing.xl,
-                paddingVertical: isShort ? 14 : 16,
-                opacity: busy !== null ? 0.6 : 1,
-              },
-            ]}
-            onPress={() => {
-              finishOnboarding();
-              handleGoogle();
-            }}
-            disabled={busy !== null}
-          >
-            <Text style={styles.nextText}>
-              {busy === "google" ? "…" : "Commencer"}
-            </Text>
-          </AnimatedPressable>
-        ) : (
-          <AnimatedPressable
-            testID="onboarding-next-btn"
-            onPress={() => goToPage(page + 1)}
-            style={[
-              styles.nextBtn,
-              {
-                minWidth: isNarrow ? 104 : 120,
-                paddingHorizontal: isNarrow ? spacing.l : spacing.xl,
-                paddingVertical: isShort ? 14 : 16,
-              },
-            ]}
-          >
-            <Text style={styles.nextText}>Suivant</Text>
-          </AnimatedPressable>
-        )}
+        <View style={[styles.footerSlot, styles.footerSlotEnd, { width: sideSlotW }]}>
+          {/* Sur le dernier écran, l'action principale est la connexion, placée
+              dans le contenu : on laisse l'emplacement vide plutôt que d'offrir
+              deux boutons concurrents. */}
+          {!isLast ? (
+            <AnimatedPressable
+              testID="onboarding-next-btn"
+              onPress={() => goToPage(page + 1)}
+              style={[
+                styles.nextBtn,
+                {
+                  paddingHorizontal: isNarrow ? spacing.s : spacing.xl,
+                  paddingVertical: isShort ? 13 : 16,
+                  maxWidth: sideSlotW,
+                },
+              ]}
+            >
+              <Text style={styles.nextText}>Suivant</Text>
+            </AnimatedPressable>
+          ) : null}
+        </View>
       </View>
     </SafeAreaView>
   );
@@ -405,6 +507,21 @@ const styles = StyleSheet.create({
     alignItems: "center",
     alignSelf: "center",
   },
+  watermark: {
+    position: "absolute",
+    top: -18,
+    alignSelf: "center",
+    fontFamily: fonts.heading,
+    color: colors.fg,
+    opacity: 0.035,
+  },
+  watermarkCover: { top: -6 },
+  kicker: {
+    fontFamily: fonts.bodyMedium,
+    fontSize: 11,
+    letterSpacing: 3,
+    marginBottom: spacing.m,
+  },
   illustration: {
     width: 160,
     height: 160,
@@ -412,8 +529,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  hairlineWrap: {
-    height: 160,
+  illustrationHalo: {
+    position: "absolute",
+  },
+  coverHairlineWrap: {
+    height: 8,
     marginBottom: spacing.m,
     alignItems: "center",
     justifyContent: "center",
@@ -431,6 +551,12 @@ const styles = StyleSheet.create({
     lineHeight: 42,
     letterSpacing: -0.5,
     textAlign: "center",
+  },
+  titleCover: {
+    letterSpacing: -1.2,
+  },
+  helperCover: {
+    fontFamily: fonts.bodyMedium,
   },
   helper: {
     fontFamily: fonts.body,
@@ -478,6 +604,14 @@ const styles = StyleSheet.create({
     fontSize: 14,
     letterSpacing: 0.3,
   },
+  guestBtn: { alignSelf: "center", paddingVertical: 6 },
+  guestText: {
+    fontFamily: fonts.bodyMedium,
+    color: colors.fg,
+    fontSize: 13,
+    letterSpacing: 0.5,
+    textDecorationLine: "underline",
+  },
   gdpr: {
     fontFamily: fonts.body,
     color: colors.fgDim,
@@ -502,6 +636,10 @@ const styles = StyleSheet.create({
     fontSize: 14,
     letterSpacing: 0.5,
   },
+  // Emplacements lateraux de largeur fixe : les points restent alignes au
+  // meme endroit sur les cinq ecrans, meme quand un cote est vide.
+  footerSlot: { justifyContent: "center" },
+  footerSlotEnd: { alignItems: "flex-end" },
   dotsRow: { flexDirection: "row", gap: 6 },
   dot: {
     width: 8,
@@ -515,7 +653,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 32,
     paddingVertical: 16,
     borderRadius: radius.pill,
-    minWidth: 120,
     alignItems: "center",
     ...shadow.button,
   },

@@ -494,8 +494,22 @@ app.add_middleware(
 # vient APRES include_router, donc il ne peut pas les masquer.
 WEB_DIR = Path(os.environ.get("SKYN_WEB_DIR", ROOT_DIR / "webapp"))
 if WEB_DIR.is_dir():
+    import mimetypes
+
     from fastapi.staticfiles import StaticFiles
     from starlette.exceptions import HTTPException as StarletteHTTPException
+
+    # Le conteneur de deploiement n'embarque pas /etc/mime.types : sans ces
+    # enregistrements, les polices partent en "text/plain". Chromium les
+    # accepte quand meme, mais Safari est nettement plus strict sur le type
+    # MIME d'une @font-face — et c'est un telephone qui ouvre cette app.
+    for _ext, _type in (
+        (".ttf", "font/ttf"),
+        (".otf", "font/otf"),
+        (".woff", "font/woff"),
+        (".woff2", "font/woff2"),
+    ):
+        mimetypes.add_type(_type, _ext)
 
     class SPAStaticFiles(StaticFiles):
         """Fichiers statiques avec repli SPA.
