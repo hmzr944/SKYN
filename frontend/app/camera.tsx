@@ -27,6 +27,7 @@ import {
   type GuideState,
   type ScanStep,
 } from "@/src/services/faceGuide";
+import { track } from "@/src/services/analytics";
 import { colors, motion, radius, spacing, type } from "@/src/theme";
 import { FACE_CLOSED, FACE_LENGTH, FACE_PATH } from "@/src/theme/mark";
 import { storage } from "@/src/utils/storage";
@@ -80,6 +81,10 @@ export default function CameraScreen() {
 
   const canUseCamera = !!permission?.granted;
   const isPerfect = guide === "perfect";
+
+  useEffect(() => {
+    track("scan_started");
+  }, []);
 
   useEffect(() => {
     if (permission && !permission.granted && permission.canAskAgain) {

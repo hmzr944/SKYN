@@ -17,6 +17,7 @@ import { Reveal } from "@/src/components/ui/Reveal";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { api } from "@/src/services/api";
 import { saveRoutineFromAnalysis } from "@/src/services/routineStore";
+import { track } from "@/src/services/analytics";
 import { saveScan, subScores } from "@/src/services/scanStore";
 import { pushReportToSupabase } from "@/src/services/supabase";
 import { colors, motion, radius, spacing, type } from "@/src/theme";
@@ -60,6 +61,8 @@ export default function AnalysisScreen() {
   const hapticInt = useRef<ReturnType<typeof setInterval> | null>(null);
   const startedAt = useRef<number>(Date.now());
   const analysisRef = useRef<FaceAnalysis | null>(null);
+  /** Nombre d'angles reellement envoyes au moteur, pour l'instrumentation. */
+  const anglesRef = useRef(1);
   const failureRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -95,6 +98,7 @@ export default function AnalysisScreen() {
         extras = [];
       }
 
+      anglesRef.current = 1 + extras.length;
       try {
         const data = await api.analyzeV2(b, extras);
         if (cancelled) return;
@@ -135,6 +139,7 @@ export default function AnalysisScreen() {
 
       // La source unique : l'analyse complete, rouvrable plus tard.
       const id = await saveScan(a);
+      await track("scan_completed", { score: a.global_score, angles: anglesRef.current });
       await saveRoutineFromAnalysis(a);
       await storage.setItem("skyn_last_capture_b64", "");
       await storage.setItem("skyn_last_captures", "[]");

@@ -20,6 +20,7 @@ import Animated, {
 import { colors, fonts, spacing, radius, shadow } from "@/src/theme";
 import { FadeIn } from "@/src/components/ui/FadeIn";
 import { AnimatedPressable } from "@/src/components/ui/AnimatedPressable";
+import { IntroductionCard } from "@/src/components/IntroductionCard";
 import { JournalCard } from "@/src/components/JournalCard";
 import { STEP_LABEL } from "@/src/types/analysis";
 import type { ProductPick } from "@/src/types/analysis";
@@ -282,7 +283,11 @@ export default function RoutineScreen() {
           </FadeIn>
         ) : null}
 
-        <FadeIn delay={260} style={{ marginTop: spacing.l }}>
+        <FadeIn delay={240} style={{ marginTop: spacing.l }}>
+          <IntroductionCard routine={routine} />
+        </FadeIn>
+
+        <FadeIn delay={300} style={{ marginTop: spacing.l }}>
           <JournalCard />
         </FadeIn>
 

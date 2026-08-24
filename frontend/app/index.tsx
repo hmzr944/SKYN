@@ -10,6 +10,7 @@ import Animated, {
 } from "react-native-reanimated";
 
 import { SkynMark } from "@/src/components/brand/SkynMark";
+import { track } from "@/src/services/analytics";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { colors, motion, type } from "@/src/theme";
 
@@ -23,6 +24,10 @@ export default function Index() {
   // Les lettres s'ecartent a leur place pendant que le trace se termine :
   // le mot se pose, il n'apparait pas.
   const word = useSharedValue(0);
+
+  useEffect(() => {
+    track("app_opened");
+  }, []);
 
   useEffect(() => {
     word.value = withDelay(
