@@ -21,9 +21,11 @@ import { colors, fonts, spacing, radius, shadow } from "@/src/theme";
 import { AnimatedPressable } from "@/src/components/ui/AnimatedPressable";
 import { FadeIn } from "@/src/components/ui/FadeIn";
 import { SkynMark } from "@/src/components/brand/SkynMark";
+import { useAuth } from "@/src/contexts/AuthContext";
 
 export default function AuthScreen() {
   const router = useRouter();
+  const { continueAsGuest } = useAuth();
   const [starting, setStarting] = useState(false);
 
   const blobT = useSharedValue(0);
@@ -104,6 +106,20 @@ export default function AuthScreen() {
           </AnimatedPressable>
         </FadeIn>
 
+        <FadeIn delay={410}>
+          <AnimatedPressable
+            testID="auth-guest-button"
+            style={styles.guestBtn}
+            haptic={false}
+            onPress={async () => {
+              await continueAsGuest();
+              router.replace("/profile-setup");
+            }}
+          >
+            <Text style={styles.guestBtnText}>Tester sans compte</Text>
+          </AnimatedPressable>
+        </FadeIn>
+
         <FadeIn delay={440}>
           <Text style={styles.gdpr} testID="auth-gdpr">
             En continuant, vous créez votre dossier cutané chiffré. Vos photos
@@ -127,6 +143,13 @@ const styles = StyleSheet.create({
     position: "absolute",
     borderRadius: 999,
     overflow: "hidden",
+  },
+  guestBtn: { alignItems: "center", paddingVertical: spacing.m },
+  guestBtnText: {
+    fontFamily: fonts.bodyMedium,
+    fontSize: 13,
+    color: colors.fgMuted,
+    textDecorationLine: "underline",
   },
   blobFill: { flex: 1, borderRadius: 999 },
   blobA: { width: 280, height: 280, top: -80, right: -90, opacity: 0.35 },

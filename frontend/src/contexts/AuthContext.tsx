@@ -1,8 +1,17 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 
-import { api } from "@/src/services/api";
+import { api, GUEST_FLAG_KEY } from "@/src/services/api";
 import { supabase } from "@/src/services/supabase";
+import { storage } from "@/src/utils/storage";
+
+/** Compte de demonstration : aucune donnee reelle n'est exposee cote serveur. */
+const GUEST_USER = {
+  user_id: "guest",
+  email: "invite@skyn.demo",
+  name: "Invite",
+  picture: null,
+};
 
 type User = {
   user_id: string;
@@ -27,6 +36,7 @@ type AuthState = {
   profile: Profile | null;
   refreshProfile: () => Promise<void>;
   signOut: () => Promise<void>;
+  continueAsGuest: () => Promise<void>;
 };
 
 const AuthCtx = createContext<AuthState | null>(null);
@@ -59,15 +69,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     let mounted = true;
 
-    supabase.auth.getSession().then(async ({ data }) => {
+    (async () => {
+      // La session invite prime : elle est purement locale et ne doit pas
+      // etre ecrasee par l'absence de session Supabase.
+      const guest = (await storage.getItem(GUEST_FLAG_KEY, "")) as string;
+      if (guest === "1") {
+        if (!mounted) return;
+        setUser(GUEST_USER);
+        await loadProfile();
+        setLoading(false);
+        return;
+      }
+      const { data } = await supabase.auth.getSession();
       if (!mounted) return;
       const sessionUser = userFromSession(data.session);
       setUser(sessionUser);
       if (sessionUser) await loadProfile();
       setLoading(false);
-    });
+    })();
 
     const { data: subscription } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      const guest = (await storage.getItem(GUEST_FLAG_KEY, "")) as string;
+      if (guest === "1") return;
       const sessionUser = userFromSession(session);
       setUser(sessionUser);
       if (sessionUser) {
@@ -83,7 +106,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, [loadProfile]);
 
+  const continueAsGuest = useCallback(async () => {
+    await storage.setItem(GUEST_FLAG_KEY, "1");
+    setUser(GUEST_USER);
+    await loadProfile();
+    setLoading(false);
+  }, [loadProfile]);
+
   const signOut = useCallback(async () => {
+    await storage.setItem(GUEST_FLAG_KEY, "");
     await supabase.auth.signOut();
     setUser(null);
     setProfile(null);
@@ -94,7 +125,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [loadProfile]);
 
   return (
-    <AuthCtx.Provider value={{ loading, user, profile, refreshProfile, signOut }}>
+    <AuthCtx.Provider value={{ loading, user, profile, refreshProfile, signOut, continueAsGuest }}>
       {children}
     </AuthCtx.Provider>
   );

@@ -2,10 +2,18 @@ import { storage } from "@/src/utils/storage";
 import { supabase } from "@/src/services/supabase";
 import type { FaceAnalysis } from "@/src/types/analysis";
 
-const BASE = process.env.EXPO_PUBLIC_BACKEND_URL;
+// Vide par defaut : en deploiement mono-hote, l'API et l'app web sont servies
+// par la meme origine, et les appels partent en relatif sur /api. Sans ce
+// repli, chaque requete viserait "undefined/api/...".
+const BASE = process.env.EXPO_PUBLIC_BACKEND_URL || "";
 const PENDING_REPORTS_KEY = "skyn_pending_reports";
 
+/** Drapeau de session invite — demo sans compte. */
+export const GUEST_FLAG_KEY = "skyn_guest";
+
 async function authHeader(): Promise<Record<string, string>> {
+  const guest = (await storage.getItem(GUEST_FLAG_KEY, "")) as string;
+  if (guest === "1") return { Authorization: "Bearer skyn-guest" };
   const { data } = await supabase.auth.getSession();
   const token = data.session?.access_token;
   return token ? { Authorization: `Bearer ${token}` } : {};
@@ -22,7 +30,8 @@ async function request<T>(
   });
 
   let res = await fetch(`${BASE}${path}`, { ...init, headers: await buildHeaders() });
-  if (res.status === 401) {
+  const guest = (await storage.getItem(GUEST_FLAG_KEY, "")) as string;
+  if (res.status === 401 && guest !== "1") {
     await supabase.auth.refreshSession();
     res = await fetch(`${BASE}${path}`, { ...init, headers: await buildHeaders() });
   }

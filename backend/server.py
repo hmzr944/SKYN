@@ -19,9 +19,17 @@ from jose import jwt as jose_jwt
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
-mongo_url = os.environ['MONGO_URL']
-client = AsyncIOMotorClient(mongo_url)
-db = client[os.environ['DB_NAME']]
+# MONGO_URL absent ou "demo" -> base en memoire (mongomock). C'est ce qui
+# permet une demo cloud sans compte MongoDB ; les donnees serveur sont alors
+# perdues au redemarrage du conteneur. Sans ce repli, le processus refusait de
+# demarrer et le deploiement plantait au boot.
+mongo_url = os.environ.get('MONGO_URL', 'demo')
+if mongo_url == 'demo':
+    from mongomock_motor import AsyncMongoMockClient
+    client = AsyncMongoMockClient()
+else:
+    client = AsyncIOMotorClient(mongo_url)
+db = client[os.environ.get('DB_NAME', 'skyn')]
 
 EMERGENT_LLM_KEY = os.environ.get("EMERGENT_LLM_KEY", "")
 CORS_ORIGINS = [o.strip() for o in os.environ.get("CORS_ORIGINS", "").split(",") if o.strip()]
@@ -180,10 +188,18 @@ async def verify_supabase_jwt(token: str) -> dict:
     return claims
 
 
+# Mode invite (demo sans compte) : active par SKYN_ALLOW_GUEST=1.
+# Le frontend envoie "Bearer skyn-guest" ; aucune donnee reelle n'est exposee.
+ALLOW_GUEST = os.environ.get("SKYN_ALLOW_GUEST", "") == "1"
+GUEST_USER = User(user_id="guest", email="invite@skyn.demo", name="Invite")
+
+
 async def get_current_user(authorization: Optional[str] = Header(None)) -> User:
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Not authenticated")
     token = authorization.split(" ", 1)[1].strip()
+    if ALLOW_GUEST and token == "skyn-guest":
+        return GUEST_USER
     claims = await verify_supabase_jwt(token)
 
     user_id = claims.get("sub")
@@ -471,6 +487,45 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ---- Service de l'application web (deploiement mono-hote) ----
+# Construite par `npx expo export --platform web`, puis SKYN_WEB_DIR pointe sur
+# le dossier dist. Les routes d'API restent sous /api : le montage a la racine
+# vient APRES include_router, donc il ne peut pas les masquer.
+WEB_DIR = Path(os.environ.get("SKYN_WEB_DIR", ROOT_DIR / "webapp"))
+if WEB_DIR.is_dir():
+    from fastapi.staticfiles import StaticFiles
+    from starlette.exceptions import HTTPException as StarletteHTTPException
+
+    class SPAStaticFiles(StaticFiles):
+        """Fichiers statiques avec repli SPA.
+
+        Une ROUTE inconnue sert index.html, pour que les liens profonds
+        d'expo-router (/scan-result, /routine) survivent a un rechargement.
+        Un ASSET manquant reste en 404 : renvoyer index.html a la place
+        masquerait l'erreur derriere une page blanche impossible a diagnostiquer.
+        On distingue les deux par la presence d'une extension.
+        """
+
+        async def get_response(self, path: str, scope):
+            try:
+                resp = await super().get_response(path, scope)
+            except StarletteHTTPException as e:
+                if e.status_code == 404 and "." not in path.rsplit("/", 1)[-1]:
+                    resp = await super().get_response("index.html", scope)
+                    resp.headers["Cache-Control"] = "no-cache"
+                    return resp
+                raise
+            # Les bundles portent un hash dans leur nom : immuables un an.
+            # Tout le reste doit etre revalide, sinon une mise a jour ne
+            # parvient jamais a un telephone qui a deja ouvert l'app.
+            if "/_expo/static/" in path or path.startswith("_expo/static/"):
+                resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+            else:
+                resp.headers["Cache-Control"] = "no-cache"
+            return resp
+
+    app.mount("/", SPAStaticFiles(directory=str(WEB_DIR), html=True), name="webapp")
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
