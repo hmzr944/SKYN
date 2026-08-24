@@ -65,7 +65,10 @@ export interface ProductPick {
   actives: { inci: string; common?: string | null; pct?: number | null }[];
   family: string | null;
   evidence: { level?: "A" | "B" | "C"; note?: string; source?: string };
+  /** Fiche du fabricant. Peut avoir disparu : les marques restructurent. */
   url?: string;
+  /** Recherche marchande : aboutit toujours, montre prix et disponibilite. */
+  buy_url?: string;
   irritation: number;
   /** Adequation en pourcentage, 0..100. */
   match: number;

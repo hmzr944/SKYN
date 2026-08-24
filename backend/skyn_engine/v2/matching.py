@@ -76,6 +76,7 @@ class Pick:
             "family": p.get("family"),
             "evidence": p.get("evidence", {}),
             "url": p.get("url"),
+            "buy_url": _buy_url(p),
             "irritation": p.get("irritation", 0.0),
             "match": round(self.score * 100),
             "why": self.why,
@@ -189,6 +190,24 @@ def _is_allowed(product: dict, ph: Phenotype, fp: SkinFingerprint,
             return False, f"non adapté à une peau {ph.skin_type}"
 
     return True, None
+
+
+def _buy_url(p: dict) -> str:
+    """Lien d'achat qui aboutit toujours.
+
+    Les liens profonds vers les sites de marque pourrissent : sur un controle
+    des 28 liens distincts du catalogue, 8 renvoyaient une 404 franche — les
+    marques restructurent leurs pages sans prevenir. Un lien mort a l'endroit
+    exact ou l'on demande a quelqu'un d'acheter est le pire moment pour echouer.
+
+    On envoie donc vers une recherche marchande sur la marque et le nom : elle
+    resout toujours, montre le prix du jour et la disponibilite reelle, et
+    laisse le choix du revendeur.
+    """
+    from urllib.parse import quote_plus
+
+    terme = f"{p.get('brand', '')} {p.get('name', '')}".strip()
+    return "https://www.google.com/search?tbm=shop&hl=fr&gl=fr&q=" + quote_plus(terme)
 
 
 # Familles dont l'empilement provoque reellement une irritation. Doubler un

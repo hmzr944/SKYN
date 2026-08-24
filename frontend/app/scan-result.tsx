@@ -27,6 +27,7 @@ import { getScan } from "@/src/services/scanStore";
 import { FadeIn } from "@/src/components/ui/FadeIn";
 import { AnimatedPressable } from "@/src/components/ui/AnimatedPressable";
 import { FaceZoneMap, ZoneLegend, scoreColor } from "@/src/components/analysis/FaceZoneMap";
+import { ProductVisual } from "@/src/components/ProductVisual";
 import {
   CONCERN_LABEL,
   LESION_LABEL,
@@ -141,6 +142,7 @@ function ProductCard({ p }: { p: ProductPick }) {
       accessibilityLabel={`${p.brand} ${p.name}, adéquation ${p.match} pour cent`}
     >
       <View style={styles.productTop}>
+        <ProductVisual product={p} size={52} />
         <View style={{ flex: 1 }}>
           <Text style={styles.productStep}>{STEP_LABEL[p.step] ?? p.step}</Text>
           <Text style={styles.productBrand}>{p.brand}</Text>
@@ -187,11 +189,22 @@ function ProductCard({ p }: { p: ProductPick }) {
           {p.evidence?.source ? (
             <Text style={styles.evSource}>Source : {p.evidence.source}</Text>
           ) : null}
-          {p.url ? (
-            <Text style={styles.link} onPress={() => Linking.openURL(p.url!)}>
-              Voir le produit →
-            </Text>
-          ) : null}
+          <View style={styles.buyRow}>
+            {p.buy_url ? (
+              <AnimatedPressable
+                style={styles.buyBtn}
+                haptic="medium"
+                onPress={() => Linking.openURL(p.buy_url!)}
+              >
+                <Text style={styles.buyText}>Où l&apos;acheter</Text>
+              </AnimatedPressable>
+            ) : null}
+            {p.url ? (
+              <Text style={styles.link} onPress={() => Linking.openURL(p.url!)}>
+                Fiche marque →
+              </Text>
+            ) : null}
+          </View>
         </View>
       )}
     </Pressable>
@@ -686,6 +699,22 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     padding: spacing.m,
     marginBottom: spacing.s,
+  },
+  buyRow: { flexDirection: "row", alignItems: "center", gap: spacing.m, marginTop: spacing.s },
+  buyBtn: {
+    backgroundColor: colors.accent,
+    borderRadius: radius.pill,
+    paddingVertical: 11,
+    paddingHorizontal: spacing.l,
+    minHeight: 44,
+    justifyContent: "center",
+  },
+  buyText: {
+    fontFamily: fonts.headingMedium,
+    fontSize: 11,
+    letterSpacing: 1.6,
+    textTransform: "uppercase",
+    color: colors.onAccent,
   },
   productTop: { flexDirection: "row", alignItems: "flex-start", gap: spacing.m },
   productStep: {

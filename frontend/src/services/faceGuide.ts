@@ -1,15 +1,19 @@
 /**
  * Le guidage live.
  *
- * Un detecteur de visage tourne sur le flux video et dit, image par image, ce
- * qu'il faut corriger : trop loin, trop pres, decentre, tete pas assez
- * tournee. C'est la difference entre "prenez une photo et croisez les doigts"
- * et un scan qui se declenche seul quand le cadrage est reellement bon.
+ * Le principe est celui de l'enregistrement Face ID : une seule session
+ * continue pendant laquelle on tourne lentement la tete, et l'app echantillonne
+ * toute seule au fur et a mesure. Il n'y a pas de "prise de photo" — pas de
+ * compte a rebours, pas de declencheur, pas d'etapes numerotees. On tourne, la
+ * couverture se remplit, c'est fini.
  *
- * Le detecteur est charge a la demande depuis /mediapipe : 11 Mo de WASM
- * n'ont rien a faire dans le bundle principal, et l'ecran doit rester
- * utilisable si le chargement echoue — le guidage est un confort, pas une
- * condition.
+ * L'echantillonnage sous plusieurs angles n'est pas cosmetique : de face, les
+ * joues et les tempes sont vues en raccourci, et leur relief disparait. Les
+ * angles lateraux les exposent.
+ *
+ * Le detecteur est charge a la demande : 11 Mo de WASM n'ont rien a faire dans
+ * le bundle principal, et l'ecran doit rester utilisable si le chargement
+ * echoue — le guidage est un confort, pas une condition.
  */
 
 export type GuideState =
@@ -18,41 +22,84 @@ export type GuideState =
   | "too_far"
   | "too_close"
   | "off_center"
-  | "tilted"
-  | "turn_more"
-  | "turn_other"
-  | "perfect";
+  | "turn_left"
+  | "turn_right"
+  | "hold"
+  | "done";
 
-/** 0 = face, 1 = profil droit, 2 = profil gauche. */
-export type ScanStep = 0 | 1 | 2;
+/** Les angles a couvrir. */
+export type Angle = "left" | "center" | "right";
+export const ANGLES: Angle[] = ["center", "right", "left"];
 
-export const STEPS: {
-  label: string;
-  title: string;
-  hint: string;
-}[] = [
-  {
-    label: "Face",
-    title: "Regardez droit devant vous",
-    hint: "Visage au centre du contour, cheveux dégagés",
-  },
-  {
-    label: "Profil droit",
-    title: "Tournez lentement la tête à droite",
-    hint: "Jusqu'à voir votre joue droite entière",
-  },
-  {
-    label: "Profil gauche",
-    title: "Maintenant à gauche",
-    hint: "Le moteur compare les deux côtés",
-  },
-];
+/** Seuils de cadrage et d'orientation. */
+const T = {
+  /** Hauteur du visage rapportee a la hauteur de l'image. */
+  minFace: 0.26,
+  maxFace: 0.66,
+  /** Ecart tolere au centre — large, parce qu'on tourne la tete. */
+  offX: 0.2,
+  offY: 0.2,
+  /** En deca, la tete est consideree de face. */
+  center: 0.18,
+  /** Au-dela, elle est consideree tournee. */
+  turned: 0.28,
+};
 
-/** Ce qui s'affiche pour chaque etat, par etape. */
-export function guideMessage(state: GuideState, step: ScanStep): string {
+export interface Detection {
+  hRatio: number;
+  cx: number;
+  cy: number;
+  /** Orientation : 0 = face, negatif d'un cote, positif de l'autre. */
+  yaw: number;
+}
+
+/** L'angle courant, ou null si la tete est entre deux positions. */
+export function angleOf(yaw: number): Angle | null {
+  if (Math.abs(yaw) < T.center) return "center";
+  if (yaw >= T.turned) return "right";
+  if (yaw <= -T.turned) return "left";
+  return null;
+}
+
+/** Le cadrage est-il exploitable, independamment de l'orientation ? */
+export function framingOk(d: Detection): boolean {
+  return (
+    d.hRatio >= T.minFace &&
+    d.hRatio <= T.maxFace &&
+    Math.abs(d.cx - 0.5) <= T.offX &&
+    Math.abs(d.cy - 0.5) <= T.offY
+  );
+}
+
+/**
+ * Etat du guidage.
+ *
+ * L'ordre compte : on corrige d'abord le cadrage, puis on oriente. Demander de
+ * tourner la tete a quelqu'un qui est hors champ ne sert a rien.
+ */
+export function evaluate(d: Detection | null, covered: Angle[]): GuideState {
+  const reste = ANGLES.filter((a) => !covered.includes(a));
+  if (reste.length === 0) return "done";
+  if (!d) return "searching";
+
+  if (d.hRatio < T.minFace) return "too_far";
+  if (d.hRatio > T.maxFace) return "too_close";
+  if (Math.abs(d.cx - 0.5) > T.offX || Math.abs(d.cy - 0.5) > T.offY) return "off_center";
+
+  const ici = angleOf(d.yaw);
+  // L'angle courant manque encore : on est au bon endroit, il suffit de tenir.
+  if (ici && reste.includes(ici)) return "hold";
+
+  // Sinon on oriente vers ce qui manque, en commençant par le plus proche.
+  if (reste.includes("center")) return d.yaw > 0 ? "turn_left" : "turn_right";
+  if (reste.includes("right")) return "turn_right";
+  return "turn_left";
+}
+
+export function guideMessage(state: GuideState): string {
   switch (state) {
     case "loading":
-      return "Préparation du guidage…";
+      return "Préparation…";
     case "searching":
       return "Aucun visage détecté";
     case "too_far":
@@ -61,69 +108,22 @@ export function guideMessage(state: GuideState, step: ScanStep): string {
       return "Reculez un peu";
     case "off_center":
       return "Centrez votre visage";
-    case "tilted":
-      return "Redressez la tête";
-    case "turn_more":
-      return step === 1 ? "Tournez davantage à droite" : "Tournez davantage à gauche";
-    case "turn_other":
-      return "De l'autre côté";
-    case "perfect":
-      return step === 0 ? "Parfait, ne bougez plus" : "Parfait, tenez la pose";
+    case "turn_left":
+      return "Tournez lentement vers la gauche";
+    case "turn_right":
+      return "Tournez lentement vers la droite";
+    case "hold":
+      return "Ne bougez plus";
+    case "done":
+      return "Analyse en cours";
   }
 }
 
-/** Seuils de cadrage. Regroupes ici pour etre lisibles et ajustables. */
-const T = {
-  /** Hauteur du visage rapportee a la hauteur de l'image. */
-  farFace: 0.3,
-  closeFace: 0.62,
-  farProfile: 0.24,
-  /** Ecart tolere au centre. */
-  offX: 0.14,
-  offY: 0.16,
-  /** Au-dela, la tete est consideree tournee. */
-  straightYaw: 0.22,
-  turnedYaw: 0.25,
-};
-
-export interface Detection {
-  /** Hauteur du visage / hauteur de l'image. */
-  hRatio: number;
-  /** Centre du visage, normalise. */
-  cx: number;
-  cy: number;
-  /** Orientation : 0 = face, |yaw| grand = profil. Signe = cote. */
-  yaw: number;
-}
-
 /**
- * Verdict de cadrage.
+ * Lit une image du flux.
  *
- * `sideSign` est le signe du yaw enregistre au profil droit : au profil
- * gauche, on exige le signe oppose, sinon quelqu'un qui retourne du meme cote
- * validerait deux fois la meme joue.
- */
-export function evaluate(d: Detection | null, step: ScanStep, sideSign: number): GuideState {
-  if (!d) return "searching";
-
-  if (step === 0) {
-    if (d.hRatio < T.farFace) return "too_far";
-    if (d.hRatio > T.closeFace) return "too_close";
-    if (Math.abs(d.cx - 0.5) > T.offX || Math.abs(d.cy - 0.5) > T.offY) return "off_center";
-    if (Math.abs(d.yaw) > T.straightYaw) return "tilted";
-    return "perfect";
-  }
-
-  if (d.hRatio < T.farProfile) return "too_far";
-  if (Math.abs(d.yaw) < T.turnedYaw) return "turn_more";
-  if (step === 2 && sideSign !== 0 && Math.sign(d.yaw) === sideSign) return "turn_other";
-  return "perfect";
-}
-
-/**
- * Lit une image du flux et en tire une detection.
  * Les points cles de BlazeFace donnent oeil droit, oeil gauche, nez : la
- * position du nez entre les deux yeux sert d'estimation d'orientation.
+ * position du nez entre les deux yeux estime l'orientation.
  */
 export function readDetection(res: any, videoW: number, videoH: number): Detection | null {
   const d = res?.detections?.[0];
@@ -146,5 +146,9 @@ export function readDetection(res: any, videoW: number, videoH: number): Detecti
   };
 }
 
-/** Duree de maintien du bon cadrage avant declenchement automatique. */
-export const AUTO_CAPTURE_MS = 900;
+/**
+ * Duree pendant laquelle l'angle doit tenir avant d'etre echantillonne.
+ * Assez court pour ne pas peser dans une rotation continue, assez long pour
+ * eviter une image floue prise en plein mouvement.
+ */
+export const HOLD_MS = 420;

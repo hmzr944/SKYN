@@ -4,11 +4,10 @@ import * as ImagePicker from "expo-image-picker";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { LayoutChangeEvent, Platform, StyleSheet, Text, View } from "react-native";
-import Svg, { Circle, Defs, G, Mask, Path, Rect } from "react-native-svg";
+import Svg, { Defs, G, Mask, Path, Rect } from "react-native-svg";
 import Animated, {
   Easing,
   useAnimatedProps,
-  useAnimatedStyle,
   useSharedValue,
   withRepeat,
   withSpring,
@@ -18,41 +17,41 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { AnimatedPressable } from "@/src/components/ui/AnimatedPressable";
 import { Reveal } from "@/src/components/ui/Reveal";
-import {
-  AUTO_CAPTURE_MS,
-  evaluate,
-  guideMessage,
-  readDetection,
-  STEPS,
-  type GuideState,
-  type ScanStep,
-} from "@/src/services/faceGuide";
 import { track } from "@/src/services/analytics";
+import {
+  ANGLES,
+  angleOf,
+  evaluate,
+  framingOk,
+  guideMessage,
+  HOLD_MS,
+  readDetection,
+  type Angle,
+  type GuideState,
+} from "@/src/services/faceGuide";
 import { colors, motion, radius, spacing, type } from "@/src/theme";
 import { FACE_CLOSED, FACE_LENGTH, FACE_PATH } from "@/src/theme/mark";
 import { storage } from "@/src/utils/storage";
 
 const AnimatedPath = Animated.createAnimatedComponent(Path);
-const AnimatedCircle = Animated.createAnimatedComponent(Circle);
-
-const RING_R = 36;
-const RING_CIRC = 2 * Math.PI * RING_R;
 
 /** Base64 nu, sans entete : c'est ce que le reste de l'app attend. */
 const cleanB64 = (b?: string | null) =>
   b ? (b.startsWith("data:") ? b.split(",")[1] ?? "" : b) : "";
 
 /**
- * L'ecran de scan, guide en direct.
+ * Le scan, en une seule session continue.
  *
- * Le principe : on ne demande pas une photo, on accompagne une pose. Un
- * detecteur lit le flux en continu et dit ce qu'il faut corriger — trop loin,
- * decentre, tete pas assez tournee — puis declenche seul quand le cadrage
- * tient reellement. Trois angles s'enchainent, face puis les deux profils,
- * parce qu'une vue de face aplatit les joues et les tempes.
+ * On ne prend pas de photos : on tourne lentement la tete et l'app
+ * echantillonne toute seule les angles qui lui manquent, comme l'enregistrement
+ * de Face ID. Le contour se remplit au fur et a mesure de la couverture ; quand
+ * il est complet, l'analyse part.
  *
- * Le guidage est un confort, pas une condition : si le detecteur ne se charge
- * pas, le declencheur manuel reste disponible et l'ecran fonctionne.
+ * MIROIR — l'apercu n'est pas inverse. expo-camera applique un scaleX(-1) sur
+ * la video en camera frontale et n'implemente pas la prop `mirror` sur le web :
+ * on annule donc la transformation nous-memes. La capture, elle, est inversee
+ * par la bibliotheque de son cote (isImageMirror) et reste corrigee par
+ * unmirror() — ce sont deux transformations independantes.
  */
 export default function CameraScreen() {
   const router = useRouter();
@@ -61,17 +60,13 @@ export default function CameraScreen() {
   const [ready, setReady] = useState(false);
   const cameraRef = useRef<CameraView>(null);
 
-  const [step, setStep] = useState<ScanStep>(0);
-  const stepRef = useRef<ScanStep>(0);
-  useEffect(() => {
-    stepRef.current = step;
-  }, [step]);
-
   const [guide, setGuide] = useState<GuideState>("loading");
+  const [covered, setCovered] = useState<Angle[]>([]);
+  const coveredRef = useRef<Angle[]>([]);
   const capturesRef = useRef<string[]>([]);
-  const yawRef = useRef(0);
-  const sideSignRef = useRef(0);
-  const capturingRef = useRef(false);
+  const holdSinceRef = useRef<number | null>(null);
+  const busyRef = useRef(false);
+  const doneRef = useRef(false);
 
   const [stage, setStage] = useState({ w: 0, h: 0 });
   const onStageLayout = (e: LayoutChangeEvent) => {
@@ -80,7 +75,6 @@ export default function CameraScreen() {
   };
 
   const canUseCamera = !!permission?.granted;
-  const isPerfect = guide === "perfect";
 
   useEffect(() => {
     track("scan_started");
@@ -92,11 +86,78 @@ export default function CameraScreen() {
     }
   }, [permission, requestPermission]);
 
+  /* ————— fin de session ————— */
+  const finish = useCallback(
+    async (captures: string[]) => {
+      if (doneRef.current) return;
+      doneRef.current = true;
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      await storage.setItem("skyn_last_capture_b64", captures[0] || "");
+      await storage.setItem("skyn_last_captures", JSON.stringify(captures));
+      router.replace("/analysis");
+    },
+    [router],
+  );
+
+  const unmirror = (b64: string): Promise<string> =>
+    new Promise((resolve) => {
+      if (Platform.OS !== "web") {
+        resolve(b64);
+        return;
+      }
+      const img = new window.Image();
+      img.onload = () => {
+        try {
+          const c = document.createElement("canvas");
+          c.width = img.width;
+          c.height = img.height;
+          const g = c.getContext("2d");
+          if (!g) return resolve(b64);
+          g.translate(img.width, 0);
+          g.scale(-1, 1);
+          g.drawImage(img, 0, 0);
+          resolve(c.toDataURL("image/jpeg", 0.85).split(",")[1] ?? b64);
+        } catch {
+          resolve(b64);
+        }
+      };
+      img.onerror = () => resolve(b64);
+      img.src = b64.startsWith("data:") ? b64 : `data:image/jpeg;base64,${b64}`;
+    });
+
+  /** Echantillonne l'angle courant, sans ceremonie : ni flash ni compte a rebours. */
+  const sample = useCallback(
+    async (angle: Angle) => {
+      if (busyRef.current || doneRef.current) return;
+      busyRef.current = true;
+      try {
+        const photo = await cameraRef.current?.takePictureAsync({
+          base64: true,
+          quality: 0.55,
+          skipProcessing: true,
+        });
+        const clean = cleanB64(photo?.base64 ?? null);
+        if (clean) {
+          capturesRef.current.push(await unmirror(clean));
+          const next = [...coveredRef.current, angle];
+          coveredRef.current = next;
+          setCovered(next);
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          if (next.length >= ANGLES.length) await finish(capturesRef.current);
+        }
+      } catch {
+        /* on retentera a l'image suivante */
+      } finally {
+        busyRef.current = false;
+        holdSinceRef.current = null;
+      }
+    },
+    [finish],
+  );
+
   /* ————— guidage live ————— */
   useEffect(() => {
     if (Platform.OS !== "web" || !canUseCamera) {
-      // Hors web, le detecteur n'est pas disponible ici : on rend la main au
-      // declencheur manuel plutot que de laisser un ecran qui attend.
       setGuide("searching");
       return;
     }
@@ -107,7 +168,6 @@ export default function CameraScreen() {
 
     (async () => {
       try {
-        // Import ESM natif : ces fichiers sont servis tels quels, hors bundler.
         const vision: any = await new Function("u", "return import(u)")(
           "/mediapipe/vision_bundle.mjs",
         );
@@ -132,8 +192,19 @@ export default function CameraScreen() {
                 v.videoWidth,
                 v.videoHeight,
               );
-              if (d) yawRef.current = d.yaw;
-              setGuide(evaluate(d, stepRef.current, sideSignRef.current));
+              const state = evaluate(d, coveredRef.current);
+              setGuide(state);
+
+              // L'angle doit tenir un court instant avant d'etre echantillonne :
+              // une image prise en plein mouvement serait floue.
+              const angle = d && framingOk(d) ? angleOf(d.yaw) : null;
+              const wanted = angle && !coveredRef.current.includes(angle) ? angle : null;
+              if (wanted) {
+                if (holdSinceRef.current === null) holdSinceRef.current = now;
+                else if (now - holdSinceRef.current >= HOLD_MS) sample(wanted);
+              } else {
+                holdSinceRef.current = null;
+              }
             } catch {
               /* image suivante */
             }
@@ -142,7 +213,7 @@ export default function CameraScreen() {
         };
         loop();
       } catch {
-        // Detecteur indisponible : l'ecran reste utilisable a la main.
+        // Detecteur indisponible : on rend la main au declencheur manuel.
         if (!stopped) setGuide("searching");
       }
     })();
@@ -156,7 +227,7 @@ export default function CameraScreen() {
         /* noop */
       }
     };
-  }, [canUseCamera]);
+  }, [canUseCamera, sample]);
 
   /* ————— animations ————— */
   const breath = useSharedValue(0);
@@ -168,103 +239,30 @@ export default function CameraScreen() {
     );
   }, [breath]);
 
-  // Le contour se stabilise des que la pose est bonne : il cesse de respirer
-  // et passe au plein. C'est le signal le plus lisible d'un cadrage valide.
-  const lock = useSharedValue(0);
+  // Le contour se remplit a mesure que les angles sont couverts : c'est la
+  // seule jauge de l'ecran, et elle est portee par la forme de la marque.
+  const fill = useSharedValue(0);
   useEffect(() => {
-    lock.value = withSpring(isPerfect ? 1 : 0, motion.spring);
-  }, [isPerfect, lock]);
+    fill.value = withSpring(covered.length / ANGLES.length, motion.spring);
+  }, [covered.length, fill]);
 
-  const contourProps = useAnimatedProps(() => ({
-    strokeOpacity: lock.value + (1 - lock.value) * (0.45 + breath.value * 0.35),
+  const trackProps = useAnimatedProps(() => ({
+    strokeOpacity: 0.16 + breath.value * 0.1,
+  }));
+  const fillProps = useAnimatedProps(() => ({
+    strokeDashoffset: FACE_LENGTH * (1 - fill.value),
   }));
 
-  const countdown = useSharedValue(0);
-  const ringProps = useAnimatedProps(() => ({
-    strokeDashoffset: RING_CIRC * (1 - countdown.value),
-  }));
-
-  const flash = useSharedValue(0);
-  const flashStyle = useAnimatedStyle(() => ({ opacity: flash.value }));
-
-  /* ————— enchainement des prises ————— */
-  const finalizeAll = useCallback(
-    async (captures: string[]) => {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      await storage.setItem("skyn_last_capture_b64", captures[0] || "");
-      await storage.setItem("skyn_last_captures", JSON.stringify(captures));
-      router.replace("/analysis");
-    },
-    [router],
-  );
-
-  const onCaptured = useCallback(
-    async (b64: string | null) => {
-      const clean = cleanB64(b64);
-      if (!clean) {
-        await finalizeAll(capturesRef.current);
-        return;
-      }
-      capturesRef.current.push(clean);
-      const st = stepRef.current;
-      // On memorise de quel cote la tete etait tournee au premier profil pour
-      // exiger l'autre au suivant.
-      if (st === 1) sideSignRef.current = Math.sign(yawRef.current) || 1;
-
-      if (st < 2) {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-        capturingRef.current = false;
-        countdown.value = 0;
-        setStep((st + 1) as ScanStep);
-      } else {
-        await finalizeAll(capturesRef.current);
-      }
-    },
-    [finalizeAll, countdown],
-  );
-
-  const capture = useCallback(async () => {
-    if (capturingRef.current) return;
-    capturingRef.current = true;
-    flash.value = withTiming(1, { duration: 60 }, () => {
-      flash.value = withTiming(0, { duration: 260 });
+  /* ————— repli manuel ————— */
+  const manualCapture = async () => {
+    const photo = await cameraRef.current?.takePictureAsync({
+      base64: true,
+      quality: 0.55,
+      skipProcessing: true,
     });
-    if (!cameraRef.current) {
-      await onCaptured(null);
-      return;
-    }
-    try {
-      const photo = await cameraRef.current.takePictureAsync({
-        base64: true,
-        quality: 0.55,
-        skipProcessing: true,
-      });
-      await onCaptured(photo?.base64 ?? null);
-    } catch {
-      await onCaptured(null);
-    }
-  }, [onCaptured, flash]);
-
-  /* ————— declenchement automatique ————— */
-  useEffect(() => {
-    // Chaque nouvelle etape repart d'un compteur neutre.
-    capturingRef.current = false;
-    countdown.value = 0;
-  }, [step, countdown]);
-
-  useEffect(() => {
-    if (!isPerfect || capturingRef.current) {
-      countdown.value = withTiming(0, { duration: motion.fast });
-      return;
-    }
-    // La pose doit tenir : un cadrage bon pendant un dixieme de seconde ne
-    // prouve rien, c'est en le maintenant qu'on obtient une image nette.
-    countdown.value = withTiming(1, { duration: AUTO_CAPTURE_MS, easing: Easing.linear });
-    const t = setTimeout(() => {
-      if (!capturingRef.current) capture();
-    }, AUTO_CAPTURE_MS);
-    return () => clearTimeout(t);
-  }, [isPerfect, step, capture, countdown]);
+    const clean = cleanB64(photo?.base64 ?? null);
+    await finish(clean ? [await unmirror(clean)] : []);
+  };
 
   const pickFromGallery = async () => {
     try {
@@ -275,9 +273,9 @@ export default function CameraScreen() {
       });
       if (res.canceled || !res.assets?.[0]) return;
       const clean = cleanB64(res.assets[0].base64);
-      await finalizeAll(clean ? [clean] : []);
+      await finish(clean ? [clean] : []);
     } catch {
-      await finalizeAll(capturesRef.current);
+      await finish(capturesRef.current);
     }
   };
 
@@ -288,10 +286,13 @@ export default function CameraScreen() {
   const k = Math.min((stage.w * 0.78) / CONTENT_W, (stage.h * 0.74) / CONTENT_H);
   const tx = stage.w / 2 - CENTER.x * k;
   const ty = stage.h / 2 - CENTER.y * k;
-  const stroke = k > 0 ? 2.4 / k : 0;
+  const stroke = k > 0 ? 2.6 / k : 0;
   const laid = stage.w > 0 && stage.h > 0;
 
-  const current = STEPS[step];
+  // expo-camera inverse l'apercu en camera frontale et ignore la prop `mirror`
+  // sur le web : on annule sa transformation par une transformation opposee.
+  const unmirrorPreview =
+    Platform.OS === "web" ? { transform: [{ scaleX: -1 as const }] } : undefined;
 
   return (
     <SafeAreaView style={styles.container} edges={["top", "bottom"]}>
@@ -304,14 +305,9 @@ export default function CameraScreen() {
         >
           <Text style={styles.closeText}>✕</Text>
         </AnimatedPressable>
-        <View style={styles.stepDots}>
-          {STEPS.map((s, i) => (
-            <View
-              key={s.label}
-              style={[styles.stepDot, i === step && styles.stepDotOn, i < step && styles.stepDotDone]}
-            />
-          ))}
-        </View>
+        <Text style={styles.headerTitle}>
+          {covered.length} / {ANGLES.length} angles
+        </Text>
         <View style={{ width: 36 }} />
       </View>
 
@@ -327,12 +323,15 @@ export default function CameraScreen() {
 
       <View style={styles.stage} onLayout={onStageLayout}>
         {canUseCamera ? (
-          <CameraView
-            ref={cameraRef}
-            style={StyleSheet.absoluteFill}
-            facing="front"
-            onCameraReady={() => setReady(true)}
-          />
+          <View style={[StyleSheet.absoluteFill, unmirrorPreview]}>
+            <CameraView
+              ref={cameraRef}
+              style={StyleSheet.absoluteFill}
+              facing="front"
+              mirror={false}
+              onCameraReady={() => setReady(true)}
+            />
+          </View>
         ) : null}
 
         {laid ? (
@@ -346,12 +345,19 @@ export default function CameraScreen() {
               </Mask>
             </Defs>
 
-            {/* Voile creme : la fenetre decoupe le fond de l'app, elle ne
-                l'assombrit pas. */}
             <Rect width={stage.w} height={stage.h} fill={colors.bg} mask="url(#skyn-window)" />
 
             <G transform={`translate(${tx}, ${ty}) scale(${k})`}>
               {!canUseCamera ? <Path d={FACE_CLOSED} fill={colors.fg} opacity={0.05} /> : null}
+              {/* Le contour en creux, puis la part couverte par-dessus. */}
+              <AnimatedPath
+                d={FACE_PATH}
+                fill="none"
+                stroke={colors.fg}
+                strokeWidth={stroke}
+                strokeLinecap="round"
+                animatedProps={trackProps}
+              />
               <AnimatedPath
                 d={FACE_PATH}
                 fill="none"
@@ -359,7 +365,7 @@ export default function CameraScreen() {
                 strokeWidth={stroke}
                 strokeLinecap="round"
                 strokeDasharray={FACE_LENGTH}
-                animatedProps={contourProps}
+                animatedProps={fillProps}
               />
             </G>
           </Svg>
@@ -379,16 +385,19 @@ export default function CameraScreen() {
             ) : null}
           </View>
         ) : null}
-
-        <Animated.View style={[StyleSheet.absoluteFill, styles.flash, flashStyle]} pointerEvents="none" />
       </View>
 
       <View style={styles.guidance}>
-        <Text style={styles.stepLabel}>{current.label}</Text>
-        <Text style={styles.guide}>{current.title}</Text>
-        {/* La consigne live remplace le rappel statique des qu'elle a du sens. */}
-        <Text style={[styles.live, isPerfect && styles.liveOk]} testID="camera-guide">
-          {canUseCamera ? guideMessage(guide, step) : current.hint}
+        <Reveal key={guide} distance={6}>
+          <Text
+            style={[styles.guide, guide === "hold" && styles.guideOk]}
+            testID="camera-guide"
+          >
+            {guideMessage(guide)}
+          </Text>
+        </Reveal>
+        <Text style={styles.hint}>
+          Tournez lentement la tête — les prises se font toutes seules.
         </Text>
       </View>
 
@@ -396,40 +405,22 @@ export default function CameraScreen() {
         <AnimatedPressable
           testID="camera-gallery-btn"
           onPress={pickFromGallery}
-          style={styles.galleryBtn}
+          style={styles.secondaryBtn}
         >
-          <Text style={styles.galleryText}>Galerie</Text>
+          <Text style={styles.secondaryText}>Galerie</Text>
         </AnimatedPressable>
 
+        {/* Repli : si le guidage n'a pas pu se charger, rien ne doit empecher
+            de lancer une analyse simple. */}
         <AnimatedPressable
           testID="camera-capture-btn"
-          onPress={capture}
-          style={styles.captureWrap}
-          disabled={canUseCamera ? !ready : false}
+          onPress={manualCapture}
+          style={styles.secondaryBtn}
+          disabled={canUseCamera ? !ready : true}
           haptic="medium"
-          scaleTo={0.92}
         >
-          {/* L'anneau se remplit pendant que la pose se maintient : on voit
-              le declenchement venir au lieu de le subir. */}
-          <Svg width={84} height={84} style={StyleSheet.absoluteFill}>
-            <Circle cx={42} cy={42} r={RING_R} fill="none" stroke={colors.borderMid} strokeWidth={2} />
-            <AnimatedCircle
-              cx={42}
-              cy={42}
-              r={RING_R}
-              fill="none"
-              stroke={colors.accent}
-              strokeWidth={3}
-              strokeLinecap="round"
-              strokeDasharray={RING_CIRC}
-              transform="rotate(-90 42 42)"
-              animatedProps={ringProps}
-            />
-          </Svg>
-          <View style={styles.captureInner} />
+          <Text style={styles.secondaryText}>Prendre maintenant</Text>
         </AnimatedPressable>
-
-        <View style={styles.controlsSpacer} />
       </View>
     </SafeAreaView>
   );
@@ -454,15 +445,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceSunken,
   },
   closeText: { color: colors.fg, fontSize: 15 },
-  stepDots: { flexDirection: "row", gap: 7, alignItems: "center" },
-  stepDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 4,
-    backgroundColor: colors.fgFaint,
-  },
-  stepDotOn: { width: 22, backgroundColor: colors.accent },
-  stepDotDone: { backgroundColor: colors.fgDim },
+  headerTitle: { ...type.kicker, color: colors.fgDim, fontVariant: ["tabular-nums"] },
 
   noticeWrap: { paddingHorizontal: spacing.l, paddingBottom: spacing.s },
   notice: {
@@ -476,7 +459,6 @@ const styles = StyleSheet.create({
   noticeText: { ...type.bodySmall, color: colors.fg, textAlign: "center" },
 
   stage: { flex: 1, overflow: "hidden" },
-  flash: { backgroundColor: colors.bg },
   placeholder: {
     ...StyleSheet.absoluteFillObject,
     alignItems: "center",
@@ -494,30 +476,28 @@ const styles = StyleSheet.create({
   },
   permBtnText: { ...type.kicker, color: colors.accent },
 
-  guidance: { alignItems: "center", paddingHorizontal: spacing.l, paddingTop: spacing.m, gap: 5 },
-  stepLabel: { ...type.kicker, color: colors.fgDim },
-  guide: { ...type.subtitle, color: colors.fg, textAlign: "center" },
-  live: { ...type.bodySmall, color: colors.fgMuted, textAlign: "center", minHeight: 20 },
-  liveOk: { color: colors.accent, fontFamily: type.label.fontFamily },
+  guidance: { alignItems: "center", paddingHorizontal: spacing.l, paddingTop: spacing.m, gap: 6 },
+  guide: { ...type.subtitle, color: colors.fg, textAlign: "center", minHeight: 26 },
+  guideOk: { color: colors.accent },
+  hint: { ...type.bodySmall, color: colors.fgDim, textAlign: "center" },
 
   controls: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
+    justifyContent: "center",
+    gap: spacing.m,
     paddingHorizontal: spacing.l,
-    paddingTop: spacing.m,
+    paddingTop: spacing.l,
     paddingBottom: spacing.m,
   },
-  galleryBtn: {
-    width: 84,
-    paddingVertical: 11,
+  secondaryBtn: {
+    paddingVertical: 13,
+    paddingHorizontal: spacing.l,
     borderWidth: 1,
     borderColor: colors.borderMid,
     borderRadius: radius.pill,
-    alignItems: "center",
+    minHeight: 44,
+    justifyContent: "center",
   },
-  galleryText: { ...type.kicker, color: colors.fgMuted },
-  controlsSpacer: { width: 84 },
-  captureWrap: { width: 84, height: 84, alignItems: "center", justifyContent: "center" },
-  captureInner: { width: 58, height: 58, borderRadius: 29, backgroundColor: colors.accent },
+  secondaryText: { ...type.kicker, color: colors.fgMuted },
 });
