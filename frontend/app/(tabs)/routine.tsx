@@ -150,7 +150,11 @@ export default function RoutineScreen() {
             {"Lancez un premier scan : votre routine du matin et du soir sera " +
               "construite à partir de ce que l'analyse mesure sur votre peau."}
           </Text>
-          <AnimatedPressable style={styles.cta} onPress={() => router.push("/camera")}>
+          <AnimatedPressable
+            style={styles.emptyCta}
+            haptic="medium"
+            onPress={() => router.push("/camera")}
+          >
             <Text style={styles.ctaText}>Scanner ma peau</Text>
           </AnimatedPressable>
         </View>
@@ -303,9 +307,24 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: spacing.xl,
+    paddingHorizontal: spacing.l,
   },
-  emptyTitle: { fontFamily: fonts.heading, fontSize: 24, color: colors.fg, textAlign: "center" },
+  emptyCta: {
+    marginTop: spacing.xl,
+    backgroundColor: colors.accent,
+    paddingVertical: 16,
+    paddingHorizontal: spacing.xl,
+    borderRadius: radius.pill,
+    alignItems: "center",
+    ...shadow.button,
+  },
+  emptyTitle: {
+    fontFamily: fonts.heading,
+    fontSize: 24,
+    lineHeight: 30,
+    color: colors.fg,
+    textAlign: "center",
+  },
   emptyHelper: {
     fontFamily: fonts.body,
     fontSize: 14,
@@ -313,6 +332,7 @@ const styles = StyleSheet.create({
     color: colors.fgMuted,
     textAlign: "center",
     marginTop: spacing.s,
+    maxWidth: 320,
   },
 
   streakCard: {

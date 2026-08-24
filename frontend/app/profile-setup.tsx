@@ -407,6 +407,8 @@ const styles = StyleSheet.create({
     color: colors.fgDim,
   },
   skip: {
+    paddingVertical: 14,
+    paddingHorizontal: 12,
     fontFamily: fonts.body,
     fontSize: 13,
     color: colors.fgDim,

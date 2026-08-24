@@ -493,6 +493,8 @@ const styles = StyleSheet.create({
     letterSpacing: 6,
   },
   skip: {
+    paddingVertical: 14,
+    paddingHorizontal: 12,
     fontFamily: fonts.body,
     fontSize: 13,
     color: colors.fgDim,
@@ -604,7 +606,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     letterSpacing: 0.3,
   },
-  guestBtn: { alignSelf: "center", paddingVertical: 6 },
+  guestBtn: { alignSelf: "center", paddingVertical: 14, paddingHorizontal: 16 },
   guestText: {
     fontFamily: fonts.bodyMedium,
     color: colors.fg,
