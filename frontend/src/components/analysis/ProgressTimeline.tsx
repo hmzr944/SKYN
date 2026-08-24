@@ -94,13 +94,13 @@ export function ProgressTimeline({ scans: injected }: Props) {
         <View
           style={[
             styles.deltaPill,
-            { backgroundColor: positive ? colors.limeSoft : colors.accentSofter },
+            { backgroundColor: positive ? colors.okSoft : colors.accentSofter },
           ]}
         >
           <Text
             style={[
               styles.deltaText,
-              { color: positive ? colors.onLime : colors.accentDark },
+              { color: positive ? colors.onOk : colors.accentDark },
             ]}
           >
             {delta > 0 ? "+" : ""}

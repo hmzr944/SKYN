@@ -10,6 +10,8 @@ import { api, syncPendingReports } from "@/src/services/api";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { FadeIn } from "@/src/components/ui/FadeIn";
 import { AnimatedPressable } from "@/src/components/ui/AnimatedPressable";
+import { SkynLockup } from "@/src/components/brand/SkynLockup";
+import { AnimatedNumber } from "@/src/components/ui/AnimatedNumber";
 
 const { width: SCREEN_W } = Dimensions.get("window");
 const CHART_W = SCREEN_W - spacing.xl * 2 - spacing.m * 2;
@@ -140,7 +142,7 @@ export default function DashboardScreen() {
         {/* Header */}
         <FadeIn distance={10}>
           <View style={styles.headerRow}>
-            <Text style={styles.logo}>SKYN</Text>
+            <SkynLockup size={24} still />
           </View>
           <Text style={styles.greeting} numberOfLines={1}>
             Bonjour, {firstName}.
@@ -187,7 +189,7 @@ export default function DashboardScreen() {
                 })}
               </Text>
               <View style={styles.scoreRow}>
-                <Text style={styles.scoreValue}>{last.global_score}</Text>
+                <AnimatedNumber value={last.global_score} style={styles.scoreValue} />
                 <Text style={styles.scoreMax}>/ 100</Text>
               </View>
               <View style={styles.pillsRow}>
@@ -294,7 +296,7 @@ const styles = StyleSheet.create({
   },
   syncBanner: {
     marginBottom: spacing.s,
-    backgroundColor: colors.limeSoft,
+    backgroundColor: colors.okSoft,
     borderRadius: radius.sm,
     paddingVertical: 8,
   },
@@ -364,6 +366,12 @@ const styles = StyleSheet.create({
     fontSize: 64,
     color: colors.accent,
     letterSpacing: -1,
+    // Le TextInput porte des marges natives qu'il faut neutraliser pour
+    // qu'il s'aligne exactement comme le Text qu'il remplace.
+    padding: 0,
+    margin: 0,
+    minWidth: 96,
+    fontVariant: ["tabular-nums"],
   },
   scoreMax: {
     fontFamily: fonts.body,
@@ -391,7 +399,7 @@ const styles = StyleSheet.create({
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: colors.lime,
+    backgroundColor: colors.ok,
   },
   pillLabel: {
     fontFamily: fonts.bodyMedium,

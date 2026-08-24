@@ -1,55 +1,55 @@
-import { useEffect } from "react";
-import { View, Text, StyleSheet } from "react-native";
 import { useRouter } from "expo-router";
+import { useEffect } from "react";
+import { StyleSheet, View } from "react-native";
 import Animated, {
-  useSharedValue,
+  Easing,
   useAnimatedStyle,
+  useSharedValue,
   withDelay,
   withTiming,
-  withSequence,
-  Easing,
 } from "react-native-reanimated";
 
+import { SkynMark } from "@/src/components/brand/SkynMark";
 import { useAuth } from "@/src/contexts/AuthContext";
-import { colors, fonts } from "@/src/theme";
-import { FadeIn } from "@/src/components/ui/FadeIn";
+import { colors, motion, type } from "@/src/theme";
+
+/** Le temps que le symbole finisse de se tracer avant de basculer. */
+const HOLD = 1950;
 
 export default function Index() {
   const router = useRouter();
   const { loading, user, profile } = useAuth();
 
-  const dotScale = useSharedValue(0);
-  const dotOpacity = useSharedValue(0);
+  // Les lettres s'ecartent a leur place pendant que le trace se termine :
+  // le mot se pose, il n'apparait pas.
+  const word = useSharedValue(0);
 
   useEffect(() => {
-    dotOpacity.value = withDelay(500, withTiming(1, { duration: 200 }));
-    dotScale.value = withDelay(
-      500,
-      withSequence(
-        withTiming(1.6, { duration: 350, easing: Easing.out(Easing.ease) }),
-        withTiming(1, { duration: 250, easing: Easing.inOut(Easing.ease) }),
-      ),
+    word.value = withDelay(
+      1020,
+      withTiming(1, { duration: motion.slow, easing: Easing.out(Easing.cubic) }),
     );
-  }, [dotOpacity, dotScale]);
+  }, [word]);
 
-  const dotStyle = useAnimatedStyle(() => ({
-    opacity: dotOpacity.value,
-    transform: [{ scale: dotScale.value }],
+  const wordStyle = useAnimatedStyle(() => ({
+    opacity: word.value,
+    letterSpacing: 3 + word.value * 8,
+    transform: [{ translateY: (1 - word.value) * 6 }],
   }));
 
   useEffect(() => {
     if (loading) return;
     let cancelled = false;
     const t = setTimeout(async () => {
+      if (cancelled) return;
       if (!user) {
-        if (cancelled) return;
         router.replace("/auth");
       } else if (!profile?.onboarded) {
         router.replace("/profile-setup");
       } else {
         router.replace("/dashboard");
       }
-    }, 1200);
+    }, HOLD);
     return () => {
       cancelled = true;
       clearTimeout(t);
@@ -58,10 +58,8 @@ export default function Index() {
 
   return (
     <View style={styles.container} testID="splash-screen">
-      <FadeIn distance={18}>
-        <Text style={styles.logo}>SKYN</Text>
-      </FadeIn>
-      <Animated.View style={[styles.dot, dotStyle]} />
+      <SkynMark size={92} />
+      <Animated.Text style={[styles.word, wordStyle]}>SKYN</Animated.Text>
     </View>
   );
 }
@@ -69,22 +67,14 @@ export default function Index() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.accent,
+    backgroundColor: colors.bg,
     alignItems: "center",
     justifyContent: "center",
+    gap: 26,
   },
-  logo: {
-    fontFamily: fonts.logo,
-    fontSize: 64,
-    color: colors.onAccent,
-    letterSpacing: 14,
-    fontWeight: "600",
-  },
-  dot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: colors.lime,
-    marginTop: 24,
+  word: {
+    fontFamily: type.wordmark.fontFamily,
+    fontSize: 22,
+    color: colors.fg,
   },
 });

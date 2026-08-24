@@ -114,7 +114,7 @@ function MetricCell({
       <View
         style={[
           styles.metricDot,
-          { backgroundColor: value > 70 ? colors.lime : colors.accent },
+          { backgroundColor: value > 70 ? colors.ok : colors.accent },
         ]}
       />
       <Text style={styles.metricLabel}>{label}</Text>

@@ -1,11 +1,17 @@
 import { Tabs, useRouter } from "expo-router";
+import { useEffect } from "react";
 import { View, Text, StyleSheet } from "react-native";
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+} from "react-native-reanimated";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
 import type { BottomTabBarProps } from "@react-navigation/bottom-tabs";
 
-import { colors, fonts, radius, shadow, spacing } from "@/src/theme";
+import { colors, fonts, motion, radius, shadow, spacing } from "@/src/theme";
 import { AnimatedPressable } from "@/src/components/ui/AnimatedPressable";
 
 const TAB_ICONS: Record<string, keyof typeof Ionicons.glyphMap> = {
@@ -21,6 +27,19 @@ const TAB_LABELS: Record<string, string> = {
   history: "Suivi",
   profile: "Profil",
 };
+
+/** Le point de l'onglet actif se pose au ressort, comme le point du symbole. */
+function TabDot({ focused }: { focused: boolean }) {
+  const t = useSharedValue(focused ? 1 : 0);
+  useEffect(() => {
+    t.value = withSpring(focused ? 1 : 0, motion.springDrop);
+  }, [focused, t]);
+  const aStyle = useAnimatedStyle(() => ({
+    opacity: t.value,
+    transform: [{ scale: t.value }],
+  }));
+  return <Animated.View style={[styles.tabDot, aStyle]} />;
+}
 
 function CustomTabBar({ state, navigation }: BottomTabBarProps) {
   const router = useRouter();
@@ -52,6 +71,7 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
         onPress={onPress}
         style={styles.tab}
         scaleTo={0.92}
+        haptic={false}
       >
         <Ionicons
           name={focused ? icon : (`${icon}-outline` as keyof typeof Ionicons.glyphMap)}
@@ -61,6 +81,7 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
         <Text style={[styles.label, focused && styles.labelActive]}>
           {TAB_LABELS[routeName]}
         </Text>
+        <TabDot focused={focused} />
       </AnimatedPressable>
     );
   };
@@ -79,6 +100,7 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
         testID="tab-analyser"
         style={styles.fab}
         scaleTo={0.92}
+        haptic={false}
         onPress={() => {
           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
           router.push("/camera");
@@ -132,6 +154,12 @@ const styles = StyleSheet.create({
   },
   labelActive: {
     color: colors.accent,
+  },
+  tabDot: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.accent,
   },
   fab: {
     width: 52,

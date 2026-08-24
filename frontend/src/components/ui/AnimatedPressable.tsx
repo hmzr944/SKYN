@@ -1,13 +1,15 @@
+import * as Haptics from "expo-haptics";
 import { ReactNode } from "react";
-import { StyleProp, ViewStyle } from "react-native";
+import { Platform, StyleProp, ViewStyle } from "react-native";
 import { Pressable } from "react-native-gesture-handler";
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
+  withSpring,
   withTiming,
 } from "react-native-reanimated";
 
-const AnimatedView = Animated.createAnimatedComponent(Animated.View);
+import { motion } from "@/src/theme";
 
 type Props = {
   children: ReactNode;
@@ -15,15 +17,35 @@ type Props = {
   style?: StyleProp<ViewStyle>;
   scaleTo?: number;
   disabled?: boolean;
+  /** Retour haptique a l'appui. Coupe-le pour les elements secondaires. */
+  haptic?: false | "light" | "medium" | "success";
   testID?: string;
 };
 
+function tap(kind: NonNullable<Props["haptic"]>) {
+  if (Platform.OS === "web") return;
+  if (kind === "success") {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    return;
+  }
+  const style =
+    kind === "medium" ? Haptics.ImpactFeedbackStyle.Medium : Haptics.ImpactFeedbackStyle.Light;
+  Haptics.impactAsync(style).catch(() => {});
+}
+
+/**
+ * L'element s'enfonce a l'appui et revient au ressort.
+ * L'enfoncement est immediat (timing court) pour que le doigt sente la reponse
+ * sous les 100 ms ; le retour est un ressort, parce que c'est le relachement
+ * qui doit paraitre vivant.
+ */
 export function AnimatedPressable({
   children,
   onPress,
   style,
   scaleTo = 0.96,
   disabled,
+  haptic = "light",
   testID,
 }: Props) {
   const scale = useSharedValue(1);
@@ -38,13 +60,14 @@ export function AnimatedPressable({
       onPress={onPress}
       disabled={disabled}
       onPressIn={() => {
-        scale.value = withTiming(scaleTo, { duration: 100 });
+        if (haptic) tap(haptic);
+        scale.value = withTiming(scaleTo, { duration: motion.instant });
       }}
       onPressOut={() => {
-        scale.value = withTiming(1, { duration: 150 });
+        scale.value = withSpring(1, motion.springPress);
       }}
     >
-      <AnimatedView style={[style, aStyle]}>{children}</AnimatedView>
+      <Animated.View style={[style, aStyle]}>{children}</Animated.View>
     </Pressable>
   );
 }

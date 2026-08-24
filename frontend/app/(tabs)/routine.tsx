@@ -54,8 +54,8 @@ function StepRow({
   }, [done, s]);
 
   const boxStyle = useAnimatedStyle(() => ({
-    backgroundColor: s.value > 0.5 ? colors.lime : "transparent",
-    borderColor: s.value > 0.5 ? colors.lime : colors.borderMid,
+    backgroundColor: s.value > 0.5 ? colors.ok : "transparent",
+    borderColor: s.value > 0.5 ? colors.ok : colors.borderMid,
     transform: [{ scale: 0.9 + s.value * 0.1 }],
   }));
 
@@ -321,11 +321,11 @@ const styles = StyleSheet.create({
   streakNum: {
     fontFamily: fonts.heading,
     fontSize: 52,
-    color: colors.lime,
+    color: colors.accent,
     lineHeight: 56,
     letterSpacing: -2,
   },
-  streakLabel: { fontFamily: fonts.body, fontSize: 13, color: "rgba(255,248,242,0.7)" },
+  streakLabel: { fontFamily: fonts.body, fontSize: 13, color: colors.onInverseMuted },
   streakStats: { flexDirection: "row", gap: spacing.l },
   streakStat: { alignItems: "flex-end" },
   streakStatVal: { fontFamily: fonts.headingMedium, fontSize: 18, color: colors.bg },
@@ -343,8 +343,8 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     backgroundColor: "rgba(255,248,242,0.12)",
   },
-  dayDotSome: { backgroundColor: "rgba(200,240,74,0.45)" },
-  dayDotBoth: { backgroundColor: colors.lime },
+  dayDotSome: { backgroundColor: "rgba(42, 29, 24, 0.34)" },
+  dayDotBoth: { backgroundColor: colors.ok },
   dayDotToday: { borderWidth: 1.5, borderColor: colors.bg },
   dayInitial: { fontFamily: fonts.body, fontSize: 9, color: "rgba(255,248,242,0.45)" },
 
@@ -388,7 +388,7 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     marginBottom: spacing.m,
   },
-  progressFill: { height: "100%", backgroundColor: colors.lime, borderRadius: 3 },
+  progressFill: { height: "100%", backgroundColor: colors.ok, borderRadius: 3 },
 
   stepRow: {
     flexDirection: "row",
@@ -404,7 +404,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  checkMark: { fontFamily: fonts.bodyMedium, fontSize: 14, color: colors.onLime },
+  checkMark: { fontFamily: fonts.bodyMedium, fontSize: 14, color: colors.onOk },
   stepLabel: {
     fontFamily: fonts.bodyMedium,
     fontSize: 9,
@@ -418,7 +418,7 @@ const styles = StyleSheet.create({
   doneBanner: {
     marginTop: spacing.m,
     padding: spacing.m,
-    backgroundColor: colors.limeSofter,
+    backgroundColor: colors.okSofter,
     borderRadius: radius.md,
   },
   doneText: { fontFamily: fonts.body, fontSize: 12, lineHeight: 19, color: colors.fg },

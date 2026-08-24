@@ -20,6 +20,7 @@ import Animated, {
 import { colors, fonts, spacing, radius, shadow } from "@/src/theme";
 import { AnimatedPressable } from "@/src/components/ui/AnimatedPressable";
 import { FadeIn } from "@/src/components/ui/FadeIn";
+import { SkynMark } from "@/src/components/brand/SkynMark";
 
 export default function AuthScreen() {
   const router = useRouter();
@@ -65,7 +66,7 @@ export default function AuthScreen() {
       </Animated.View>
       <Animated.View style={[styles.blob, styles.blobB, blobStyleB]} pointerEvents="none">
         <LinearGradient
-          colors={[colors.lime, "rgba(200,240,74,0)"]}
+          colors={[colors.accentSoft, "rgba(255, 77, 109, 0)"]}
           style={styles.blobFill}
           start={{ x: 0.2, y: 0.2 }}
           end={{ x: 1, y: 1 }}
@@ -75,6 +76,7 @@ export default function AuthScreen() {
       {/* Hero */}
       <View style={styles.hero}>
         <FadeIn delay={80} distance={18}>
+          <SkynMark size={84} style={{ alignSelf: "center", marginBottom: spacing.l }} />
           <Text style={styles.logo}>SKYN</Text>
         </FadeIn>
         <FadeIn delay={200}>
@@ -135,9 +137,12 @@ const styles = StyleSheet.create({
   },
   logo: {
     fontFamily: fonts.logo,
-    fontSize: 88,
+    fontSize: 62,
     color: colors.fg,
-    letterSpacing: 14,
+    letterSpacing: 13,
+    // La chasse ajoute une gouttiere apres la derniere lettre : on la
+    // compense a gauche pour que le mot soit optiquement centre.
+    paddingLeft: 13,
   },
   hairline: {
     width: 48,

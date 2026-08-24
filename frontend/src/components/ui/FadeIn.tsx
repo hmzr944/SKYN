@@ -1,12 +1,8 @@
-import { ReactNode, useEffect } from "react";
+import { ReactNode } from "react";
 import { StyleProp, ViewStyle } from "react-native";
-import Animated, {
-  Easing,
-  useAnimatedStyle,
-  useSharedValue,
-  withDelay,
-  withTiming,
-} from "react-native-reanimated";
+
+import { motion } from "@/src/theme";
+import { Reveal } from "./Reveal";
 
 type Props = {
   children: ReactNode;
@@ -16,18 +12,17 @@ type Props = {
   style?: StyleProp<ViewStyle>;
 };
 
-/** Simple fade + translateY entrance animation for staggered reveals. */
-export function FadeIn({ children, delay = 0, duration = 450, distance = 14, style }: Props) {
-  const t = useSharedValue(0);
-
-  useEffect(() => {
-    t.value = withDelay(delay, withTiming(1, { duration, easing: Easing.out(Easing.cubic) }));
-  }, [t, delay, duration]);
-
-  const aStyle = useAnimatedStyle(() => ({
-    opacity: t.value,
-    transform: [{ translateY: (1 - t.value) * distance }],
-  }));
-
-  return <Animated.View style={[style, aStyle]}>{children}</Animated.View>;
+/**
+ * Entree simple : le contenu monte a sa place en apparaissant.
+ *
+ * Ce n'est plus qu'un alias de Reveal — garder deux implementations menait a
+ * deux rythmes differents dans la meme app, et seule l'une des deux respectait
+ * "Reduire les animations".
+ */
+export function FadeIn({ children, delay = 0, duration = motion.slow, distance = 14, style }: Props) {
+  return (
+    <Reveal delay={delay} duration={duration} distance={distance} from="up" style={style}>
+      {children}
+    </Reveal>
+  );
 }

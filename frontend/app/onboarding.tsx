@@ -28,6 +28,7 @@ import { FadeIn } from "@/src/components/ui/FadeIn";
 import { AnimatedPressable } from "@/src/components/ui/AnimatedPressable";
 import { GoogleLogo } from "@/src/components/icons/GoogleLogo";
 import { useProviderAuth } from "@/src/hooks/useProviderAuth";
+import { SkynLockup } from "@/src/components/brand/SkynLockup";
 import {
   PromiseIllustration,
   TechIllustration,
@@ -133,7 +134,7 @@ export default function OnboardingScreen() {
       </Animated.View>
       <Animated.View style={[styles.blob, styles.blobB, blobStyleB]} pointerEvents="none">
         <LinearGradient
-          colors={[colors.lime, "rgba(200,240,74,0)"]}
+          colors={[colors.accentSoft, "rgba(255, 77, 109, 0)"]}
           style={styles.blobFill}
           start={{ x: 0.2, y: 0.2 }}
           end={{ x: 1, y: 1 }}
@@ -142,7 +143,7 @@ export default function OnboardingScreen() {
 
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.wordmark}>SKYN</Text>
+        <SkynLockup size={24} still />
         {page === 0 ? (
           <TouchableOpacity
             testID="onboarding-signin-link"

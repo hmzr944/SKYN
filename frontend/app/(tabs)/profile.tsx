@@ -241,7 +241,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.m,
   },
   tagActive: {
-    backgroundColor: colors.lime,
+    backgroundColor: colors.ok,
   },
   tagText: {
     fontFamily: fonts.bodyMedium,
@@ -249,7 +249,7 @@ const styles = StyleSheet.create({
     color: colors.fgMuted,
   },
   tagTextActive: {
-    color: colors.onLime,
+    color: colors.onOk,
   },
   list: {
     backgroundColor: colors.surface,

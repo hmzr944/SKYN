@@ -164,7 +164,7 @@ function ProductCard({ p }: { p: ProductPick }) {
           <View
             style={[
               styles.evBadge,
-              p.evidence.level === "A" && { backgroundColor: colors.limeSoft },
+              p.evidence.level === "A" && { backgroundColor: colors.okSoft },
             ]}
           >
             <Text style={styles.evText}>
@@ -717,12 +717,12 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   matchPill: {
-    backgroundColor: colors.lime,
+    backgroundColor: colors.ok,
     borderRadius: radius.sm,
     paddingHorizontal: spacing.s,
     paddingVertical: 4,
   },
-  matchVal: { fontFamily: fonts.headingMedium, fontSize: 13, color: colors.onLime },
+  matchVal: { fontFamily: fonts.headingMedium, fontSize: 13, color: colors.onOk },
   productActives: {
     fontFamily: fonts.body,
     fontSize: 11,
@@ -799,7 +799,7 @@ const styles = StyleSheet.create({
     width: 38,
     height: 38,
     borderRadius: 19,
-    backgroundColor: colors.limeSofter,
+    backgroundColor: colors.okSofter,
     alignItems: "center",
     justifyContent: "center",
   },

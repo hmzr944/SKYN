@@ -90,7 +90,7 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: colors.lime,
+    backgroundColor: colors.ok,
     alignItems: "center",
     justifyContent: "center",
     flexShrink: 0,
@@ -98,7 +98,7 @@ const styles = StyleSheet.create({
   numberText: {
     fontFamily: fonts.heading,
     fontSize: 18,
-    color: colors.onLime,
+    color: colors.onOk,
   },
   stepText: {
     flex: 1,

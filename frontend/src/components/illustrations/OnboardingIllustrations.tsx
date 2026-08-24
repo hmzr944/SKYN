@@ -8,7 +8,7 @@ export function PromiseIllustration() {
   return (
     <Svg width={SIZE} height={SIZE} viewBox="0 0 160 160">
       <Circle cx={70} cy={64} r={52} fill={colors.accent} opacity={0.15} />
-      <Circle cx={96} cy={100} r={42} fill={colors.lime} opacity={0.2} />
+      <Circle cx={96} cy={100} r={42} fill={colors.ok} opacity={0.2} />
       <Circle
         cx={70}
         cy={64}
@@ -31,10 +31,10 @@ export function TechIllustration() {
   return (
     <Svg width={SIZE} height={SIZE} viewBox="0 0 160 160">
       {dots}
-      <Rect x={20} y={20} width={48} height={36} rx={10} fill={colors.lime} opacity={0.3} />
-      <Rect x={92} y={20} width={48} height={36} rx={10} fill={colors.lime} opacity={0.3} />
-      <Rect x={20} y={70} width={48} height={36} rx={10} fill={colors.lime} opacity={0.3} />
-      <Rect x={92} y={70} width={48} height={36} rx={10} fill={colors.lime} opacity={0.3} />
+      <Rect x={20} y={20} width={48} height={36} rx={10} fill={colors.ok} opacity={0.3} />
+      <Rect x={92} y={20} width={48} height={36} rx={10} fill={colors.ok} opacity={0.3} />
+      <Rect x={20} y={70} width={48} height={36} rx={10} fill={colors.ok} opacity={0.3} />
+      <Rect x={92} y={70} width={48} height={36} rx={10} fill={colors.ok} opacity={0.3} />
       <Line x1={16} y1={130} x2={144} y2={130} stroke={colors.accent} strokeWidth={1} />
       <Line x1={32} y1={144} x2={128} y2={144} stroke={colors.accent} strokeWidth={1} />
     </Svg>
@@ -54,7 +54,7 @@ export function PrivacyIllustration() {
       <Path
         d="M58 80 L74 96 L104 62"
         fill="none"
-        stroke={colors.lime}
+        stroke={colors.ok}
         strokeWidth={6}
         strokeLinecap="round"
         strokeLinejoin="round"

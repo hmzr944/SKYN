@@ -55,7 +55,7 @@ const ZONE_SHAPES: Record<ZoneKey, ZoneShape> = {
   menton: { cx: 100, cy: 210, rx: 21, ry: 17 },
 };
 
-// Echelle de teinte : lime (peau nette) -> corail (zone la plus chargee).
+// Echelle de teinte : terre translucide (peau nette) -> corail (zone la plus chargee).
 const SCALE: { at: number; hex: string }[] = [
   { at: 0, hex: "#FF4D6D" },
   { at: 55, hex: "#FF9A85" },
