@@ -64,6 +64,10 @@ jobs:
             echo "::error::Secrets manquants. Ajoutez MODAL_TOKEN_ID et MODAL_TOKEN_SECRET dans Settings > Secrets and variables > Actions."
             exit 1
           fi
+          # Sans pipefail, le code de sortie du pipeline est celui de `tee`
+          # (toujours 0) : un echec de build Modal passait pour un succes, et
+          # l'ancien deploiement restait en ligne sans que personne le sache.
+          set -o pipefail
           modal deploy deploy_modal.py | tee /tmp/deploy.log
 
       - name: Afficher l'URL de l'application
@@ -77,5 +81,26 @@ jobs:
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "Ouvrez ce lien sur votre téléphone, puis « Tester sans compte »." >> $GITHUB_STEP_SUMMARY
           else
-            echo "::warning::URL non trouvée dans la sortie du déploiement — consultez le log de l'étape précédente"
+            echo "::error::URL non trouvée dans la sortie du déploiement"
+            exit 1
           fi
+
+      - name: Vérifier que le déploiement répond
+        run: |
+          set -euo pipefail
+          URL=$(grep -oE 'https://[a-zA-Z0-9._-]+\.modal\.run' /tmp/deploy.log | head -1)
+          echo "Vérification de $URL"
+          # Un demarrage a froid peut prendre une dizaine de secondes.
+          for i in $(seq 1 10); do
+            CODE=$(curl -s -o /dev/null -w '%{http_code}' "$URL/api/" || echo 000)
+            [ "$CODE" = "200" ] && break
+            sleep 6
+          done
+          test "$CODE" = "200" || { echo "::error::API injoignable ($CODE)"; exit 1; }
+          # Le moteur v2 doit etre expose : sans lui l'application ne peut
+          # analyser aucune photo.
+          if ! curl -s "$URL/openapi.json" | grep -q '"/api/analyze/v2"'; then
+            echo "::error::/api/analyze/v2 absent — la version deployee n'est pas celle attendue"
+            exit 1
+          fi
+          echo "API et moteur v2 en ligne."
