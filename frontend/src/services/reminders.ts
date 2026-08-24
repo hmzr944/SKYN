@@ -17,6 +17,17 @@ import { storage } from "@/src/utils/storage";
 
 const K_PREFS = "skyn_reminders";
 
+/**
+ * Identifiants stables.
+ *
+ * Sans eux, reprogrammer les rappels de routine effacerait aussi celui du
+ * suivi d'introduction : `cancelAllScheduledNotificationsAsync` ne fait pas
+ * le tri. Chaque rappel s'annule donc individuellement.
+ */
+const ID_AM = "skyn-routine-am";
+const ID_PM = "skyn-routine-pm";
+const ID_INTRO = "skyn-introduction";
+
 export interface ReminderPrefs {
   am: boolean;
   pm: boolean;
@@ -104,7 +115,10 @@ export async function applyPrefs(prefs: ReminderPrefs): Promise<ReminderPrefs> {
   await storage.setItem(K_PREFS, JSON.stringify(prefs));
   if (!SUPPORTED) return prefs;
 
-  await Notifications.cancelAllScheduledNotificationsAsync();
+  // On n'annule que les deux rappels de routine : celui du suivi vit sa
+  // propre vie et ne doit pas disparaitre quand on touche a ces reglages.
+  await cancel(ID_AM);
+  await cancel(ID_PM);
   if (!prefs.am && !prefs.pm) return prefs;
 
   const granted = await requestPermission();
@@ -126,17 +140,70 @@ export async function applyPrefs(prefs: ReminderPrefs): Promise<ReminderPrefs> {
 
   if (prefs.am) {
     await Notifications.scheduleNotificationAsync({
+      identifier: ID_AM,
       content: { ...AM_COPY },
       trigger: daily(prefs.amHour, prefs.amMinute),
     });
   }
   if (prefs.pm) {
     await Notifications.scheduleNotificationAsync({
+      identifier: ID_PM,
       content: { ...PM_COPY },
       trigger: daily(prefs.pmHour, prefs.pmMinute),
     });
   }
   return prefs;
+}
+
+async function cancel(id: string): Promise<void> {
+  try {
+    await Notifications.cancelScheduledNotificationAsync(id);
+  } catch {
+    // Rien de programme sous cet identifiant : c'est le cas normal au premier
+    // passage, pas une erreur.
+  }
+}
+
+/**
+ * Le rappel du suivi d'introduction.
+ *
+ * C'est le declencheur de la boucle : sans lui, revenir chaque jour repose
+ * uniquement sur la bonne volonte. Il se programme a l'ouverture d'un suivi et
+ * s'annule a sa fermeture — l'utilisateur n'a rien a regler, parce qu'un
+ * reglage de plus serait un abandon de plus.
+ *
+ * Il tombe en soiree : c'est au demaquillage qu'on regarde vraiment sa peau,
+ * et c'est le moment ou le point du jour est le plus fiable.
+ */
+export async function scheduleIntroReminder(productName: string): Promise<boolean> {
+  if (!SUPPORTED) return false;
+  await cancel(ID_INTRO);
+
+  const granted = await requestPermission();
+  if (!granted) return false;
+
+  await ensureAndroidChannel();
+  await Notifications.scheduleNotificationAsync({
+    identifier: ID_INTRO,
+    content: {
+      title: "Votre point du jour",
+      // Nommer le produit ancre le rappel dans quelque chose de concret :
+      // "comment va ta peau" est trop vague pour declencher une action.
+      body: `Comment votre peau réagit-elle à ${productName} aujourd'hui ?`,
+    },
+    trigger: {
+      type: Notifications.SchedulableTriggerInputTypes.DAILY,
+      hour: 21,
+      minute: 0,
+      channelId: "routine",
+    } as Notifications.DailyTriggerInput,
+  });
+  return true;
+}
+
+export async function cancelIntroReminder(): Promise<void> {
+  if (!SUPPORTED) return;
+  await cancel(ID_INTRO);
 }
 
 export function formatTime(hour: number, minute: number): string {

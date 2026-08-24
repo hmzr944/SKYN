@@ -21,6 +21,7 @@
  * ────────────────────────────────────────────────────────────────────────
  */
 import { track } from "@/src/services/analytics";
+import { cancelIntroReminder, scheduleIntroReminder } from "@/src/services/reminders";
 import { todayKey } from "@/src/services/routineStore";
 import { storage } from "@/src/utils/storage";
 import type { ProductPick } from "@/src/types/analysis";
@@ -129,7 +130,12 @@ export async function startTracking(p: ProductPick): Promise<Tracking> {
   const next = list.map((x) => (x.stoppedAt ? x : { ...x, stoppedAt: new Date().toISOString(), stopReason: "user" as const }));
   next.push(t);
   await save(next);
-  await track("intro_started", { family: p.family ?? "inconnue" });
+
+  // Le rappel quotidien est le declencheur de la boucle : il se met en place
+  // tout seul, sans reglage a faire. S'il est refuse, le suivi fonctionne
+  // quand meme — on ne bloque pas une fonctionnalite sur une autorisation.
+  const armed = await scheduleIntroReminder(p.name);
+  await track("intro_started", { family: p.family ?? "inconnue", rappel: armed });
   return t;
 }
 
@@ -141,6 +147,8 @@ export async function stopTracking(
   await save(
     list.map((t) => (t.id === id ? { ...t, stoppedAt: new Date().toISOString(), stopReason: reason } : t)),
   );
+  // Un rappel qui survit au suivi qu'il accompagnait devient une nuisance.
+  await cancelIntroReminder();
   await track(reason === "completed" ? "intro_completed" : "intro_stopped", {
     reason: reason ?? "user",
   });
