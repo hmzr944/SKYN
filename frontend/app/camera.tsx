@@ -35,34 +35,40 @@ import { storage } from "@/src/utils/storage";
 
 const AnimatedPath = Animated.createAnimatedComponent(Path);
 
-/**
- * Neutralise le miroir de l'apercu, directement sur l'element video.
- *
- * expo-camera applique un scaleX(-1) sur la video en camera frontale et
- * n'implemente pas la prop `mirror` sur le web. Deux approches ont ete
- * ecartees avant celle-ci :
- *   - compenser par une transformation opposee sur un conteneur parent :
- *     correct dans Chromium, mais WebKit compose la video dans sa propre
- *     couche, qui peut ignorer la transformation d'un ancetre ;
- *   - poser la regle dans app/+html.tsx : ce fichier n'est pas applique par
- *     `expo export --platform web`, l'index.html genere n'en contient rien.
- *
- * Reste l'injection a l'execution, qui vise l'element lui-meme et ne depend
- * d'aucune indirection.
- */
-const STYLE_ID = "skyn-unmirror";
-function neutraliseMiroir() {
-  if (Platform.OS !== "web" || typeof document === "undefined") return;
-  if (document.getElementById(STYLE_ID)) return;
-  const el = document.createElement("style");
-  el.id = STYLE_ID;
-  el.textContent = "[data-skyn-camera] video{transform:none !important;}";
-  document.head.appendChild(el);
-}
-
 /** Base64 nu, sans entete : c'est ce que le reste de l'app attend. */
 const cleanB64 = (b?: string | null) =>
   b ? (b.startsWith("data:") ? b.split(",")[1] ?? "" : b) : "";
+
+/**
+ * Neutralise le miroir de l'apercu, sur l'element video lui-meme.
+ *
+ * expo-camera applique un scaleX(-1) a la video en camera frontale et
+ * n'implemente pas la prop `mirror` sur le web. Trois approches ont echoue
+ * avant celle-ci, et chacune a echoue pour une raison differente :
+ *   1. compenser par une transformation opposee sur un conteneur parent —
+ *      correct dans Chromium, mais WebKit compose la video dans sa propre
+ *      couche, qui peut ignorer la transformation d'un ancetre ;
+ *   2. poser la regle dans app/+html.tsx — ce fichier n'est pas applique par
+ *      `expo export --platform web`, l'index.html genere n'en contient rien ;
+ *   3. injecter une feuille de style — elle doit encore gagner la cascade
+ *      contre les classes de react-native-web, et le comportement observe sur
+ *      iPhone montre que ce n'etait pas acquis.
+ *
+ * On ecrit donc en style EN LIGNE avec la priorite `important` : plus aucune
+ * cascade a gagner, plus aucune indirection. Et on le reapplique tant que
+ * l'ecran vit, parce que la video peut etre montee apres nous ou voir son
+ * style reecrit par la bibliotheque.
+ */
+function forceNoMirror(): void {
+  if (Platform.OS !== "web" || typeof document === "undefined") return;
+  const v = document.querySelector<HTMLElement>("[data-skyn-camera] video");
+  if (!v) return;
+  for (const prop of ["transform", "-webkit-transform"]) {
+    if (v.style.getPropertyValue(prop) !== "none") {
+      v.style.setProperty(prop, "none", "important");
+    }
+  }
+}
 
 /**
  * Le scan, en une seule session continue.
@@ -72,7 +78,7 @@ const cleanB64 = (b?: string | null) =>
  * de Face ID. Le contour se remplit au fur et a mesure de la couverture ; quand
  * il est complet, l'analyse part.
  *
- * MIROIR — l'apercu n'est pas inverse : voir neutraliseMiroir() ci-dessous.
+ * MIROIR — l'apercu n'est pas inverse : voir forceNoMirror() ci-dessus.
  * La capture, elle, est inversee separement par la bibliotheque
  * (isImageMirror) et reste corrigee par unmirror(). Ce sont deux
  * transformations independantes, il faut traiter les deux.
@@ -101,8 +107,18 @@ export default function CameraScreen() {
   const canUseCamera = !!permission?.granted;
 
   useEffect(() => {
-    neutraliseMiroir();
     track("scan_started");
+  }, []);
+
+  // La video n'existe pas encore au montage et la bibliotheque peut reecrire
+  // son style : on repasse dessus tant que l'ecran est ouvert. Le cout est
+  // negligeable, et c'est ce qui rend la correction insensible a l'ordre des
+  // choses.
+  useEffect(() => {
+    if (Platform.OS !== "web") return;
+    forceNoMirror();
+    const id = setInterval(forceNoMirror, 300);
+    return () => clearInterval(id);
   }, []);
 
   useEffect(() => {
