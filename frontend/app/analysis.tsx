@@ -81,8 +81,22 @@ export default function AnalysisScreen() {
         return;
       }
       setImageB64(b);
+
+      // Le scan guide produit trois angles : la vue de face aplatit les joues
+      // et les tempes, les profils les exposent. On transmet les angles
+      // supplementaires quand ils existent, sans jamais bloquer si le scan
+      // s'est arrete apres une seule prise.
+      let extras: string[] = [];
       try {
-        const data = await api.analyzeV2(b);
+        const raw = (await storage.getItem("skyn_last_captures", "[]")) as string;
+        const all = JSON.parse(raw || "[]") as string[];
+        extras = all.filter((x) => x && x !== b).slice(0, 2);
+      } catch {
+        extras = [];
+      }
+
+      try {
+        const data = await api.analyzeV2(b, extras);
         if (cancelled) return;
         if (!data.ok) setFailure(data.summary || "Visage non détecté.");
         else setAnalysis(data);
@@ -123,6 +137,7 @@ export default function AnalysisScreen() {
       const id = await saveScan(a);
       await saveRoutineFromAnalysis(a);
       await storage.setItem("skyn_last_capture_b64", "");
+      await storage.setItem("skyn_last_captures", "[]");
 
       // Miroir serveur au mieux : il alimente la sauvegarde cloud, mais l'app
       // ne depend plus de lui pour afficher quoi que ce soit.
