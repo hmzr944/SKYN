@@ -40,37 +40,6 @@ const cleanB64 = (b?: string | null) =>
   b ? (b.startsWith("data:") ? b.split(",")[1] ?? "" : b) : "";
 
 /**
- * Neutralise le miroir de l'apercu, sur l'element video lui-meme.
- *
- * expo-camera applique un scaleX(-1) a la video en camera frontale et
- * n'implemente pas la prop `mirror` sur le web. Trois approches ont echoue
- * avant celle-ci, et chacune a echoue pour une raison differente :
- *   1. compenser par une transformation opposee sur un conteneur parent —
- *      correct dans Chromium, mais WebKit compose la video dans sa propre
- *      couche, qui peut ignorer la transformation d'un ancetre ;
- *   2. poser la regle dans app/+html.tsx — ce fichier n'est pas applique par
- *      `expo export --platform web`, l'index.html genere n'en contient rien ;
- *   3. injecter une feuille de style — elle doit encore gagner la cascade
- *      contre les classes de react-native-web, et le comportement observe sur
- *      iPhone montre que ce n'etait pas acquis.
- *
- * On ecrit donc en style EN LIGNE avec la priorite `important` : plus aucune
- * cascade a gagner, plus aucune indirection. Et on le reapplique tant que
- * l'ecran vit, parce que la video peut etre montee apres nous ou voir son
- * style reecrit par la bibliotheque.
- */
-function forceNoMirror(): void {
-  if (Platform.OS !== "web" || typeof document === "undefined") return;
-  const v = document.querySelector<HTMLElement>("[data-skyn-camera] video");
-  if (!v) return;
-  for (const prop of ["transform", "-webkit-transform"]) {
-    if (v.style.getPropertyValue(prop) !== "none") {
-      v.style.setProperty(prop, "none", "important");
-    }
-  }
-}
-
-/**
  * Le scan, en une seule session continue.
  *
  * On ne prend pas de photos : on tourne lentement la tete et l'app
@@ -78,10 +47,17 @@ function forceNoMirror(): void {
  * de Face ID. Le contour se remplit au fur et a mesure de la couverture ; quand
  * il est complet, l'analyse part.
  *
- * MIROIR — l'apercu n'est pas inverse : voir forceNoMirror() ci-dessus.
- * La capture, elle, est inversee separement par la bibliotheque
- * (isImageMirror) et reste corrigee par unmirror(). Ce sont deux
- * transformations independantes, il faut traiter les deux.
+ * MIROIR — le mecanisme est celui de Snapchat et de l'appareil photo natif :
+ * l'APERCU est en miroir, la PHOTO ne l'est pas.
+ *
+ * On se voit toute la journee dans un miroir : une vue non inversee de son
+ * propre visage parait fausse, et c'est desagreable au moment ou l'on se
+ * cadre. L'apercu garde donc l'inversion appliquee par expo-camera.
+ *
+ * La photo, elle, doit etre a l'endroit : c'est elle qui est analysee, et le
+ * moteur decoupe le visage en zones gauche/droite. unmirror() corrige donc le
+ * canvas que la bibliotheque inverse de son cote (isImageMirror). Ce sont deux
+ * chemins distincts, et ils ne doivent PAS etre traites pareil.
  */
 export default function CameraScreen() {
   const router = useRouter();
@@ -108,17 +84,6 @@ export default function CameraScreen() {
 
   useEffect(() => {
     track("scan_started");
-  }, []);
-
-  // La video n'existe pas encore au montage et la bibliotheque peut reecrire
-  // son style : on repasse dessus tant que l'ecran est ouvert. Le cout est
-  // negligeable, et c'est ce qui rend la correction insensible a l'ordre des
-  // choses.
-  useEffect(() => {
-    if (Platform.OS !== "web") return;
-    forceNoMirror();
-    const id = setInterval(forceNoMirror, 300);
-    return () => clearInterval(id);
   }, []);
 
   useEffect(() => {
@@ -359,20 +324,12 @@ export default function CameraScreen() {
 
       <View style={styles.stage} onLayout={onStageLayout}>
         {canUseCamera ? (
-          // La marque data- est la cible de la regle CSS qui neutralise le
-          // miroir : voir app/+html.tsx.
-          <View
+          <CameraView
+            ref={cameraRef}
             style={StyleSheet.absoluteFill}
-            {...(Platform.OS === "web" ? { dataSet: { skynCamera: "1" } } : {})}
-          >
-            <CameraView
-              ref={cameraRef}
-              style={StyleSheet.absoluteFill}
-              facing="front"
-              mirror={false}
-              onCameraReady={() => setReady(true)}
-            />
-          </View>
+            facing="front"
+            onCameraReady={() => setReady(true)}
+          />
         ) : null}
 
         {laid ? (
