@@ -90,17 +90,25 @@ jobs:
           set -euo pipefail
           URL=$(grep -oE 'https://[a-zA-Z0-9._-]+\.modal\.run' /tmp/deploy.log | head -1)
           echo "Vérification de $URL"
-          # Un demarrage a froid peut prendre une dizaine de secondes.
+          # Deux attentes distinctes. D'abord que l'API reponde (demarrage a
+          # froid). Ensuite que ce soit bien la NOUVELLE version : juste apres
+          # un deploiement, un conteneur encore chaud peut servir l'ancienne
+          # pendant quelques secondes — verifier trop tot donne un faux echec,
+          # ce qui est exactement arrive au premier essai.
           for i in $(seq 1 10); do
             CODE=$(curl -s -o /dev/null -w '%{http_code}' "$URL/api/" || echo 000)
             [ "$CODE" = "200" ] && break
             sleep 6
           done
           test "$CODE" = "200" || { echo "::error::API injoignable ($CODE)"; exit 1; }
-          # Le moteur v2 doit etre expose : sans lui l'application ne peut
-          # analyser aucune photo.
-          if ! curl -s "$URL/openapi.json" | grep -q '"/api/analyze/v2"'; then
-            echo "::error::/api/analyze/v2 absent — la version deployee n'est pas celle attendue"
+
+          V2=""
+          for i in $(seq 1 15); do
+            if curl -s "$URL/openapi.json" | grep -q '"/api/analyze/v2"'; then V2=1; break; fi
+            sleep 8
+          done
+          if [ -z "$V2" ]; then
+            echo "::error::/api/analyze/v2 toujours absent apres 2 min — la version deployee n'est pas celle attendue"
             exit 1
           fi
           echo "API et moteur v2 en ligne."
