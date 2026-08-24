@@ -78,8 +78,39 @@ export default function CameraScreen() {
     }
   }, [permission, requestPermission]);
 
-  const finalize = async (base64: string | null) => {
+  const unmirror = (b64: string): Promise<string> =>
+    new Promise((resolve) => {
+      if (Platform.OS !== "web") {
+        resolve(b64);
+        return;
+      }
+      const img = new window.Image();
+      img.onload = () => {
+        try {
+          const c = document.createElement("canvas");
+          c.width = img.width;
+          c.height = img.height;
+          const g = c.getContext("2d");
+          if (!g) {
+            resolve(b64);
+            return;
+          }
+          g.translate(img.width, 0);
+          g.scale(-1, 1);
+          g.drawImage(img, 0, 0);
+          // On restitue du base64 nu : le reste de l'app n'attend pas d'entete.
+          resolve(c.toDataURL("image/jpeg", 0.85).split(",")[1] ?? b64);
+        } catch {
+          resolve(b64);
+        }
+      };
+      img.onerror = () => resolve(b64);
+      img.src = b64.startsWith("data:") ? b64 : `data:image/jpeg;base64,${b64}`;
+    });
+
+  const finalize = async (raw: string | null) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+    const base64 = raw ? await unmirror(raw) : null;
     await storage.setItem("skyn_last_capture_b64", base64 || "");
     // On passe par l'ecran d'analyse : c'est lui qui lance le moteur et qui
     // montre ce qui se passe pendant les quelques secondes de calcul.
@@ -117,7 +148,7 @@ export default function CameraScreen() {
     }
   };
 
-  const canUseCamera = permission?.granted && Platform.OS !== "web";
+  const canUseCamera = !!permission?.granted;
 
   // Le visage n'occupe pas tout le carre de 64 : il s'inscrit dans 36,8 x 44,5.
   // Dimensionner la boite plutot que le dessin donnait une forme bien trop
@@ -218,11 +249,11 @@ export default function CameraScreen() {
         {!canUseCamera ? (
           <View style={styles.placeholder} pointerEvents="box-none">
             <Text style={styles.placeholderText}>
-              {Platform.OS === "web"
-                ? "Aperçu caméra indisponible sur le web."
+              {permission?.canAskAgain === false
+                ? "Autorisez la caméra dans les réglages de votre navigateur, puis rechargez."
                 : "Autorisez la caméra pour lancer un scan."}
             </Text>
-            {!permission?.granted && Platform.OS !== "web" ? (
+            {!permission?.granted ? (
               <AnimatedPressable
                 style={styles.permBtn}
                 haptic="medium"
