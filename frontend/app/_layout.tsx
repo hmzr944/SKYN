@@ -62,8 +62,7 @@ export default function RootLayout() {
               name="analysis"
               options={{ animation: "fade", gestureEnabled: false }}
             />
-            {/* Le rapport est la conclusion : il arrive par le bas, comme un verdict. */}
-            <Stack.Screen name="report" options={{ animation: "fade_from_bottom" }} />
+            {/* Le resultat est la conclusion : il arrive par le bas, comme un verdict. */}
             <Stack.Screen name="scan-result" options={{ animation: "fade_from_bottom" }} />
           </Stack>
         </AuthProvider>

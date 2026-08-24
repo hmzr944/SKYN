@@ -5,7 +5,8 @@ import { useFocusEffect, useRouter } from "expo-router";
 import * as Haptics from "expo-haptics";
 
 import { colors, fonts, spacing, radius, shadow } from "@/src/theme";
-import { api, syncPendingReports } from "@/src/services/api";
+import { syncPendingReports } from "@/src/services/api";
+import { listScans, type ScanSummary } from "@/src/services/scanStore";
 import { FadeIn } from "@/src/components/ui/FadeIn";
 import { AnimatedPressable } from "@/src/components/ui/AnimatedPressable";
 import { ProgressTimeline } from "@/src/components/analysis/ProgressTimeline";
@@ -18,7 +19,7 @@ const FILTERS = [
 
 export default function HistoryScreen() {
   const router = useRouter();
-  const [reports, setReports] = useState<any[]>([]);
+  const [scans, setScans] = useState<ScanSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState(FILTERS[2].days);
@@ -26,8 +27,7 @@ export default function HistoryScreen() {
   const load = useCallback(async () => {
     try {
       await syncPendingReports();
-      const data = await api.listReports();
-      setReports(data);
+      setScans(await listScans());
     } catch {
       /* ignore */
     } finally {
@@ -48,8 +48,8 @@ export default function HistoryScreen() {
 
   const filtered = useMemo(() => {
     const cutoff = Date.now() - filter * 24 * 60 * 60 * 1000;
-    return reports.filter((r) => new Date(r.created_at).getTime() >= cutoff);
-  }, [reports, filter]);
+    return scans.filter((r) => new Date(r.date).getTime() >= cutoff);
+  }, [scans, filter]);
 
   const goScan = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -102,11 +102,12 @@ export default function HistoryScreen() {
                 testID={`history-item-${item.id}`}
                 style={styles.card}
                 scaleTo={0.98}
-                onPress={() => router.push(`/report?id=${item.id}`)}
+                disabled={!item.detailed}
+                onPress={() => router.push(`/scan-result?id=${item.id}`)}
               >
                 <View style={styles.cardLeft}>
                   <Text style={styles.cardDate}>
-                    {new Date(item.created_at).toLocaleDateString("fr-FR", {
+                    {new Date(item.date).toLocaleDateString("fr-FR", {
                       day: "2-digit",
                       month: "long",
                       year: "numeric",
@@ -114,14 +115,20 @@ export default function HistoryScreen() {
                   </Text>
                   <View style={styles.metaRow}>
                     <View style={styles.metaPill}>
-                      <Text style={styles.metaText}>Texture {item.texture}</Text>
+                      <Text style={styles.metaText}>{item.severity_label}</Text>
                     </View>
                     <View style={styles.metaPill}>
-                      <Text style={styles.metaText}>Éclat {item.radiance}</Text>
+                      <Text style={styles.metaText}>
+                        {item.lesion_total} lésion{item.lesion_total > 1 ? "s" : ""}
+                      </Text>
                     </View>
-                    <View style={styles.metaPill}>
-                      <Text style={styles.metaText}>Imperf. {item.imperfections}</Text>
-                    </View>
+                    {/* Le detail est elague au-dela des douze dernieres analyses :
+                        on le dit plutot que d'ouvrir un ecran vide. */}
+                    {!item.detailed ? (
+                      <View style={styles.metaPill}>
+                        <Text style={styles.metaText}>Résumé seul</Text>
+                      </View>
+                    ) : null}
                   </View>
                 </View>
                 <Text style={styles.cardScore}>{item.global_score}</Text>

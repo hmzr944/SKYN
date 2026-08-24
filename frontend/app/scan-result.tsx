@@ -10,7 +10,7 @@ import {
   useWindowDimensions,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import Svg, { Circle } from "react-native-svg";
 import Animated, {
   useSharedValue,
@@ -23,12 +23,10 @@ import Animated, {
 import * as Haptics from "expo-haptics";
 
 import { colors, fonts, spacing, radius, shadow } from "@/src/theme";
-import { api } from "@/src/services/api";
-import { storage } from "@/src/utils/storage";
+import { getScan } from "@/src/services/scanStore";
 import { FadeIn } from "@/src/components/ui/FadeIn";
 import { AnimatedPressable } from "@/src/components/ui/AnimatedPressable";
 import { FaceZoneMap, ZoneLegend, scoreColor } from "@/src/components/analysis/FaceZoneMap";
-import { saveRoutineFromAnalysis } from "@/src/services/routineStore";
 import {
   CONCERN_LABEL,
   LESION_LABEL,
@@ -205,6 +203,7 @@ function ProductCard({ p }: { p: ProductPick }) {
 /* ------------------------------------------------------------------ */
 export default function ScanResultScreen() {
   const router = useRouter();
+  const { id } = useLocalSearchParams<{ id?: string }>();
   const { width } = useWindowDimensions();
   const [data, setData] = useState<FaceAnalysis | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -224,35 +223,28 @@ export default function ScanResultScreen() {
     transform: [{ scale: 0.97 + pulse.value * 0.06 }],
   }));
 
+  // L'ecran ne calcule plus rien : l'analyse a ete faite et enregistree par
+  // l'ecran d'analyse. On relit un scan par son identifiant, ce qui rend un
+  // resultat consultable des semaines plus tard depuis l'historique.
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      try {
-        const b64 = (await storage.getItem("skyn_last_capture_b64", "")) as string;
-        if (!b64) {
-          router.replace("/camera");
-          return;
-        }
-        const res = await api.analyzeV2(b64);
-        if (cancelled) return;
-        if (!res.ok) {
-          setError(res.summary || "Visage non détecté.");
-          return;
-        }
-        setData(res);
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        // La routine alimente l'onglet de suivi quotidien.
-        await saveRoutineFromAnalysis(res);
-        // La photo ne sert plus a rien une fois l'analyse faite.
-        await storage.setItem("skyn_last_capture_b64", "");
-      } catch (e: any) {
-        if (!cancelled) setError(e?.message ?? "L'analyse a échoué.");
+      if (!id) {
+        router.replace("/camera");
+        return;
       }
+      const stored = await getScan(id);
+      if (cancelled) return;
+      if (!stored) {
+        setError("Cette analyse n'est plus disponible sur cet appareil.");
+        return;
+      }
+      setData(stored);
     })();
     return () => {
       cancelled = true;
     };
-  }, [router]);
+  }, [id, router]);
 
   const lesionTotal = useMemo(() => {
     if (!data) return 0;

@@ -14,7 +14,8 @@ import type { FaceAnalysis, ProductPick } from "@/src/types/analysis";
 
 const K_ROUTINE = "skyn_routine_v2";
 const K_LOG = "skyn_routine_log";
-const K_SCANS = "skyn_scan_history";
+/** Ancien historique, conserve uniquement pour la reprise dans scanStore. */
+export const K_SCANS_LEGACY = "skyn_scan_history";
 
 export interface StoredRoutine {
   am: ProductPick[];
@@ -29,6 +30,7 @@ export interface StoredRoutine {
 /** Journal : "2026-08-22" -> { am: [ids], pm: [ids] } */
 export type RoutineLog = Record<string, { am: string[]; pm: string[] }>;
 
+/** Ancien format d'historique. Voir scanStore pour la source actuelle. */
 export interface ScanEntry {
   date: string;
   global_score: number;
@@ -63,17 +65,6 @@ export async function saveRoutineFromAnalysis(a: FaceAnalysis): Promise<void> {
     skin_type: a.skin_type,
   };
   await storage.setItem(K_ROUTINE, JSON.stringify(r));
-
-  const scans = await getScans();
-  const entry: ScanEntry = {
-    date: new Date().toISOString(),
-    global_score: a.global_score,
-    diagnosis: a.diagnosis,
-    severity_level: a.severity_level,
-    lesion_total: Object.values(a.lesion_counts ?? {}).reduce((x, y) => x + y, 0),
-    skin_type: a.skin_type,
-  };
-  await storage.setItem(K_SCANS, JSON.stringify([...scans, entry]));
 }
 
 export async function getRoutine(): Promise<StoredRoutine | null> {
@@ -86,8 +77,9 @@ export async function getRoutine(): Promise<StoredRoutine | null> {
   }
 }
 
-export async function getScans(): Promise<ScanEntry[]> {
-  const raw = (await storage.getItem(K_SCANS, "[]")) as string;
+/** Lecture de l'ancien historique — utilisee seulement par la reprise. */
+export async function getLegacyScans(): Promise<ScanEntry[]> {
+  const raw = (await storage.getItem(K_SCANS_LEGACY, "[]")) as string;
   try {
     return JSON.parse(raw || "[]") as ScanEntry[];
   } catch {

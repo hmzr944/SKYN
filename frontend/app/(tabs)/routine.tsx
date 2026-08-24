@@ -20,6 +20,7 @@ import Animated, {
 import { colors, fonts, spacing, radius, shadow } from "@/src/theme";
 import { FadeIn } from "@/src/components/ui/FadeIn";
 import { AnimatedPressable } from "@/src/components/ui/AnimatedPressable";
+import { JournalCard } from "@/src/components/JournalCard";
 import { STEP_LABEL } from "@/src/types/analysis";
 import type { ProductPick } from "@/src/types/analysis";
 import {
@@ -276,6 +277,10 @@ export default function RoutineScreen() {
             </View>
           </FadeIn>
         ) : null}
+
+        <FadeIn delay={260} style={{ marginTop: spacing.l }}>
+          <JournalCard />
+        </FadeIn>
 
         <AnimatedPressable
           style={[styles.cta, { marginTop: spacing.l }]}

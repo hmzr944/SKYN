@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from "react-native";
+import { useCallback, useEffect, useState } from "react";
+import { View, Text, StyleSheet, ScrollView, Switch, TouchableOpacity } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -11,6 +11,15 @@ import { useAuth } from "@/src/contexts/AuthContext";
 import { FadeIn } from "@/src/components/ui/FadeIn";
 import { AnimatedPressable } from "@/src/components/ui/AnimatedPressable";
 import { HowItWorksModal } from "@/src/components/HowItWorksModal";
+import {
+  applyPrefs,
+  bumpTime,
+  DEFAULT_PREFS,
+  formatTime,
+  getPrefs,
+  remindersSupported,
+  type ReminderPrefs,
+} from "@/src/services/reminders";
 
 const SKIN_TYPES = ["Normale", "Mixte", "Grasse", "Sèche"];
 const GOALS = ["Hydratation", "Anti-âge", "Éclat", "Pores"];
@@ -18,6 +27,20 @@ const GOALS = ["Hydratation", "Anti-âge", "Éclat", "Pores"];
 export default function ProfileScreen() {
   const router = useRouter();
   const { user, profile, refreshProfile, signOut } = useAuth();
+  const [reminders, setReminders] = useState<ReminderPrefs>(DEFAULT_PREFS);
+
+  useEffect(() => {
+    getPrefs().then(setReminders);
+  }, []);
+
+  // Toute modification repasse par applyPrefs, qui reprogramme reellement les
+  // rappels — et qui peut renvoyer l'inverse de ce qui a ete demande si le
+  // systeme refuse l'autorisation.
+  const updateReminders = useCallback(async (next: ReminderPrefs) => {
+    setReminders(next);
+    Haptics.selectionAsync();
+    setReminders(await applyPrefs(next));
+  }, []);
   const [skinType, setSkinType] = useState<string | null>(profile?.skin_type ?? null);
   const [goals, setGoals] = useState<string[]>(profile?.goals ?? []);
   const [howItWorksVisible, setHowItWorksVisible] = useState(false);
@@ -124,10 +147,56 @@ export default function ProfileScreen() {
         <FadeIn delay={240}>
           <Text style={styles.sectionTitle}>Paramètres</Text>
           <View style={styles.list}>
-            <TouchableOpacity testID="settings-notifications" style={styles.row} disabled>
-              <Text style={styles.rowLabel}>Notifications</Text>
-              <Ionicons name="chevron-forward" size={18} color={colors.fgDim} />
-            </TouchableOpacity>
+            <View style={styles.row}>
+              <View style={styles.rowText}>
+                <Text style={styles.rowLabel}>Rappel du matin</Text>
+                <TouchableOpacity
+                  testID="reminder-am-time"
+                  disabled={!reminders.am}
+                  onPress={() => {
+                    const t = bumpTime(reminders.amHour, reminders.amMinute);
+                    updateReminders({ ...reminders, amHour: t.hour, amMinute: t.minute });
+                  }}
+                >
+                  <Text style={[styles.rowHint, reminders.am && styles.rowHintActive]}>
+                    {formatTime(reminders.amHour, reminders.amMinute)}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+              <Switch
+                testID="reminder-am"
+                value={reminders.am}
+                disabled={!remindersSupported}
+                onValueChange={(v) => updateReminders({ ...reminders, am: v })}
+                trackColor={{ false: colors.fgFaint, true: colors.accent }}
+                thumbColor={colors.bg}
+              />
+            </View>
+            <View style={styles.row}>
+              <View style={styles.rowText}>
+                <Text style={styles.rowLabel}>Rappel du soir</Text>
+                <TouchableOpacity
+                  testID="reminder-pm-time"
+                  disabled={!reminders.pm}
+                  onPress={() => {
+                    const t = bumpTime(reminders.pmHour, reminders.pmMinute);
+                    updateReminders({ ...reminders, pmHour: t.hour, pmMinute: t.minute });
+                  }}
+                >
+                  <Text style={[styles.rowHint, reminders.pm && styles.rowHintActive]}>
+                    {formatTime(reminders.pmHour, reminders.pmMinute)}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+              <Switch
+                testID="reminder-pm"
+                value={reminders.pm}
+                disabled={!remindersSupported}
+                onValueChange={(v) => updateReminders({ ...reminders, pm: v })}
+                trackColor={{ false: colors.fgFaint, true: colors.accent }}
+                thumbColor={colors.bg}
+              />
+            </View>
             <TouchableOpacity testID="settings-privacy" style={styles.row} disabled>
               <Text style={styles.rowLabel}>Confidentialité</Text>
               <Ionicons name="chevron-forward" size={18} color={colors.fgDim} />
@@ -266,6 +335,9 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.borderSubtle,
   },
   rowLast: { borderBottomWidth: 0 },
+  rowText: { gap: 2 },
+  rowHint: { fontFamily: fonts.body, fontSize: 12, color: colors.fgDim },
+  rowHintActive: { color: colors.accent },
   rowLabel: {
     fontFamily: fonts.body,
     fontSize: 15,

@@ -12,15 +12,35 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { ScanField } from "@/src/components/analysis/ScanField";
 import { SkynLockup } from "@/src/components/brand/SkynLockup";
+import { AnimatedPressable } from "@/src/components/ui/AnimatedPressable";
 import { Reveal } from "@/src/components/ui/Reveal";
 import { useAuth } from "@/src/contexts/AuthContext";
-import { api, queuePendingReport } from "@/src/services/api";
+import { api } from "@/src/services/api";
+import { saveRoutineFromAnalysis } from "@/src/services/routineStore";
+import { saveScan, subScores } from "@/src/services/scanStore";
 import { pushReportToSupabase } from "@/src/services/supabase";
 import { colors, motion, radius, spacing, type } from "@/src/theme";
+import type { FaceAnalysis } from "@/src/types/analysis";
 import { storage } from "@/src/utils/storage";
 
 const { width: SCREEN_W } = Dimensions.get("window");
 const FIELD = Math.min(SCREEN_W * 0.72, 300);
+
+/**
+ * Un echec technique ne se montre pas tel quel.
+ *
+ * Le client d'API leve `502: <!DOCTYPE html>...` quand le serveur renvoie une
+ * page d'erreur : afficher ca a quelqu'un qui vient de se photographier le
+ * visage n'a aucun sens. Seul le message du moteur — qui est ecrit pour etre
+ * lu — remonte intact.
+ */
+function humanError(e: unknown): string {
+  const raw = e instanceof Error ? e.message : String(e ?? "");
+  if (/^\d{3}:/.test(raw) || /<!DOCTYPE|<html/i.test(raw) || /Network request failed/i.test(raw)) {
+    return "Le serveur d'analyse n'a pas répondu. Vérifiez votre connexion et réessayez.";
+  }
+  return raw.trim() || "L'analyse n'a pas abouti.";
+}
 
 const PHASES = [
   { title: "Scan de surface", note: "Lecture du grain et de la brillance" },
@@ -29,22 +49,25 @@ const PHASES = [
   { title: "Génération du rapport", note: "Croisement avec la base dermatologique" },
 ];
 
-type Detection = { type: string; x: number; y: number; confidence: number; radius: number };
-
 export default function AnalysisScreen() {
   const router = useRouter();
   const { user } = useAuth();
   const [phase, setPhase] = useState(0);
   const [imageB64, setImageB64] = useState<string | null>(null);
-  const [analysis, setAnalysis] = useState<any>(null);
+  const [analysis, setAnalysis] = useState<FaceAnalysis | null>(null);
+  const [failure, setFailure] = useState<string | null>(null);
   const [blackOut, setBlackOut] = useState(false);
   const hapticInt = useRef<ReturnType<typeof setInterval> | null>(null);
   const startedAt = useRef<number>(Date.now());
-  const analysisRef = useRef<any>(null);
+  const analysisRef = useRef<FaceAnalysis | null>(null);
+  const failureRef = useRef<string | null>(null);
 
   useEffect(() => {
     analysisRef.current = analysis;
   }, [analysis]);
+  useEffect(() => {
+    failureRef.current = failure;
+  }, [failure]);
 
   // La requete part des le montage — elle tourne en parallele de la sequence
   // visuelle. A la derniere phase, les vraies donnees sont quasi toujours la.
@@ -53,14 +76,18 @@ export default function AnalysisScreen() {
     (async () => {
       const b = (await storage.getItem("skyn_last_capture_b64", "")) as string;
       if (cancelled) return;
-      if (b) setImageB64(b);
-      if (b) {
-        try {
-          const data = await api.analyze(b);
-          if (!cancelled) setAnalysis(data);
-        } catch {
-          /* on garde null → chemin de repli */
-        }
+      if (!b) {
+        router.replace("/camera");
+        return;
+      }
+      setImageB64(b);
+      try {
+        const data = await api.analyzeV2(b);
+        if (cancelled) return;
+        if (!data.ok) setFailure(data.summary || "Visage non détecté.");
+        else setAnalysis(data);
+      } catch (e) {
+        if (!cancelled) setFailure(humanError(e));
       }
     })();
 
@@ -82,58 +109,48 @@ export default function AnalysisScreen() {
     const finalize = async () => {
       const a = analysisRef.current;
 
-      // Aucun visage detecte — on ne fabrique pas un rapport, on renvoie
-      // l'utilisateur reprendre la photo.
-      if (a && a.detected === false) {
-        router.replace({ pathname: "/camera", params: { retake: "no_face" } });
+      // Aucun visage exploitable : on ne fabrique pas un diagnostic, on renvoie
+      // reprendre la photo. Une analyse inventee serait pire que pas d'analyse.
+      if (!a) {
+        setFailure((f) => f ?? "L'analyse n'a rien pu lire sur cette photo.");
         return;
       }
 
       setBlackOut(true);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
-      // Repli si le moteur a totalement echoue.
-      const scores = a
-        ? {
-            global_score: a.global_score,
-            texture: a.texture,
-            radiance: a.radiance,
-            imperfections: a.imperfections,
-          }
-        : { global_score: 70, texture: 72, radiance: 68, imperfections: 70 };
+      // La source unique : l'analyse complete, rouvrable plus tard.
+      const id = await saveScan(a);
+      await saveRoutineFromAnalysis(a);
+      await storage.setItem("skyn_last_capture_b64", "");
 
-      const recs = a?.recommendations || [
-        "Maintenez une protection solaire SPF 50 quotidienne.",
-        "Hydratez matin et soir avec un sérum à l'acide hyaluronique.",
-        "Affinez progressivement le grain de peau avec une exfoliation douce hebdomadaire.",
-      ];
-
-      const payload = {
-        ...scores,
-        recommendations: recs,
-        diagnosis: a?.diagnosis || "",
-        detections: a?.detections || [],
-      };
-
-      await storage.setItem("skyn_last_low_light", a?.low_light ? "1" : "");
-
-      try {
-        const report = await api.createReport(payload);
-        pushReportToSupabase({
-          id: report.id,
-          user_id: user?.user_id || "",
-          global_score: report.global_score,
-          texture: report.texture,
-          radiance: report.radiance,
-          imperfections: report.imperfections,
-          recommendations: report.recommendations,
-          created_at: report.created_at,
+      // Miroir serveur au mieux : il alimente la sauvegarde cloud, mais l'app
+      // ne depend plus de lui pour afficher quoi que ce soit.
+      const sub = subScores(a);
+      api
+        .createReport({
+          global_score: a.global_score,
+          ...sub,
+          recommendations: a.routine.am.map((p) => `${p.brand} ${p.name}`),
+          diagnosis: a.diagnosis,
+        })
+        .then((report) =>
+          pushReportToSupabase({
+            id: report.id,
+            user_id: user?.user_id || "",
+            global_score: report.global_score,
+            texture: report.texture,
+            radiance: report.radiance,
+            imperfections: report.imperfections,
+            recommendations: report.recommendations,
+            created_at: report.created_at,
+          }),
+        )
+        .catch(() => {
+          /* hors ligne : le scan reste consultable en local */
         });
-        router.replace(`/report?id=${report.id}`);
-      } catch {
-        await queuePendingReport(payload as any);
-        router.replace("/dashboard");
-      }
+
+      router.replace(`/scan-result?id=${id}`);
     };
 
     const t4 = setTimeout(() => {
@@ -153,16 +170,47 @@ export default function AnalysisScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Chaque lesion trouvee se signale au doigt, une par une.
+  // Chaque lesion trouvee se signale au doigt, une par une — mais on plafonne :
+  // sur une peau tres chargee, cinquante vibrations d'affilee sont penibles.
   useEffect(() => {
-    if (phase !== 2 || !analysis?.detections?.length) return;
-    const timers = analysis.detections.map((_: Detection, i: number) =>
-      setTimeout(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light), i * 320 + 80),
-    );
+    if (phase !== 2 || !analysis?.lesions?.length) return;
+    const timers = analysis.lesions
+      .slice(0, 8)
+      .map((_, i) =>
+        setTimeout(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light), i * 320 + 80),
+      );
     return () => timers.forEach(clearTimeout);
   }, [phase, analysis]);
 
-  const detections: Detection[] = analysis?.detections || [];
+  const detections = analysis?.lesions ?? [];
+
+  // L'echec doit avoir son ecran : sans lui, une photo illisible laisse
+  // l'utilisateur devant une animation qui tourne sans fin.
+  if (failure) {
+    return (
+      <SafeAreaView style={styles.container} edges={["top", "bottom"]}>
+        <View style={styles.header}>
+          <SkynLockup size={26} still />
+        </View>
+        <Reveal style={styles.failWrap} distance={14}>
+          <Text style={styles.failTitle}>Analyse impossible</Text>
+          <Text style={styles.failNote}>{failure}</Text>
+          <Text style={styles.failHint}>
+            {"Placez votre visage dans l'ovale, en lumière du jour de préférence, " +
+              "sans lunettes ni cheveux sur le front."}
+          </Text>
+          <AnimatedPressable
+            style={styles.failCta}
+            haptic="medium"
+            onPress={() => router.replace("/camera")}
+          >
+            <Text style={styles.failCtaText}>Reprendre une photo</Text>
+          </AnimatedPressable>
+        </Reveal>
+        <View />
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container} edges={["top", "bottom"]}>
@@ -283,5 +331,22 @@ const styles = StyleSheet.create({
     color: colors.fgDim,
     textAlign: "center",
   },
+  failWrap: { paddingHorizontal: spacing.l, alignItems: "center", gap: spacing.m },
+  failTitle: { ...type.title, color: colors.fg, textAlign: "center" },
+  failNote: { ...type.body, color: colors.fgMuted, textAlign: "center" },
+  failHint: {
+    ...type.bodySmall,
+    color: colors.fgDim,
+    textAlign: "center",
+    maxWidth: 280,
+  },
+  failCta: {
+    marginTop: spacing.s,
+    backgroundColor: colors.accent,
+    borderRadius: radius.pill,
+    paddingVertical: 15,
+    paddingHorizontal: spacing.xl,
+  },
+  failCtaText: { ...type.kicker, color: colors.onAccent },
   blackOut: { ...StyleSheet.absoluteFillObject, backgroundColor: colors.bg },
 });

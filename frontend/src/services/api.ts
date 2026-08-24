@@ -54,24 +54,6 @@ export const api = {
       "/api/recommendations",
       { method: "POST", body: JSON.stringify(data) },
     ),
-  analyze: (image_base64: string) =>
-    request<{
-      detected: boolean;
-      low_light: boolean;
-      luminance: number;
-      global_score: number;
-      texture: number;
-      radiance: number;
-      imperfections: number;
-      diagnosis: string;
-      recommendations: string[];
-      detections: { type: string; x: number; y: number; confidence: number; radius: number }[];
-      source: string;
-    }>("/api/analyze", {
-      method: "POST",
-      body: JSON.stringify({ image_base64 }),
-    }),
-
   /**
    * Moteur v2 : analyse multi-zones et routine personnalisee.
    * `extraImages` accepte jusqu'a deux angles complementaires (profils), qui

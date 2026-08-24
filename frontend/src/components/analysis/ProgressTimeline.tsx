@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, useWindowDimensions } from "react-native";
 import Svg, { Path, Circle, Defs, LinearGradient, Stop, Line } from "react-native-svg";
 
 import { colors, fonts, spacing, radius, shadow } from "@/src/theme";
-import { getScans, type ScanEntry } from "@/src/services/routineStore";
+import { listScans, type ScanSummary } from "@/src/services/scanStore";
 import { scoreColor } from "./FaceZoneMap";
 
 /**
@@ -16,17 +16,17 @@ import { scoreColor } from "./FaceZoneMap";
 
 interface Props {
   /** Scans injectes (sinon lus depuis le stockage local). */
-  scans?: ScanEntry[];
+  scans?: ScanSummary[];
 }
 
 export function ProgressTimeline({ scans: injected }: Props) {
   const { width } = useWindowDimensions();
-  const [scans, setScans] = useState<ScanEntry[]>(injected ?? []);
+  const [scans, setScans] = useState<ScanSummary[]>(injected ?? []);
 
   useEffect(() => {
     if (injected) return;
     let alive = true;
-    getScans().then((s) => alive && setScans(s));
+    listScans().then((s) => alive && setScans([...s].reverse()));
     return () => {
       alive = false;
     };

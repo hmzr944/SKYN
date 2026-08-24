@@ -6,7 +6,9 @@ import * as Haptics from "expo-haptics";
 import Svg, { Polyline, Circle, Defs, LinearGradient as SvgLinearGradient, Stop, Polygon } from "react-native-svg";
 
 import { colors, fonts, spacing, radius, shadow } from "@/src/theme";
-import { api, syncPendingReports } from "@/src/services/api";
+import { syncPendingReports } from "@/src/services/api";
+import { listScans, type ScanSummary } from "@/src/services/scanStore";
+import { CONCERN_LABEL, SKIN_TYPE_LABEL } from "@/src/types/analysis";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { FadeIn } from "@/src/components/ui/FadeIn";
 import { AnimatedPressable } from "@/src/components/ui/AnimatedPressable";
@@ -99,7 +101,7 @@ function todayLabel() {
 export default function DashboardScreen() {
   const router = useRouter();
   const { user } = useAuth();
-  const [reports, setReports] = useState<any[]>([]);
+  const [scans, setScans] = useState<ScanSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
 
@@ -110,8 +112,9 @@ export default function DashboardScreen() {
         setSyncMsg(`${synced} bilan${synced > 1 ? "s" : ""} synchronisé${synced > 1 ? "s" : ""}.`);
         setTimeout(() => setSyncMsg(null), 3000);
       }
-      const data = await api.listReports();
-      setReports(data);
+      // Les scans locaux sont la source unique : le miroir serveur peut etre
+      // en retard ou absent, l'accueil ne doit pas en dependre pour exister.
+      setScans(await listScans());
     } catch {
       /* ignore */
     } finally {
@@ -130,8 +133,10 @@ export default function DashboardScreen() {
     router.push("/camera");
   };
 
-  const last = reports[0];
-  const chartScores = [...reports].reverse().slice(-4).map((r) => r.global_score);
+  const last = scans[0];
+  const previous = scans[1];
+  const delta = last && previous ? last.global_score - previous.global_score : null;
+  const chartScores = [...scans].reverse().slice(-4).map((r) => r.global_score);
   const firstName = (user?.name || "Vous").split(" ")[0];
   const dayIndex = new Date().getDate();
   const tips = [TIPS[dayIndex % TIPS.length], TIPS[(dayIndex + 1) % TIPS.length]];
@@ -180,10 +185,15 @@ export default function DashboardScreen() {
           </FadeIn>
         ) : (
           <FadeIn delay={80}>
-            <View style={styles.scoreCard}>
+            <AnimatedPressable
+              testID="dashboard-last-scan-card"
+              style={styles.scoreCard}
+              scaleTo={0.985}
+              onPress={() => router.push(`/scan-result?id=${last.id}`)}
+            >
               <Text style={styles.scoreLabel}>
                 DERNIER SCAN ·{" "}
-                {new Date(last.created_at).toLocaleDateString("fr-FR", {
+                {new Date(last.date).toLocaleDateString("fr-FR", {
                   day: "2-digit",
                   month: "long",
                 })}
@@ -191,30 +201,39 @@ export default function DashboardScreen() {
               <View style={styles.scoreRow}>
                 <AnimatedNumber value={last.global_score} style={styles.scoreValue} />
                 <Text style={styles.scoreMax}>/ 100</Text>
+                {delta !== null && delta !== 0 ? (
+                  <Text style={[styles.delta, delta > 0 ? styles.deltaUp : styles.deltaDown]}>
+                    {delta > 0 ? `+${delta}` : delta}
+                  </Text>
+                ) : null}
               </View>
               <View style={styles.pillsRow}>
                 <View style={styles.pill}>
                   <View style={styles.pillDot} />
-                  <Text style={styles.pillLabel}>Texture</Text>
-                  <Text style={styles.pillValue}>{last.texture}</Text>
+                  <Text style={styles.pillLabel}>{last.severity_label}</Text>
                 </View>
                 <View style={styles.pill}>
                   <View style={styles.pillDot} />
-                  <Text style={styles.pillLabel}>Éclat</Text>
-                  <Text style={styles.pillValue}>{last.radiance}</Text>
+                  <Text style={styles.pillLabel}>Peau</Text>
+                  <Text style={styles.pillValue}>{SKIN_TYPE_LABEL[last.skin_type]}</Text>
                 </View>
                 <View style={styles.pill}>
                   <View style={styles.pillDot} />
-                  <Text style={styles.pillLabel}>Imperf.</Text>
-                  <Text style={styles.pillValue}>{last.imperfections}</Text>
+                  <Text style={styles.pillLabel}>Lésions</Text>
+                  <Text style={styles.pillValue}>{last.lesion_total}</Text>
                 </View>
               </View>
-            </View>
+              {last.top_concerns.length > 0 ? (
+                <Text style={styles.scoreConcerns} numberOfLines={1}>
+                  {last.top_concerns.slice(0, 3).map((c) => CONCERN_LABEL[c]).join(" · ")}
+                </Text>
+              ) : null}
+            </AnimatedPressable>
           </FadeIn>
         )}
 
         {/* Chart */}
-        {!loading && reports.length > 0 ? (
+        {!loading && scans.length > 0 ? (
           <FadeIn delay={140}>
             <View style={styles.chartCard}>
               <Text style={styles.chartLabel}>EVOLUTION — 4 DERNIERS SCANS</Text>
@@ -372,6 +391,15 @@ const styles = StyleSheet.create({
     margin: 0,
     minWidth: 96,
     fontVariant: ["tabular-nums"],
+  },
+  delta: { fontFamily: fonts.heading, fontSize: 15, marginLeft: spacing.s },
+  deltaUp: { color: colors.accent },
+  deltaDown: { color: colors.fgDim },
+  scoreConcerns: {
+    fontFamily: fonts.body,
+    fontSize: 12,
+    color: colors.fgMuted,
+    marginTop: spacing.s,
   },
   scoreMax: {
     fontFamily: fonts.body,
