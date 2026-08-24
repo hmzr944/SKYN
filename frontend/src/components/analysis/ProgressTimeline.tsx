@@ -161,7 +161,7 @@ export function ProgressTimeline({ scans: injected }: Props) {
           <Text style={styles.footArrowText}>→</Text>
         </View>
         <View style={{ alignItems: "flex-end" }}>
-          <Text style={styles.footLabel}>Aujourd'hui</Text>
+          <Text style={styles.footLabel}>{"Aujourd'hui"}</Text>
           <Text style={[styles.footValue, { color: scoreColor(last.global_score) }]}>
             {last.global_score}
           </Text>
@@ -179,8 +179,8 @@ export function ProgressTimeline({ scans: injected }: Props) {
           {lesionDelta < 0
             ? `${Math.abs(lesionDelta)} lésions de moins qu'au premier scan.`
             : `${lesionDelta} lésions de plus qu'au premier scan.`}{" "}
-          Un actif met huit à douze semaines à donner sa pleine mesure : les
-          variations d'une semaine à l'autre sont normales.
+          {"Un actif met huit à douze semaines à donner sa pleine mesure : les " +
+            "variations d'une semaine à l'autre sont normales."}
         </Text>
       )}
     </View>

@@ -131,7 +131,7 @@ export default function HistoryScreen() {
           ListEmptyComponent={
             <FadeIn delay={120}>
               <View style={styles.emptyWrap}>
-                <Text style={styles.emptyTitle}>Pas encore d'analyse</Text>
+                <Text style={styles.emptyTitle}>{"Pas encore d'analyse"}</Text>
                 <Text style={styles.emptyHint}>
                   Votre première analyse apparaîtra ici.
                 </Text>

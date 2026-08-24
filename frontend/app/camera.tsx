@@ -213,7 +213,7 @@ export default function CameraScreen() {
         <FadeIn distance={6}>
           <View style={styles.notice} testID="camera-retake-notice">
             <Text style={styles.noticeText}>
-              Aucun visage détecté — placez votre visage dans l'ovale et reprenez la photo.
+              {"Aucun visage détecté — placez votre visage dans l'ovale et reprenez la photo."}
             </Text>
           </View>
         </FadeIn>
@@ -252,7 +252,7 @@ export default function CameraScreen() {
           <View style={{ width: 72 }} />
         </View>
 
-        <Text style={styles.hint}>Appuyez pour démarrer l'analyse</Text>
+        <Text style={styles.hint}>{"Appuyez pour démarrer l'analyse"}</Text>
       </View>
     </SafeAreaView>
   );

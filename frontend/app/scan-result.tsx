@@ -31,7 +31,6 @@ import { FaceZoneMap, ZoneLegend, scoreColor } from "@/src/components/analysis/F
 import { saveRoutineFromAnalysis } from "@/src/services/routineStore";
 import {
   CONCERN_LABEL,
-  EVIDENCE_LABEL,
   LESION_LABEL,
   SEVERITY_LABEL,
   SKIN_TYPE_LABEL,
@@ -453,11 +452,11 @@ export default function ScanResultScreen() {
         {data.routine.schedule?.length > 1 && (
           <FadeIn delay={240}>
             <View style={styles.card}>
-              <Text style={styles.cardEyebrow}>Plan d'introduction</Text>
+              <Text style={styles.cardEyebrow}>{"Plan d'introduction"}</Text>
               <Text style={styles.scheduleIntro}>
-                Introduire tous les actifs en même temps est la première cause
-                d'échec d'une routine anti-acné : la peau réagit, et l'on
-                abandonne. On y va progressivement.
+                {"Introduire tous les actifs en même temps est la première cause " +
+                  "d'échec d'une routine anti-acné : la peau réagit, et l'on " +
+                  "abandonne. On y va progressivement."}
               </Text>
               {data.routine.schedule.map((s, i) => (
                 <View key={i} style={styles.scheduleRow}>
@@ -487,8 +486,8 @@ export default function ScanResultScreen() {
         )}
 
         <Text style={styles.disclaimer}>
-          SKYN est un outil d'auto-suivi, pas un dispositif médical. Il ne pose
-          pas de diagnostic et ne remplace pas l'avis d'un dermatologue.
+          {"SKYN est un outil d'auto-suivi, pas un dispositif médical. Il ne pose " +
+            "pas de diagnostic et ne remplace pas l'avis d'un dermatologue."}
         </Text>
 
         <AnimatedPressable

@@ -167,14 +167,14 @@ export default function DashboardScreen() {
             <View style={styles.heroCard}>
               <Text style={styles.heroTitle}>{"Prête pour votre\npremière analyse ?"}</Text>
               <Text style={styles.heroSubtitle}>
-                Découvrez l'état réel de votre peau.
+                {"Découvrez l'état réel de votre peau."}
               </Text>
               <AnimatedPressable
                 testID="dashboard-start-btn"
                 style={styles.heroBtn}
                 onPress={goScan}
               >
-                <Text style={styles.heroBtnText}>Lancer l'analyse</Text>
+                <Text style={styles.heroBtnText}>{"Lancer l'analyse"}</Text>
               </AnimatedPressable>
             </View>
           </FadeIn>

@@ -5,7 +5,6 @@ import {
   StyleSheet,
   ScrollView,
   Pressable,
-  useWindowDimensions,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
@@ -83,7 +82,6 @@ function StepRow({
 /* ------------------------------------------------------------------ */
 export default function RoutineScreen() {
   const router = useRouter();
-  const { width } = useWindowDimensions();
   const [routine, setRoutine] = useState<StoredRoutine | null>(null);
   const [log, setLog] = useState<RoutineLog>({});
   const [moment, setMoment] = useState<"am" | "pm">(
@@ -105,14 +103,17 @@ export default function RoutineScreen() {
   );
 
   const today = todayKey();
-  const doneToday = log[today] ?? { am: [], pm: [] };
+  const doneToday = useMemo(() => log[today] ?? { am: [], pm: [] }, [log, today]);
   const streak = useMemo(() => currentStreak(log), [log]);
   const best = useMemo(() => bestStreak(log), [log]);
   const rate = useMemo(() => completionRate(log, 30), [log]);
   const days = useMemo(() => recentDays(log, 14), [log]);
 
-  const steps = routine ? (moment === "am" ? routine.am : routine.pm) : [];
-  const doneIds = doneToday[moment] ?? [];
+  const steps = useMemo(
+    () => (routine ? (moment === "am" ? routine.am : routine.pm) : []),
+    [routine, moment],
+  );
+  const doneIds = useMemo(() => doneToday[moment] ?? [], [doneToday, moment]);
   const allDone = steps.length > 0 && steps.every((p) => doneIds.includes(p.id));
 
   const progress = useSharedValue(0);
@@ -145,8 +146,8 @@ export default function RoutineScreen() {
         <View style={styles.empty}>
           <Text style={styles.emptyTitle}>Pas encore de routine</Text>
           <Text style={styles.emptyHelper}>
-            Lancez un premier scan : votre routine du matin et du soir sera
-            construite à partir de ce que l'analyse mesure sur votre peau.
+            {"Lancez un premier scan : votre routine du matin et du soir sera " +
+              "construite à partir de ce que l'analyse mesure sur votre peau."}
           </Text>
           <AnimatedPressable style={styles.cta} onPress={() => router.push("/camera")}>
             <Text style={styles.ctaText}>Scanner ma peau</Text>
@@ -216,7 +217,7 @@ export default function RoutineScreen() {
         <FadeIn delay={80}>
           <View style={styles.card}>
             <View style={styles.cardHead}>
-              <Text style={styles.cardEyebrow}>Aujourd'hui</Text>
+              <Text style={styles.cardEyebrow}>{"Aujourd'hui"}</Text>
               <View style={styles.segment}>
                 {(["am", "pm"] as const).map((m) => (
                   <Pressable
@@ -253,9 +254,9 @@ export default function RoutineScreen() {
             {allDone && (
               <View style={styles.doneBanner}>
                 <Text style={styles.doneText}>
-                  {moment === "am" ? "Matin bouclé." : "Soir bouclé."} La
-                  régularité compte davantage que le produit : les effets d'un
-                  actif se jugent sur huit à douze semaines.
+                  {moment === "am" ? "Matin bouclé." : "Soir bouclé."}{" "}
+                  {"La régularité compte davantage que le produit : les effets " +
+                    "d'un actif se jugent sur huit à douze semaines."}
                 </Text>
               </View>
             )}
