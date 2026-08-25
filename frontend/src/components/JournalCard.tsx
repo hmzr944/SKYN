@@ -1,7 +1,15 @@
 import { useCallback, useEffect, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
+import Animated, {
+  Easing,
+  useAnimatedStyle,
+  useSharedValue,
+  withDelay,
+  withTiming,
+} from "react-native-reanimated";
 
-import { AnimatedPressable } from "@/src/components/ui/AnimatedPressable";
+import { Chip } from "@/src/components/ui/Chip";
+import { Disclosure } from "@/src/components/ui/Disclosure";
 import { Reveal } from "@/src/components/ui/Reveal";
 import {
   FACTORS,
@@ -52,26 +60,18 @@ export function JournalCard() {
   return (
     <View style={styles.card}>
       <Text style={styles.eyebrow}>Journal du jour</Text>
-      <Text style={styles.helper}>
-        {"Ce qui s'est passé aujourd'hui. Une lésion met plusieurs jours à sortir : " +
-          "c'est en notant régulièrement qu'on voit ce qui revient."}
-      </Text>
+      <Text style={styles.question}>Votre journée, en un appui.</Text>
 
       <View style={styles.grid}>
-        {FACTORS.map((f) => {
-          const on = entry[f.key] === 1;
-          return (
-            <AnimatedPressable
-              key={f.key}
-              testID={`journal-${f.key}`}
-              style={[styles.chip, on && styles.chipOn]}
-              scaleTo={0.94}
-              onPress={() => onToggle(f.key)}
-            >
-              <Text style={[styles.chipText, on && styles.chipTextOn]}>{f.label}</Text>
-            </AnimatedPressable>
-          );
-        })}
+        {FACTORS.map((f) => (
+          <Chip
+            key={f.key}
+            testID={`journal-${f.key}`}
+            label={f.label}
+            on={entry[f.key] === 1}
+            onPress={() => onToggle(f.key)}
+          />
+        ))}
       </View>
 
       {obs.length > 0 ? (
@@ -93,40 +93,98 @@ export function JournalCard() {
             </Reveal>
           ))}
         </View>
+      ) : days >= MIN_DAYS ? (
+        <Text style={styles.progress}>Pas encore d&apos;écart net entre vos journées.</Text>
       ) : (
-        <Text style={styles.progress}>
-          {days >= MIN_DAYS
-            ? "Pas encore d'écart net entre vos journées."
-            : `${days}/${MIN_DAYS} jours notés avant les premières observations.`}
-        </Text>
+        <View style={styles.progressWrap}>
+          <DayTrack done={days} total={MIN_DAYS} />
+          <Text style={styles.progress}>
+            {`Encore ${MIN_DAYS - days} ${MIN_DAYS - days > 1 ? "jours" : "jour"} avant les premières observations.`}
+          </Text>
+        </View>
       )}
+
+      <Disclosure testID="journal-why">
+        <Text style={styles.helper}>
+          {"Une lésion met plusieurs jours à sortir : ce qui l'a déclenchée est " +
+            "déjà loin quand elle apparaît. C'est pour ça qu'on note au jour le " +
+            "jour, et qu'il faut plusieurs semaines avant que quoi que ce soit " +
+            "se dégage."}
+        </Text>
+      </Disclosure>
+    </View>
+  );
+}
+
+/**
+ * Les jours notes, un segment chacun.
+ *
+ * "3/12 jours notés" est un fait ; douze segments dont trois sont pleins est
+ * une distance. On voit d'un coup d'oeil ce qui est fait et ce qui reste, et
+ * le segment du jour se remplit sous les yeux au lieu d'incrementer un
+ * compteur.
+ */
+function DayTrack({ done, total }: { done: number; total: number }) {
+  return (
+    <View style={styles.track}>
+      {Array.from({ length: total }).map((_, i) => (
+        <Segment key={i} filled={i < done} index={i} />
+      ))}
+    </View>
+  );
+}
+
+function Segment({ filled, index }: { filled: boolean; index: number }) {
+  const t = useSharedValue(0);
+  useEffect(() => {
+    // Les segments se remplissent de gauche a droite : la serie se relit, elle
+    // n'apparait pas d'un bloc.
+    t.value = withDelay(
+      index * 45,
+      withTiming(filled ? 1 : 0, { duration: 320, easing: Easing.out(Easing.cubic) }),
+    );
+  }, [filled, index, t]);
+
+  const aStyle = useAnimatedStyle(() => ({
+    transform: [{ scaleX: t.value }],
+  }));
+
+  return (
+    <View style={styles.segTrack}>
+      <Animated.View style={[styles.segFill, aStyle]} />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  card: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: colors.borderSubtle,
-    padding: spacing.m,
-    gap: spacing.s,
-  },
+  // Pas de carte ici, volontairement.
+  //
+  // Le journal et le suivi d'introduction se suivaient dans la page avec le
+  // meme cadre, le meme filet, le meme surtitre corail : deux blocs de la meme
+  // silhouette, et l'oeil ne distinguait plus l'un de l'autre. Le journal est
+  // une habitude quotidienne, pas un dossier ouvert — il se pose sur la page.
+  card: { paddingVertical: spacing.s, paddingHorizontal: spacing.m, gap: spacing.s },
   eyebrow: { ...type.kicker, color: colors.accent },
+  question: { ...type.subtitle, color: colors.fg },
   helper: { ...type.bodySmall, color: colors.fgMuted },
   grid: { flexDirection: "row", flexWrap: "wrap", gap: spacing.s, marginTop: spacing.xs },
-  chip: {
+  progressWrap: { gap: spacing.s, marginTop: spacing.xs },
+  progress: { ...type.bodySmall, color: colors.fgDim },
+  track: { flexDirection: "row", gap: 4 },
+  segTrack: {
+    flex: 1,
+    height: 4,
     borderRadius: radius.pill,
-    borderWidth: 1,
-    borderColor: colors.borderMid,
-    paddingVertical: 9,
-    paddingHorizontal: spacing.m,
+    backgroundColor: colors.fgFaint,
+    overflow: "hidden",
   },
-  chipOn: { backgroundColor: colors.fg, borderColor: colors.fg },
-  chipText: { ...type.label, color: colors.fgMuted },
-  chipTextOn: { color: colors.onInverse },
-  progress: { ...type.bodySmall, color: colors.fgDim, marginTop: spacing.xs },
+  segFill: {
+    width: "100%",
+    height: "100%",
+    borderRadius: radius.pill,
+    backgroundColor: colors.accent,
+    transformOrigin: "left",
+  },
   obsWrap: { gap: spacing.s, marginTop: spacing.s },
   obs: {
     borderLeftWidth: 2,

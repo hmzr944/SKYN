@@ -241,13 +241,25 @@ export default function DashboardScreen() {
                 })}
               </Text>
               <View style={styles.scoreRow}>
-                <AnimatedNumber value={last.global_score} style={styles.scoreValue} />
-                <Text style={styles.scoreMax}>/ 100</Text>
-                {delta !== null && delta !== 0 ? (
-                  <Text style={[styles.delta, delta > 0 ? styles.deltaUp : styles.deltaDown]}>
-                    {delta > 0 ? `+${delta}` : delta}
+                <AnimatedNumber
+                  value={last.global_score}
+                  // Un TextInput ne se retrecit pas au contenu : il faut lui
+                  // donner sa largeur. Le score va de 0 a 100, donc deux cas.
+                  style={[styles.scoreValue, { width: last.global_score >= 100 ? 112 : 78 }]}
+                />
+                <View style={styles.scoreUnit}>
+                  <Text style={styles.scoreMax} numberOfLines={1}>
+                    / 100
                   </Text>
-                ) : null}
+                  {delta !== null && delta !== 0 ? (
+                    <Text
+                      style={[styles.delta, delta > 0 ? styles.deltaUp : styles.deltaDown]}
+                      numberOfLines={1}
+                    >
+                      {delta > 0 ? `+${delta}` : delta}
+                    </Text>
+                  ) : null}
+                </View>
               </View>
               <Stagger style={styles.pillsRow} from="left" distance={18} delay={220} step={70}>
                 <View style={styles.pill}>
@@ -443,6 +455,18 @@ const styles = StyleSheet.create({
     alignItems: "flex-end",
     marginBottom: spacing.l,
   },
+  // Le "/ 100" et l'ecart se serrent contre le score au lieu d'etre pousses
+  // au bord de la carte. Le score est un TextInput, et un TextInput s'etale
+  // jusqu'a la place disponible : sans cette boite, il repoussait le reste
+  // jusqu'a le faire passer a la ligne, ce qui donnait un "/" seul au-dessus
+  // de "100".
+  scoreUnit: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    gap: spacing.s,
+    flexShrink: 0,
+    paddingBottom: 12,
+  },
   scoreValue: {
     fontFamily: fonts.display,
     fontSize: 64,
@@ -452,7 +476,6 @@ const styles = StyleSheet.create({
     // qu'il s'aligne exactement comme le Text qu'il remplace.
     padding: 0,
     margin: 0,
-    minWidth: 96,
     fontVariant: ["tabular-nums"],
   },
   delta: { fontFamily: fonts.heading, fontSize: 15, marginLeft: spacing.s },
@@ -464,13 +487,7 @@ const styles = StyleSheet.create({
     color: colors.fgMuted,
     marginTop: spacing.s,
   },
-  scoreMax: {
-    fontFamily: fonts.body,
-    fontSize: 16,
-    color: colors.fgDim,
-    marginLeft: spacing.xs,
-    marginBottom: 10,
-  },
+  scoreMax: { fontFamily: fonts.body, fontSize: 16, color: colors.fgDim },
   pillsRow: {
     flexDirection: "row",
     gap: spacing.s,

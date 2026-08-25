@@ -285,11 +285,11 @@ export default function RoutineScreen() {
           </FadeIn>
         ) : null}
 
-        <FadeIn delay={240} style={{ marginTop: spacing.l }}>
+        <FadeIn delay={240} style={styles.block}>
           <IntroductionCard routine={routine} />
         </FadeIn>
 
-        <FadeIn delay={300} style={{ marginTop: spacing.l }}>
+        <FadeIn delay={300} style={styles.block}>
           <JournalCard />
         </FadeIn>
 
@@ -307,6 +307,9 @@ export default function RoutineScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
   header: { paddingHorizontal: spacing.l, paddingTop: spacing.m, paddingBottom: spacing.s },
+  // Les deux blocs du bas partagent la marge des cartes au-dessus : ils
+  // s'alignaient sur le bord de l'ecran, seuls de la page a le faire.
+  block: { marginTop: spacing.l, marginHorizontal: spacing.l },
   title: { fontFamily: fonts.display, fontSize: 30, color: colors.fg, letterSpacing: -0.6 },
   subtitle: { fontFamily: fonts.body, fontSize: 13, color: colors.fgMuted, marginTop: 2 },
 

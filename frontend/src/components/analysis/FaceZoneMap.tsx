@@ -62,13 +62,22 @@ const ZONE_SHAPES: Record<ZoneKey, ZoneShape> = {
   menton: { cx: 100, cy: 210, rx: 21, ry: 17 },
 };
 
-// Echelle de teinte : terre translucide (peau nette) -> corail (zone la plus chargee).
+/**
+ * L'echelle de teinte : corail (zone la plus chargee) vers terre (peau nette).
+ *
+ * Elle finissait sur deux verts acides, restes d'une palette abandonnee, et
+ * passait par des pastels si clairs qu'ecrits en texte sur le fond creme ils
+ * devenaient illisibles — un score de 72 sortait en beige pale.
+ *
+ * Deux teintes de la marque, et rien entre les deux qui n'en soit un melange :
+ * la charge se lit dans la SATURATION, pas dans un changement de famille de
+ * couleur. Toutes les valeurs de l'echelle restent lisibles en texte.
+ */
 const SCALE: { at: number; hex: string }[] = [
   { at: 0, hex: "#FF4D6D" },
-  { at: 55, hex: "#FF9A85" },
-  { at: 72, hex: "#FFD3A8" },
-  { at: 86, hex: "#E8F2A6" },
-  { at: 100, hex: "#C8F04A" },
+  { at: 40, hex: "#D14A5C" },
+  { at: 70, hex: "#8C3D42" },
+  { at: 100, hex: "#2A1D18" },
 ];
 
 function hexToRgb(h: string) {

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { View, Text, StyleSheet, useWindowDimensions } from "react-native";
+import { LayoutChangeEvent, View, Text, StyleSheet } from "react-native";
 import Svg, { Path, Circle, Defs, LinearGradient, Stop, Line } from "react-native-svg";
 
 import { colors, fonts, spacing, radius, shadow } from "@/src/theme";
@@ -20,7 +20,7 @@ interface Props {
 }
 
 export function ProgressTimeline({ scans: injected }: Props) {
-  const { width } = useWindowDimensions();
+
   const [scans, setScans] = useState<ScanSummary[]>(injected ?? []);
 
   useEffect(() => {
@@ -32,7 +32,20 @@ export function ProgressTimeline({ scans: injected }: Props) {
     };
   }, [injected]);
 
-  const chartW = width - spacing.l * 2 - spacing.l * 2;
+  /**
+   * La largeur du graphe est MESUREE, pas deduite de celle de l'ecran.
+   *
+   * Elle etait calculee en retranchant les marges qu'on croyait avoir au-dessus.
+   * L'ecran qui accueille cette carte en ajoutait d'autres, dont le composant
+   * ne pouvait rien savoir : la courbe depassait de 64 px a droite. Un composant
+   * ne connait pas ses marges exterieures — il ne peut que mesurer la place
+   * qu'on lui laisse.
+   */
+  const [chartW, setChartW] = useState(0);
+  const onChartLayout = (e: LayoutChangeEvent) => {
+    const w = Math.floor(e.nativeEvent.layout.width);
+    setChartW((prev) => (Math.abs(prev - w) < 1 ? prev : w));
+  };
   const chartH = 96;
 
   const geometry = useMemo(() => {
@@ -97,10 +110,13 @@ export function ProgressTimeline({ scans: injected }: Props) {
             { backgroundColor: positive ? colors.okSoft : colors.accentSofter },
           ]}
         >
+          {/* `onOk` est la couleur du texte POSE SUR le bloc terre plein. La
+              pastille, elle, est une terre a 10 % : ecrire en creme dessus
+              revenait a poser du blanc casse sur du blanc casse. */}
           <Text
             style={[
               styles.deltaText,
-              { color: positive ? colors.onOk : colors.accentDark },
+              { color: positive ? colors.fg : colors.accentDark },
             ]}
           >
             {delta > 0 ? "+" : ""}
@@ -109,7 +125,9 @@ export function ProgressTimeline({ scans: injected }: Props) {
         </View>
       </View>
 
-      <Svg width={chartW} height={chartH + 8}>
+      <View onLayout={onChartLayout} style={styles.chartSlot}>
+        {chartW > 0 ? (
+        <Svg width={chartW} height={chartH + 8}>
         <Defs>
           <LinearGradient id="areaFill" x1="0" y1="0" x2="0" y2="1">
             <Stop offset="0" stopColor={colors.accent} stopOpacity="0.18" />
@@ -144,7 +162,9 @@ export function ProgressTimeline({ scans: injected }: Props) {
             />
           );
         })}
-      </Svg>
+        </Svg>
+        ) : null}
+      </View>
 
       <View style={styles.footRow}>
         <View>
@@ -196,6 +216,7 @@ const styles = StyleSheet.create({
     padding: spacing.l,
     ...shadow.card,
   },
+  chartSlot: { width: "100%", minHeight: 104 },
   head: {
     flexDirection: "row",
     justifyContent: "space-between",

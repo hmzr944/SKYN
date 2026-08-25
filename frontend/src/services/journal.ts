@@ -37,47 +37,50 @@ export interface FactorDef {
   evidence: "A" | "B" | "C";
 }
 
+// Ces libelles et ces notes sont AFFICHES. Les commentaires du code sont sans
+// accents, par commodite d'edition ; le texte lu par quelqu'un ne peut pas
+// l'etre — "Journee stressante" sur un ecran, c'est une faute.
 export const FACTORS: FactorDef[] = [
   {
     key: "sommeil",
     label: "Nuit courte",
     onLabel: "Moins de 6 h",
-    note: "Le manque de sommeil eleve le cortisol, qui stimule la production de sebum.",
+    note: "Le manque de sommeil élève le cortisol, qui stimule la production de sébum.",
     evidence: "B",
   },
   {
     key: "stress",
-    label: "Journee stressante",
-    onLabel: "Stress marque",
-    note: "Le stress est associe a une aggravation des poussees, sans qu'on sache le quantifier.",
+    label: "Journée stressante",
+    onLabel: "Stress marqué",
+    note: "Le stress est associé à une aggravation des poussées, sans qu'on sache le quantifier.",
     evidence: "B",
   },
   {
     key: "friction",
     label: "Frottement",
     onLabel: "Casque, masque, sport",
-    note: "La friction repetee provoque une acne mecanique, surtout menton et machoire.",
+    note: "La friction répétée provoque une acné mécanique, surtout menton et mâchoire.",
     evidence: "A",
   },
   {
     key: "sucre",
-    label: "Charge sucree",
-    onLabel: "Repas tres sucre",
-    note: "Une charge glycemique elevee est liee a plus de lesions dans plusieurs essais.",
+    label: "Charge sucrée",
+    onLabel: "Repas très sucré",
+    note: "Une charge glycémique élevée est liée à plus de lésions dans plusieurs essais.",
     evidence: "B",
   },
   {
     key: "laitages",
     label: "Laitages",
     onLabel: "Consommation notable",
-    note: "Le lait ecreme ressort surtout, l'effet reste modeste et discute.",
+    note: "Le lait écrémé ressort surtout, l'effet reste modeste et discuté.",
     evidence: "C",
   },
   {
     key: "cycle",
     label: "Cycle",
-    onLabel: "Periode pre-menstruelle",
-    note: "Les poussees mandibulaires suivent souvent la deuxieme partie du cycle.",
+    onLabel: "Période prémenstruelle",
+    note: "Les poussées mandibulaires suivent souvent la deuxième partie du cycle.",
     evidence: "A",
   },
 ];

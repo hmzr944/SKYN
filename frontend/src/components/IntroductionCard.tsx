@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 
 import { AnimatedPressable } from "@/src/components/ui/AnimatedPressable";
+import { Chip } from "@/src/components/ui/Chip";
+import { Disclosure } from "@/src/components/ui/Disclosure";
 import { Reveal } from "@/src/components/ui/Reveal";
 import { track } from "@/src/services/analytics";
 import {
@@ -19,7 +21,7 @@ import {
   type Tracking,
 } from "@/src/services/introduction";
 import type { StoredRoutine } from "@/src/services/routineStore";
-import { colors, radius, spacing, type } from "@/src/theme";
+import { colors, fonts, radius, spacing, type } from "@/src/theme";
 import type { ProductPick } from "@/src/types/analysis";
 
 /**
@@ -80,31 +82,28 @@ function Idle({
 }) {
   return (
     <>
-      <Text style={styles.helper}>
-        {"Quand vous commencez un actif, la peau peut réagir les premières semaines. " +
-          "C'est le moment où l'on abandonne le plus souvent. Suivez-le et vous saurez " +
-          "quoi faire."}
-      </Text>
+      <Text style={styles.lede}>Vous venez d&apos;introduire un produit ?</Text>
       <View style={styles.chips}>
         {products.slice(0, 4).map((p) => (
-          <AnimatedPressable
+          <Chip
             key={p.id}
             testID={`intro-start-${p.id}`}
-            style={styles.chip}
-            scaleTo={0.96}
-            haptic="medium"
+            label={p.name}
+            on={false}
             onPress={async () => {
               await startTracking(p);
               onStarted();
             }}
-          >
-            <Text style={styles.chipText} numberOfLines={1}>
-              {p.name}
-            </Text>
-          </AnimatedPressable>
+          />
         ))}
       </View>
-      <Text style={styles.foot}>Choisissez le produit que vous venez d&apos;introduire.</Text>
+      <Disclosure testID="intro-why">
+        <Text style={styles.helper}>
+          {"Quand vous commencez un actif, la peau peut réagir les premières " +
+            "semaines. C'est le moment où l'on abandonne le plus souvent. En le " +
+            "suivant jour par jour, on sait si ça passe ou s'il faut arrêter."}
+        </Text>
+      </Disclosure>
     </>
   );
 }
@@ -143,10 +142,13 @@ function Running({
   return (
     <>
       <View style={styles.head}>
-        <Text style={styles.product} numberOfLines={1}>
+        <View style={styles.dayBlock}>
+          <Text style={styles.dayNum}>{day}</Text>
+          <Text style={styles.dayWord}>{day > 1 ? "jours" : "jour"}</Text>
+        </View>
+        <Text style={styles.product} numberOfLines={2}>
           {tracking.brand} · {tracking.name}
         </Text>
-        <Text style={styles.day}>Jour {day}</Text>
       </View>
 
       <Reveal key={verdict.level} distance={8}>
@@ -165,20 +167,15 @@ function Running({
         <>
           <Text style={styles.question}>Aujourd&apos;hui, votre peau :</Text>
           <View style={styles.chips}>
-            {SIGNALS.map((s) => {
-              const on = picked.includes(s.key);
-              return (
-                <AnimatedPressable
-                  key={s.key}
-                  testID={`intro-signal-${s.key}`}
-                  style={[styles.chip, on && styles.chipOn]}
-                  scaleTo={0.94}
-                  onPress={() => toggle(s.key)}
-                >
-                  <Text style={[styles.chipText, on && styles.chipTextOn]}>{s.label}</Text>
-                </AnimatedPressable>
-              );
-            })}
+            {SIGNALS.map((s) => (
+              <Chip
+                key={s.key}
+                testID={`intro-signal-${s.key}`}
+                label={s.label}
+                on={picked.includes(s.key)}
+                onPress={() => toggle(s.key)}
+              />
+            ))}
           </View>
           <AnimatedPressable
             testID="intro-submit"
@@ -223,10 +220,22 @@ const styles = StyleSheet.create({
     gap: spacing.s,
   },
   eyebrow: { ...type.kicker, color: colors.accent },
+  lede: { ...type.subtitle, color: colors.fg },
   helper: { ...type.bodySmall, color: colors.fgMuted },
-  head: { flexDirection: "row", justifyContent: "space-between", alignItems: "baseline", gap: spacing.s },
+  head: { flexDirection: "row", alignItems: "center", gap: spacing.m },
+  // Le jour de suivi est LE chiffre de cette carte : il dit ou l'on en est
+  // dans la fenetre qui compte. Il etait relegue en petites capitales a
+  // droite, ou il ne se lisait pas.
+  dayBlock: { flexDirection: "row", alignItems: "baseline", gap: 4 },
+  dayNum: {
+    fontFamily: fonts.display,
+    fontSize: 38,
+    lineHeight: 40,
+    color: colors.accent,
+    fontVariant: ["tabular-nums"],
+  },
+  dayWord: { ...type.bodySmall, color: colors.fgDim },
   product: { ...type.label, color: colors.fg, flex: 1 },
-  day: { ...type.kicker, color: colors.fgDim },
 
   verdict: {
     borderLeftWidth: 2,
@@ -243,18 +252,6 @@ const styles = StyleSheet.create({
 
   question: { ...type.label, color: colors.fg, marginTop: spacing.xs },
   chips: { flexDirection: "row", flexWrap: "wrap", gap: spacing.s },
-  chip: {
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    borderColor: colors.borderMid,
-    paddingVertical: 10,
-    paddingHorizontal: spacing.m,
-    minHeight: 44,
-    justifyContent: "center",
-  },
-  chipOn: { backgroundColor: colors.fg, borderColor: colors.fg },
-  chipText: { ...type.label, color: colors.fgMuted },
-  chipTextOn: { color: colors.onInverse },
 
   submit: {
     marginTop: spacing.xs,

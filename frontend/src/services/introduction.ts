@@ -353,7 +353,15 @@ export function isAlert(v: Verdict): boolean {
  * route se surveille. Un nettoyant ou une creme solaire n'ont rien a suivre.
  */
 export function candidates(products: ProductPick[]): ProductPick[] {
-  return products.filter(
-    (p) => p.step !== "nettoyant" && p.step !== "protection" && (p.family || p.irritation > 0.2),
-  );
+  // Dedoublonnage : un serum est souvent prescrit matin ET soir, et la liste
+  // arrive concatenee. Sans ca, le meme produit s'affichait deux fois dans le
+  // choix, ce qui donne l'impression d'un bug plus que d'un choix.
+  const seen = new Set<string>();
+  return products.filter((p) => {
+    if (p.step === "nettoyant" || p.step === "protection") return false;
+    if (!p.family && p.irritation <= 0.2) return false;
+    if (seen.has(p.id)) return false;
+    seen.add(p.id);
+    return true;
+  });
 }
