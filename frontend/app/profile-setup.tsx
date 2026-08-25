@@ -21,15 +21,35 @@ import { useAuth } from "@/src/contexts/AuthContext";
 import { FadeIn } from "@/src/components/ui/FadeIn";
 import { AnimatedPressable } from "@/src/components/ui/AnimatedPressable";
 import { HowItWorksModal } from "@/src/components/HowItWorksModal";
+import { setGenre, type Genre } from "@/src/services/gender";
 
 // Questionnaire = un "cahier" : identité propre (numérotation en grand,
 // barre de progression pleine largeur, cases à cocher carrées) qui le
 // distingue nettement du récit illustré de l'onboarding.
 const QUESTIONS_META = [
-  { n: "01", label: "ÂGE" },
-  { n: "02", label: "ENVIRONNEMENT" },
-  { n: "03", label: "TYPE DE PEAU" },
-  { n: "04", label: "PRIORITÉ" },
+  { n: "01", label: "VOUS" },
+  { n: "02", label: "ÂGE" },
+  { n: "03", label: "ENVIRONNEMENT" },
+  { n: "04", label: "TYPE DE PEAU" },
+  { n: "05", label: "PRIORITÉ" },
+];
+
+/**
+ * Le nombre de questions se DEDUIT de la liste.
+ *
+ * Il etait ecrit en dur a cinq endroits : compteur, barre de progression,
+ * bouton « Passer », avance automatique, libelle du bouton final. Ajouter une
+ * question laissait quatre de ces endroits en arriere, et le questionnaire
+ * s'arretait avant la fin.
+ */
+const QUESTION_COUNT = QUESTIONS_META.length;
+const LAST_QUESTION = QUESTION_COUNT - 1;
+
+/** Une troisieme reponse, toujours : personne n'est oblige de trancher. */
+const GENRE_OPTIONS: { label: string; value: Genre }[] = [
+  { label: "Une femme", value: "f" },
+  { label: "Un homme", value: "m" },
+  { label: "Je préfère ne pas dire", value: "n" },
 ];
 
 const AGE_OPTIONS = ["Moins de 25", "25 à 40", "40 à 60", "60 et plus"];
@@ -111,6 +131,7 @@ export default function ProfileSetupScreen() {
   const router = useRouter();
   const { refreshProfile } = useAuth();
   const [page, setPage] = useState(0);
+  const [genre, setGenreChoice] = useState<Genre | null>(null);
   const [ageRange, setAgeRange] = useState<string | null>(null);
   const [environment, setEnvironment] = useState<string | null>(null);
   const [skinType, setSkinType] = useState<string | null>(null);
@@ -135,10 +156,11 @@ export default function ProfileSetupScreen() {
   };
 
   const canNext = () => {
-    if (page === 0) return ageRange !== null;
-    if (page === 1) return environment !== null;
-    if (page === 2) return skinType !== null;
-    if (page === 3) return priority !== null;
+    if (page === 0) return genre !== null;
+    if (page === 1) return ageRange !== null;
+    if (page === 2) return environment !== null;
+    if (page === 3) return skinType !== null;
+    if (page === 4) return priority !== null;
     return false;
   };
 
@@ -147,6 +169,9 @@ export default function ProfileSetupScreen() {
     setError(null);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     try {
+      // Le genre reste sur l'appareil : c'est une preference de redaction, pas
+      // une donnee de sante, et le serveur n'en a aucun usage.
+      await setGenre(genre ?? "n");
       await api.updateProfile({
         age_range: ageRange,
         environment,
@@ -175,7 +200,7 @@ export default function ProfileSetupScreen() {
   const autoAdvanceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scheduleAutoAdvance = (fromPage: number) => {
     if (autoAdvanceTimer.current) clearTimeout(autoAdvanceTimer.current);
-    if (fromPage >= 3) return;
+    if (fromPage >= LAST_QUESTION) return;
     autoAdvanceTimer.current = setTimeout(() => goToPage(fromPage + 1), 420);
   };
   useEffect(() => () => {
@@ -218,6 +243,14 @@ export default function ProfileSetupScreen() {
   const QUESTIONS = [
     {
       kicker: QUESTIONS_META[0].label,
+      title: "Vous êtes…",
+      helper:
+        "Uniquement pour vous écrire correctement. L'analyse, elle, ne lit " +
+        "que votre peau.",
+      body: renderOptions(GENRE_OPTIONS, genre, (v) => setGenreChoice(v as Genre), "genre"),
+    },
+    {
+      kicker: QUESTIONS_META[1].label,
       title: "Votre\ntranche d'âge",
       helper: "Pour calibrer l'algorithme selon votre cycle cutané.",
       body: renderOptions(
@@ -228,20 +261,20 @@ export default function ProfileSetupScreen() {
       ),
     },
     {
-      kicker: QUESTIONS_META[1].label,
+      kicker: QUESTIONS_META[2].label,
       title: "Votre\nenvironnement\nquotidien",
       helper: "L'environnement influence directement l'état de votre peau.",
       body: renderOptions(ENV_OPTIONS, environment, setEnvironment, "env"),
     },
     {
-      kicker: QUESTIONS_META[2].label,
+      kicker: QUESTIONS_META[3].label,
       title: "Votre type\nde peau",
       helper:
         "Le critère n°1 pour vos produits. En cas de doute, notre analyse photo le détecte pour vous.",
       body: renderOptions(SKIN_OPTIONS, skinType, setSkinType, "skin"),
     },
     {
-      kicker: QUESTIONS_META[3].label,
+      kicker: QUESTIONS_META[4].label,
       title: "Votre priorité\nmajeure",
       helper: "Nous personnaliserons vos recommandations en conséquence.",
       body: (
@@ -272,16 +305,17 @@ export default function ProfileSetupScreen() {
       {/* Header — barre de progression pleine largeur, motif "cahier" */}
       <View style={styles.header}>
         <View style={styles.progressTrack}>
-          <View style={[styles.progressFill, { width: `${((page + 1) / 4) * 100}%` }]} />
+          <View style={[styles.progressFill, { width: `${((page + 1) / QUESTION_COUNT) * 100}%` }]} />
         </View>
         <View style={styles.headerRow}>
           <Text style={styles.qCounter}>
-            {QUESTIONS_META[page].n}<Text style={styles.qCounterMax}> / 04</Text>
+            {QUESTIONS_META[page].n}
+            <Text style={styles.qCounterMax}>{` / 0${QUESTION_COUNT}`}</Text>
           </Text>
-          {page < 3 ? (
+          {page < LAST_QUESTION ? (
             <TouchableOpacity
               testID="profile-skip-btn"
-              onPress={() => goToPage(3)}
+              onPress={() => goToPage(LAST_QUESTION)}
               hitSlop={8}
             >
               <Text style={styles.skip}>Passer</Text>
@@ -347,7 +381,7 @@ export default function ProfileSetupScreen() {
           testID="profile-next-btn"
           disabled={!canNext() || saving}
           onPress={() => {
-            if (page < 3) goToPage(page + 1);
+            if (page < LAST_QUESTION) goToPage(page + 1);
             else finish();
           }}
           style={[styles.nextBtn, (!canNext() || saving) && styles.nextBtnDisabled]}
@@ -356,7 +390,7 @@ export default function ProfileSetupScreen() {
             <ActivityIndicator color={colors.onAccent} size="small" />
           ) : (
             <Text style={styles.nextText}>
-              {page < 3 ? "Suivant" : "Terminer"}
+              {page < LAST_QUESTION ? "Suivant" : "Terminer"}
             </Text>
           )}
         </AnimatedPressable>

@@ -1,6 +1,6 @@
 import { Tabs, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
-import { LayoutChangeEvent, View, Text, StyleSheet } from "react-native";
+import { LayoutChangeEvent, Platform, View, Text, StyleSheet } from "react-native";
 import Animated, {
   useAnimatedStyle,
   useReducedMotion,
@@ -150,10 +150,16 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
         testID={`tab-${routeName}`}
         onPress={onPress}
         onLayout={measure(routeName)}
+        containerStyle={styles.tabBox}
         style={styles.tab}
         scaleTo={0.92}
         haptic={false}
-        accessibilityRole="tab"
+        // Le role « onglet » est le bon pour un lecteur d'ecran... sauf sur le
+        // web, ou react-native-web rend alors un <div> la ou un role de bouton
+        // rend un <button>. La couche gestuelle n'attache pas de clic au
+        // premier : la barre entiere devenait inerte dans un navigateur.
+        // La semantique juste sur mobile, un controle qui repond partout.
+        accessibilityRole={Platform.OS === "web" ? "button" : "tab"}
         accessibilityState={{ selected: focused }}
         accessibilityLabel={TAB_LABELS[routeName]}
       >
@@ -234,8 +240,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-around",
   },
+  tabBox: { flex: 1 },
   tab: {
-    flex: 1,
     // 44 au minimum : la rangee tenait sur 41 px de haut, et les onglets les
     // plus etroits ne faisaient que 30 px de large. Le dessin ne change pas,
     // c'est la zone atteignable par le pouce qui grandit.

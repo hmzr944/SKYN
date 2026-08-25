@@ -3,6 +3,13 @@ import Constants from "expo-constants";
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import { Alert, Linking, Platform, ScrollView, StyleSheet, Switch, Text, View } from "react-native";
+import Animated, {
+  Easing,
+  useAnimatedStyle,
+  useReducedMotion,
+  useSharedValue,
+  withTiming,
+} from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { SkynLockup } from "@/src/components/brand/SkynLockup";
@@ -20,7 +27,7 @@ import {
 import { deleteAccount, deletionMessage } from "@/src/services/account";
 import { eraseAll, exportAll, summarize, type DataSummary } from "@/src/services/userData";
 import { useAuth } from "@/src/contexts/AuthContext";
-import { colors, radius, spacing, type } from "@/src/theme";
+import { colors, motion, radius, spacing, type } from "@/src/theme";
 
 /**
  * Les reglages.
@@ -386,22 +393,52 @@ function Fold({
   body: string;
 }) {
   const isOpen = open === id;
+  const [hauteur, setHauteur] = useState(0);
+  const t = useSharedValue(0);
+  const reduced = useReducedMotion();
+
+  useEffect(() => {
+    t.value = withTiming(isOpen ? 1 : 0, {
+      duration: reduced ? 0 : motion.base,
+      easing: Easing.out(Easing.cubic),
+    });
+  }, [isOpen, t, reduced]);
+
+  // Le depliant se REFERME aussi. Il s'ouvrait avec une entree animee mais
+  // disparaissait d'un coup : la moitie du geste seulement etait dessinee, et
+  // c'est la fermeture qu'on remarque, parce qu'on la declenche exprès.
+  const corps = useAnimatedStyle(() => ({
+    height: t.value * hauteur,
+    opacity: t.value,
+  }));
+  const signe = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${t.value * 135}deg` }],
+  }));
+
   return (
     <View>
       <AnimatedPressable
         style={styles.row}
         scaleTo={0.99}
         haptic={false}
+        accessibilityState={{ expanded: isOpen } as { selected?: boolean }}
+        accessibilityLabel={label}
         onPress={() => setOpen(isOpen ? null : id)}
       >
         <Text style={[styles.rowLabel, { flex: 1 }]}>{label}</Text>
-        <Text style={styles.chevron}>{isOpen ? "−" : "+"}</Text>
+        <Animated.Text style={[styles.chevron, signe]}>+</Animated.Text>
       </AnimatedPressable>
-      {isOpen ? (
-        <Reveal distance={6}>
+
+      <Animated.View style={[styles.foldClip, corps]}>
+        <View
+          onLayout={(e) => {
+            const h = Math.ceil(e.nativeEvent.layout.height);
+            setHauteur((prev) => (Math.abs(prev - h) < 1 ? prev : h));
+          }}
+        >
           <Text style={styles.body}>{body}</Text>
-        </Reveal>
-      ) : null}
+        </View>
+      </Animated.View>
     </View>
   );
 }
@@ -485,6 +522,7 @@ const styles = StyleSheet.create({
   },
   rowLabel: { ...type.label, color: colors.fg },
   rowHint: { ...type.bodySmall, color: colors.fgDim, marginTop: 2 },
+  foldClip: { overflow: "hidden" },
   chevron: { ...type.subtitle, color: colors.fgDim },
   danger: { color: colors.accent },
   body: {

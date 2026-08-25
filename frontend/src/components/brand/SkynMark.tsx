@@ -3,8 +3,8 @@ import { StyleProp, ViewStyle } from "react-native";
 import Svg, { Circle, Path } from "react-native-svg";
 import Animated, {
   Easing,
-  useReducedMotion,
   useAnimatedProps,
+  useReducedMotion,
   useSharedValue,
   withDelay,
   withSpring,
@@ -12,93 +12,70 @@ import Animated, {
 } from "react-native-reanimated";
 
 import { colors, motion, palette } from "@/src/theme";
-import { FACE_LENGTH, FACE_PATH, MARK_DOT, MARK_VIEWBOX, markMetrics } from "@/src/theme/mark";
+import { MARK_DOT, MARK_LENGTH, MARK_PATH, MARK_VIEWBOX, markMetrics } from "@/src/theme/mark";
 
 const AnimatedPath = Animated.createAnimatedComponent(Path);
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
 type Props = {
   size?: number;
-  /** Sur le bloc terre, le contour passe en creme. Le corail ne change jamais. */
+  /** Sur le bloc terre, le trait passe en creme. Le corail ne change jamais. */
   onDark?: boolean;
-  /** Rejoue le balayage. Change la valeur pour relancer. */
+  /** Rejoue le trace. Change la valeur pour relancer. */
   playKey?: number;
   style?: StyleProp<ViewStyle>;
 };
 
 /**
- * Le symbole SKYN, anime.
+ * Le S de SKYN, anime.
  *
- * Le trace balaie le contour d'un visage et s'arrete avant d'avoir referme ;
- * le point corail se pose alors dans la breche, et une onde unique part de lui.
- * C'est la sequence du produit en trois temps : il balaie, il trouve, il
- * signale. Elle ne boucle jamais — une conclusion ne se repete pas.
+ * Le point corail se pose d'abord, puis le S se deroule A PARTIR de lui : le
+ * trace commence exactement au terminus superieur, celui dont le point est le
+ * prolongement. La lettre n'apparait pas, elle est lancee.
+ *
+ * La sequence ne boucle jamais. Une signature ne se repete pas.
  */
 export function SkynMark({ size = 64, onDark, playKey = 0, style }: Props) {
   const { stroke, dot } = markMetrics(size);
   const strokeColor = onDark ? palette.creme : palette.terre;
 
-  const sweep = useSharedValue(0);
   const drop = useSharedValue(0);
-  const halo = useSharedValue(0);
+  const draw = useSharedValue(0);
   const reduced = useReducedMotion();
 
   useEffect(() => {
     if (reduced) {
-      // La marque se pose entiere : le trace ne se joue pas, l'onde non plus.
-      sweep.value = 1;
+      // Le mouvement est coupe, pas le contenu : la marque se pose entiere.
       drop.value = 1;
-      halo.value = 0;
+      draw.value = 1;
       return;
     }
-    sweep.value = 0;
     drop.value = 0;
-    halo.value = 0;
-
-    sweep.value = withTiming(1, {
-      duration: motion.sweep,
-      easing: Easing.bezier(0.33, 1, 0.68, 1),
-    });
-    // Le point se pose juste avant que le balayage se referme.
-    drop.value = withDelay(880, withSpring(1, motion.springDrop));
-    halo.value = withDelay(1080, withTiming(1, { duration: 760, easing: Easing.out(Easing.quad) }));
-  }, [playKey, reduced, sweep, drop, halo]);
-
-  const sweepProps = useAnimatedProps(() => ({
-    strokeDashoffset: FACE_LENGTH * (1 - sweep.value),
-  }));
+    draw.value = 0;
+    drop.value = withSpring(1, motion.springDrop);
+    draw.value = withDelay(
+      210,
+      withTiming(1, { duration: motion.sweep, easing: Easing.bezier(0.33, 1, 0.68, 1) }),
+    );
+  }, [playKey, reduced, drop, draw]);
 
   const dotProps = useAnimatedProps(() => ({ r: dot * drop.value }));
 
-  const haloProps = useAnimatedProps(() => ({
-    r: dot * (1 + halo.value * 1.9),
-    // L'onde s'eteint en s'ecartant : elle n'existe qu'entre 0 et 1.
-    opacity: halo.value === 0 || halo.value === 1 ? 0 : 0.55 * (1 - halo.value),
+  const drawProps = useAnimatedProps(() => ({
+    strokeDashoffset: MARK_LENGTH * (1 - draw.value),
+    opacity: draw.value > 0 ? 1 : 0,
   }));
 
   return (
-    <Svg
-      width={size}
-      height={size}
-      viewBox={`0 0 ${MARK_VIEWBOX} ${MARK_VIEWBOX}`}
-      style={style}
-    >
+    <Svg width={size} height={size} viewBox={`0 0 ${MARK_VIEWBOX} ${MARK_VIEWBOX}`} style={style}>
       <AnimatedPath
-        d={FACE_PATH}
+        d={MARK_PATH}
         fill="none"
         stroke={strokeColor}
         strokeWidth={stroke}
         strokeLinecap="round"
-        strokeDasharray={FACE_LENGTH}
-        animatedProps={sweepProps}
-      />
-      <AnimatedCircle
-        cx={MARK_DOT.x}
-        cy={MARK_DOT.y}
-        fill="none"
-        stroke={colors.accent}
-        strokeWidth={1.2}
-        animatedProps={haloProps}
+        strokeDasharray={MARK_LENGTH}
+        animatedProps={drawProps}
       />
       <AnimatedCircle
         cx={MARK_DOT.x}
@@ -122,14 +99,9 @@ export function SkynMarkStill({
 }) {
   const { stroke, dot } = markMetrics(size);
   return (
-    <Svg
-      width={size}
-      height={size}
-      viewBox={`0 0 ${MARK_VIEWBOX} ${MARK_VIEWBOX}`}
-      style={style}
-    >
+    <Svg width={size} height={size} viewBox={`0 0 ${MARK_VIEWBOX} ${MARK_VIEWBOX}`} style={style}>
       <Path
-        d={FACE_PATH}
+        d={MARK_PATH}
         fill="none"
         stroke={onDark ? palette.creme : palette.terre}
         strokeWidth={stroke}

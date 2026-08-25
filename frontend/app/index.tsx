@@ -9,26 +9,24 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 
-import { INTRO_DURATION, MarkIntro } from "@/src/components/brand/MarkIntro";
+import { INTRO_DURATION, WaveIntro } from "@/src/components/brand/WaveIntro";
 import { track } from "@/src/services/analytics";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { colors, motion, type } from "@/src/theme";
 
-/** Le mot se pose juste avant que le contour finisse de se refermer. */
-const WORD_AT = INTRO_DURATION - 160;
+/** Le mot se pose une fois le S deroule, pas pendant. */
+const WORD_AT = INTRO_DURATION - 480;
 
-/** Le bloc commence a partir pendant que le mot finit : pas de temps mort. */
-const EXIT_AT = WORD_AT + 520;
-const EXIT_MS = 260;
-
-/** Le temps que toute la sequence se joue avant de basculer. */
+/** Le bloc part pendant que le mot finit : pas de temps mort. */
+const EXIT_AT = INTRO_DURATION - 60;
+const EXIT_MS = 280;
 const HOLD = EXIT_AT + EXIT_MS;
 
 export default function Index() {
   const router = useRouter();
   const { loading, user, profile } = useAuth();
 
-  // Les lettres s'ecartent a leur place pendant que le trace se termine :
+  // Les lettres s'ecartent a leur place pendant que la maree se retire :
   // le mot se pose, il n'apparait pas.
   const word = useSharedValue(0);
   // Le bloc entier s'eleve et s'efface : l'ecran suivant prend sa suite au
@@ -56,19 +54,15 @@ export default function Index() {
       opacity: word.value,
       letterSpacing: tracking,
       // La chasse ajoute une gouttiere APRES le N : sans compensation a
-      // gauche, le mot se decale visuellement du symbole a mesure qu'il
-      // s'ecarte, et l'ensemble finit desaxe.
+      // gauche, le mot se decale du symbole a mesure qu'il s'ecarte.
       paddingLeft: tracking,
-      transform: [{ translateY: (1 - word.value) * 6 }],
+      transform: [{ translateY: (1 - word.value) * 8 }],
     };
   });
 
   const exitStyle = useAnimatedStyle(() => ({
     opacity: 1 - exit.value,
-    transform: [
-      { translateY: -exit.value * 18 },
-      { scale: 1 - exit.value * 0.03 },
-    ],
+    transform: [{ translateY: -exit.value * 20 }, { scale: 1 - exit.value * 0.04 }],
   }));
 
   useEffect(() => {
@@ -91,29 +85,28 @@ export default function Index() {
   }, [loading, user, profile, router]);
 
   return (
-    <View style={styles.container} testID="splash-screen">
-      <Animated.View style={[styles.block, exitStyle]}>
-        <MarkIntro size={92} />
-        {/* Le dessin deborde de son carre pour laisser entrer le point ;
-            on remonte le mot de ce debord pour qu'il reste colle a la marque. */}
+    <Animated.View style={[styles.container, exitStyle]} testID="splash-screen">
+      <WaveIntro markSize={96} />
+      <View style={styles.wordSlot} pointerEvents="none">
         <Animated.Text style={[styles.word, wordStyle]}>SKYN</Animated.Text>
-      </Animated.View>
-    </View>
+      </View>
+    </Animated.View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.bg,
+  container: { flex: 1, backgroundColor: colors.bg },
+  // Le mot vit sous le symbole, qui est centre dans tout l'ecran : on le pose
+  // dans la moitie basse plutot que de le coller au dessin.
+  wordSlot: {
+    ...StyleSheet.absoluteFillObject,
     alignItems: "center",
     justifyContent: "center",
+    paddingTop: 138,
   },
-  block: { alignItems: "center" },
   word: {
     fontFamily: type.wordmark.fontFamily,
     fontSize: 22,
     color: colors.fg,
-    marginTop: -20,
   },
 });

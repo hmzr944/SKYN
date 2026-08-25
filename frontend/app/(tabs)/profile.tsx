@@ -10,6 +10,7 @@ import { api } from "@/src/services/api";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { FadeIn } from "@/src/components/ui/FadeIn";
 import { AnimatedPressable } from "@/src/components/ui/AnimatedPressable";
+import { Chip } from "@/src/components/ui/Chip";
 import { HowItWorksModal } from "@/src/components/HowItWorksModal";
 
 const SKIN_TYPES = ["Normale", "Mixte", "Grasse", "Sèche"];
@@ -80,44 +81,30 @@ export default function ProfileScreen() {
         <FadeIn delay={120}>
           <Text style={styles.sectionTitle}>Mon type de peau</Text>
           <View style={styles.pillsRow}>
-            {SKIN_TYPES.map((type) => {
-              const selected = skinType === type;
-              return (
-                <AnimatedPressable
-                  key={type}
-                  testID={`skin-type-${type}`}
-                  style={[styles.pill, selected && styles.pillSelected]}
-                  scaleTo={0.96}
-                  onPress={() => selectSkinType(type)}
-                >
-                  <Text style={[styles.pillText, selected && styles.pillTextSelected]}>
-                    {type}
-                  </Text>
-                </AnimatedPressable>
-              );
-            })}
+            {SKIN_TYPES.map((type) => (
+              <Chip
+                key={type}
+                testID={`skin-type-${type}`}
+                label={type}
+                on={skinType === type}
+                onPress={() => selectSkinType(type)}
+              />
+            ))}
           </View>
         </FadeIn>
 
         <FadeIn delay={180}>
           <Text style={styles.sectionTitle}>Objectifs</Text>
           <View style={styles.pillsRow}>
-            {GOALS.map((goal) => {
-              const active = goals.includes(goal);
-              return (
-                <AnimatedPressable
-                  key={goal}
-                  testID={`goal-${goal}`}
-                  style={[styles.tag, active && styles.tagActive]}
-                  scaleTo={0.96}
-                  onPress={() => toggleGoal(goal)}
-                >
-                  <Text style={[styles.tagText, active && styles.tagTextActive]}>
-                    {goal}
-                  </Text>
-                </AnimatedPressable>
-              );
-            })}
+            {GOALS.map((goal) => (
+              <Chip
+                key={goal}
+                testID={`goal-${goal}`}
+                label={goal}
+                on={goals.includes(goal)}
+                onPress={() => toggleGoal(goal)}
+              />
+            ))}
           </View>
         </FadeIn>
 
@@ -217,44 +204,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     gap: spacing.s,
-  },
-  pill: {
-    minHeight: 44,
-    justifyContent: "center",
-    backgroundColor: colors.surface,
-    borderRadius: radius.pill,
-    paddingVertical: 10,
-    paddingHorizontal: spacing.m,
-  },
-  pillSelected: {
-    backgroundColor: colors.accent,
-  },
-  pillText: {
-    fontFamily: fonts.bodyMedium,
-    fontSize: 13,
-    color: colors.fgMuted,
-  },
-  pillTextSelected: {
-    color: colors.onAccent,
-  },
-  tag: {
-    minHeight: 44,
-    justifyContent: "center",
-    backgroundColor: colors.surface,
-    borderRadius: radius.pill,
-    paddingVertical: 10,
-    paddingHorizontal: spacing.m,
-  },
-  tagActive: {
-    backgroundColor: colors.ok,
-  },
-  tagText: {
-    fontFamily: fonts.bodyMedium,
-    fontSize: 13,
-    color: colors.fgMuted,
-  },
-  tagTextActive: {
-    color: colors.onOk,
   },
   list: {
     backgroundColor: colors.surface,

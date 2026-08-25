@@ -84,7 +84,9 @@ const SLIDES = [
     kicker: "05 · À VOUS DE JOUER",
     accent: "coral" as const,
     Illustration: CaptureIllustration,
-    title: "Prêt à découvrir\nvotre peau ?",
+    // L'onboarding passe AVANT la question du genre : impossible de s'accorder
+    // ici. La tournure evite donc l'accord plutot que de choisir au hasard.
+    title: "On découvre\nvotre peau ?",
     helper: "Créez votre dossier cutané chiffré pour commencer votre premier bilan.",
   },
 ] as const;

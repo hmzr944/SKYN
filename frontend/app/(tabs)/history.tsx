@@ -10,6 +10,7 @@ import { listScans, type ScanSummary } from "@/src/services/scanStore";
 import { FadeIn } from "@/src/components/ui/FadeIn";
 import { AnimatedPressable } from "@/src/components/ui/AnimatedPressable";
 import { ProgressTimeline } from "@/src/components/analysis/ProgressTimeline";
+import { Segmented } from "@/src/components/ui/Segmented";
 
 const FILTERS = [
   { label: "7j", days: 7 },
@@ -63,27 +64,16 @@ export default function HistoryScreen() {
       </FadeIn>
 
       <FadeIn delay={60}>
-        <View style={styles.filterRow}>
-          {FILTERS.map((f) => {
-            const active = filter === f.days;
-            return (
-              <AnimatedPressable
-                key={f.label}
-                testID={`history-filter-${f.days}`}
-                style={[styles.filterPill, active && styles.filterPillActive]}
-                scaleTo={0.96}
-                onPress={() => {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  setFilter(f.days);
-                }}
-              >
-                <Text style={[styles.filterText, active && styles.filterTextActive]}>
-                  {f.label}
-                </Text>
-              </AnimatedPressable>
-            );
-          })}
-        </View>
+        <Segmented
+          testIDPrefix="history-filter"
+          options={FILTERS.map((f) => ({ value: f.days, label: f.label }))}
+          value={filter}
+          onChange={(d) => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            setFilter(d);
+          }}
+          style={styles.filterRow}
+        />
       </FadeIn>
 
       {loading ? (
@@ -166,30 +156,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.m,
   },
   filterRow: {
-    flexDirection: "row",
-    gap: spacing.s,
     marginBottom: spacing.l,
-  },
-  filterPill: {
-    minWidth: 44,
-    alignItems: "center",
-    minHeight: 44,
-    justifyContent: "center",
-    backgroundColor: colors.surface,
-    borderRadius: radius.pill,
-    paddingVertical: 6,
-    paddingHorizontal: spacing.m,
-  },
-  filterPillActive: {
-    backgroundColor: colors.accent,
-  },
-  filterText: {
-    fontFamily: fonts.bodyMedium,
-    fontSize: 12,
-    color: colors.fgMuted,
-  },
-  filterTextActive: {
-    color: colors.onAccent,
   },
   listContent: { paddingBottom: spacing.xxl },
   card: {

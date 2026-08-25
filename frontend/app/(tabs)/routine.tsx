@@ -21,6 +21,7 @@ import { colors, fonts, spacing, radius, shadow } from "@/src/theme";
 import { FadeIn } from "@/src/components/ui/FadeIn";
 import { AnimatedPressable } from "@/src/components/ui/AnimatedPressable";
 import { SkynMark } from "@/src/components/brand/SkynMark";
+import { Segmented } from "@/src/components/ui/Segmented";
 import { IntroductionCard } from "@/src/components/IntroductionCard";
 import { JournalCard } from "@/src/components/JournalCard";
 import { STEP_LABEL } from "@/src/types/analysis";
@@ -39,6 +40,11 @@ import {
 } from "@/src/services/routineStore";
 
 const DAY_INITIALS = ["D", "L", "M", "M", "J", "V", "S"];
+
+const MOMENTS = [
+  { value: "am" as const, label: "Matin" },
+  { value: "pm" as const, label: "Soir" },
+];
 
 /* ------------------------------------------------------------------ */
 function StepRow({
@@ -224,26 +230,17 @@ export default function RoutineScreen() {
         {/* Aujourd'hui */}
         <FadeIn delay={80}>
           <View style={styles.card}>
+            <Text style={styles.cardEyebrow}>{"Aujourd'hui"}</Text>
             <View style={styles.cardHead}>
-              <Text style={styles.cardEyebrow}>{"Aujourd'hui"}</Text>
-              <View style={styles.segment}>
-                {(["am", "pm"] as const).map((m) => (
-                  <Pressable
-                    key={m}
-                    onPress={() => {
-                      Haptics.selectionAsync();
-                      setMoment(m);
-                    }}
-                    style={[styles.segmentBtn, moment === m && styles.segmentActive]}
-                  >
-                    <Text
-                      style={[styles.segmentText, moment === m && styles.segmentTextActive]}
-                    >
-                      {m === "am" ? "Matin" : "Soir"}
-                    </Text>
-                  </Pressable>
-                ))}
-              </View>
+              <Segmented
+                testIDPrefix="routine-moment"
+                options={MOMENTS}
+                value={moment}
+                onChange={(m) => {
+                  Haptics.selectionAsync();
+                  setMoment(m);
+                }}
+              />
             </View>
 
             <View style={styles.progressTrack}>
@@ -394,9 +391,6 @@ const styles = StyleSheet.create({
     ...shadow.card,
   },
   cardHead: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
     marginBottom: spacing.m,
   },
   cardEyebrow: {
@@ -407,16 +401,6 @@ const styles = StyleSheet.create({
     color: colors.fgDim,
   },
 
-  segment: {
-    flexDirection: "row",
-    backgroundColor: colors.surfaceSunken,
-    borderRadius: radius.pill,
-    padding: 3,
-  },
-  segmentBtn: { paddingHorizontal: spacing.m, paddingVertical: 6, borderRadius: radius.pill },
-  segmentActive: { backgroundColor: colors.fg },
-  segmentText: { fontFamily: fonts.bodyMedium, fontSize: 12, color: colors.fgMuted },
-  segmentTextActive: { color: colors.bg },
 
   progressTrack: {
     height: 5,

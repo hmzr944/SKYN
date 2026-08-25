@@ -23,6 +23,7 @@ import { AnimatedPressable } from "@/src/components/ui/AnimatedPressable";
 import { SkynLockup } from "@/src/components/brand/SkynLockup";
 import { SkynMarkStill } from "@/src/components/brand/SkynMark";
 import { AnimatedNumber } from "@/src/components/ui/AnimatedNumber";
+import { accord, useGenre } from "@/src/services/gender";
 
 const { width: SCREEN_W } = Dimensions.get("window");
 const CHART_W = SCREEN_W - spacing.xl * 2 - spacing.m * 2;
@@ -113,6 +114,7 @@ function todayLabel() {
 export default function DashboardScreen() {
   const router = useRouter();
   const { user } = useAuth();
+  const genre = useGenre();
   const [scans, setScans] = useState<ScanSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
@@ -212,7 +214,13 @@ export default function DashboardScreen() {
         ) : !last ? (
           <FadeIn delay={80}>
             <View style={styles.heroCard}>
-              <Text style={styles.heroTitle}>{"Prête pour votre\npremière analyse ?"}</Text>
+              <Text style={styles.heroTitle}>
+                {accord(genre, {
+                  f: "Prête pour votre\npremière analyse ?",
+                  m: "Prêt pour votre\npremière analyse ?",
+                  n: "On commence par\nune première analyse ?",
+                })}
+              </Text>
               <Text style={styles.heroSubtitle}>
                 {"Découvrez l'état réel de votre peau."}
               </Text>

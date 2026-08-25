@@ -1,9 +1,50 @@
 /**
- * La geometrie de la marque, partagee.
+ * La geometrie de la marque, et celle du scan.
  *
- * Le symbole et l'ecran d'analyse tracent le MEME contour : le logo n'illustre
- * pas le scan, il est le scan. C'est ce qui fait qu'une capture ressemble a la
- * marque et que la marque ressemble a ce que fait l'app.
+ * DEUX FORMES, deux roles, et il ne faut pas les confondre :
+ *
+ *   · Le S — c'est le LOGO. Il ne sert qu'a signer.
+ *   · L'ovale de visage — c'est un OUTIL. Il cadre un visage a l'ecran de
+ *     scan et sert de repere sur la cartographie. Il ne signe rien.
+ *
+ * Le logo etait auparavant cet ovale. C'etait elegant, mais un contour de
+ * visage sur un ecran d'accueil ne dit pas le nom de la marque, et il entrait
+ * en concurrence avec la fenetre de visee qui a exactement la meme forme.
+ */
+
+/**
+ * Le S.
+ *
+ * Pas la lettre d'une fonte : une courbe a tension variable, largement ouverte
+ * en haut et refermee court en bas, dessinee d'un seul trait. Le point corail
+ * est pose sur le PROLONGEMENT du terminus superieur — il n'est pas a cote du
+ * S, il vient d'en sortir. Un mouvement inscrit dans une forme immobile, et le
+ * point de depart tout trouve pour l'animation d'ouverture.
+ *
+ * Le trace commence a ce terminus : dessiner le S de 100 % a 0 % de decalage
+ * le fait donc naitre du point.
+ */
+export const MARK_PATH =
+  "M43,21 C38,11 25,9 19,17 C13,25 21,32 31,34 " +
+  "C42,36 46,42 42,48 C38,54 28,56 21,49";
+
+/**
+ * Longueur du trace, mesuree au navigateur (getTotalLength = 100,39) puis
+ * arrondie au-dessus : react-native-svg n'expose pas getTotalLength, et une
+ * valeur trop courte laisserait un bout de trait visible au repos.
+ */
+export const MARK_LENGTH = 100.5;
+
+/** Le point corail, sur la trajectoire du terminus superieur. */
+export const MARK_DOT = { x: 48.5, y: 14.5, r: 4.2 } as const;
+
+/** Encombrement visuel du logo, point et epaisseur de trait compris. */
+export const MARK_EXTENT = { x: 14.8, y: 10.3, w: 37.9, h: 45.3 } as const;
+/** Centre optique du logo, pour le centrer sans le decaler. */
+export const MARK_CENTER = { x: 33.8, y: 32.9 } as const;
+
+/**
+ * L'ovale de visage, cote outil.
  *
  * Repere : viewBox 0 0 64 64. Largeur aux tempes 36, hauteur 44 — les
  * proportions d'un visage. Le menton est large et arrondi : deux flancs qui
@@ -33,21 +74,21 @@ export const FACE_CLOSED =
   "C42,51.2 37.4,53.6 32,54.5 C26.6,53.6 22,51.2 19,47.6 " +
   "C15,42 13.6,33.5 14.5,26 C15.6,17.5 24,10.4 32,10.2 Z";
 
-/** Le point corail, dans la breche. */
-export const MARK_DOT = { x: 45, y: 16.5 } as const;
-
 /** Le repere du dessin : tout est exprime dans ce carre. */
 export const MARK_VIEWBOX = 64;
 
 /**
- * Le cap arrondi mange stroke/2 de chaque cote de la breche : plus le trait est
- * epais, plus le point doit grossir pour rester lisible en face de lui.
+ * Epaisseur du trait et taille du point, selon la taille de rendu.
+ *
+ * Plus le logo est petit, plus le trait doit epaissir en proportion : a 20 px,
+ * un trait a l'echelle exacte du dessin devient un cheveu et la forme
+ * disparait.
  */
 export function markMetrics(size: number) {
-  if (size < 24) return { stroke: 7.4, dot: 7.4 };
-  if (size < 34) return { stroke: 5.6, dot: 6 };
-  if (size < 56) return { stroke: 4.4, dot: 5.2 };
-  return { stroke: 3.4, dot: 4.6 };
+  if (size < 24) return { stroke: 6.6, dot: 5.6 };
+  if (size < 34) return { stroke: 5.4, dot: 5.0 };
+  if (size < 56) return { stroke: 4.6, dot: 4.6 };
+  return { stroke: 4.2, dot: 4.2 };
 }
 
 /**

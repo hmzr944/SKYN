@@ -14,7 +14,18 @@ import { motion } from "@/src/theme";
 type Props = {
   children: ReactNode;
   onPress?: () => void;
+  /** Style de la partie DESSINEE : fond, bordure, rembourrage. */
   style?: StyleProp<ViewStyle>;
+  /**
+   * Style de la BOITE, celle qui participe a la mise en page du parent.
+   *
+   * `style` est pose sur la vue interne, celle qui s'enfonce a l'appui : y
+   * mettre un `flex` ou une largeur n'a donc aucun effet, puisque c'est la
+   * vue EXTERIEURE qui est l'enfant du parent. La distinction n'est pas un
+   * detail — un `flex: 1` passe dans `style` est silencieusement ignore, et
+   * l'element se dimensionne sur son contenu sans que rien ne le signale.
+   */
+  containerStyle?: StyleProp<ViewStyle>;
   scaleTo?: number;
   disabled?: boolean;
   /** Retour haptique a l'appui. Coupe-le pour les elements secondaires. */
@@ -64,6 +75,7 @@ export function AnimatedPressable({
   children,
   onPress,
   style,
+  containerStyle,
   scaleTo = 0.96,
   disabled,
   haptic = "light",
@@ -84,6 +96,7 @@ export function AnimatedPressable({
   return (
     <Pressable
       testID={testID}
+      style={containerStyle as never}
       onPress={onPress}
       onLayout={onLayout}
       disabled={disabled}

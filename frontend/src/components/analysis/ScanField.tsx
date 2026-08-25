@@ -69,20 +69,30 @@ const OVAL_CY = OVAL.y + OVAL.h / 2;
  */
 function frame(box?: FaceBox | null) {
   if (!box || !box.w || !box.h || !box.image_w || !box.image_h) {
-    // Sans la boite (analyses d'avant son ajout), on ne peut plus faire
-    // coincider photo et reperes : on replace les reperes sur le contour, ce
-    // qui reste anatomiquement juste, et on renonce a la photo dessous.
-    return { known: false, s: 1, imgX: 0, imgY: 0, imgW: MARK_VIEWBOX, imgH: MARK_VIEWBOX,
-             markX: (nx: number) => OVAL.x + nx * OVAL.w,
-             markY: (ny: number) => OVAL.y + ny * OVAL.h,
-             markR: (nr: number) => nr * OVAL.h };
+    // Pas encore de boite : l'analyse tourne toujours, ou c'est un scan
+    // enregistre avant son ajout. La photo s'affiche quand meme, cadree au
+    // plus juste sur le contour — c'est le navigateur qui fait le
+    // recouvrement, on n'a pas besoin de connaitre ses proportions.
+    //
+    // La version precedente n'affichait RIEN dans ce cas : pendant les trois
+    // premieres phases, on regardait un ovale gris en attendant. Or c'est
+    // precisement le moment ou l'on veut voir sa propre photo etre lue.
+    return {
+      known: false,
+      imgX: OVAL.x,
+      imgY: OVAL.y,
+      imgW: OVAL.w,
+      imgH: OVAL.h,
+      markX: (nx: number) => OVAL.x + nx * OVAL.w,
+      markY: (ny: number) => OVAL.y + ny * OVAL.h,
+      markR: (nr: number) => nr * OVAL.h,
+    };
   }
   // Recouvrement : la boite du visage couvre au moins celle du contour, le
   // debord est rogne par le contour lui-meme.
   const s = Math.max(OVAL.w / box.w, OVAL.h / box.h);
   return {
     known: true,
-    s,
     imgW: box.image_w * s,
     imgH: box.image_h * s,
     imgX: OVAL_CX - (box.x + box.w / 2) * s,
@@ -200,14 +210,16 @@ export function ScanField({ size, phase, imageB64, detections = [], faceBox, sty
         </Defs>
 
         <G clipPath="url(#skyn-face)">
-          {imageB64 && f.known ? (
+          {imageB64 ? (
             <SvgImage
               href={{ uri: `data:image/jpeg;base64,${imageB64}` }}
               x={f.imgX}
               y={f.imgY}
               width={f.imgW}
               height={f.imgH}
-              preserveAspectRatio="none"
+              // Cadrage exact quand la boite du visage est connue ; sinon on
+              // laisse le rendu recouvrir la fenetre lui-meme.
+              preserveAspectRatio={f.known ? "none" : "xMidYMid slice"}
               opacity={0.62}
             />
           ) : (
@@ -215,11 +227,7 @@ export function ScanField({ size, phase, imageB64, detections = [], faceBox, sty
           )}
 
           {/* Voile terre : la capture passe au second plan, le trace au premier. */}
-          <Path
-            d={FACE_CLOSED}
-            fill={palette.terre}
-            opacity={imageB64 && f.known ? 0.22 : 0.06}
-          />
+          <Path d={FACE_CLOSED} fill={palette.terre} opacity={imageB64 ? 0.22 : 0.06} />
 
           {/* La bande de lecture. */}
           <AnimatedRect
