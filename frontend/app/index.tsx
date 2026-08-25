@@ -9,13 +9,20 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 
-import { SkynMark } from "@/src/components/brand/SkynMark";
+import { INTRO_DURATION, MarkIntro } from "@/src/components/brand/MarkIntro";
 import { track } from "@/src/services/analytics";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { colors, motion, type } from "@/src/theme";
 
-/** Le temps que le symbole finisse de se tracer avant de basculer. */
-const HOLD = 1950;
+/** Le mot se pose juste avant que le contour finisse de se refermer. */
+const WORD_AT = INTRO_DURATION - 160;
+
+/** Le bloc commence a partir pendant que le mot finit : pas de temps mort. */
+const EXIT_AT = WORD_AT + 520;
+const EXIT_MS = 260;
+
+/** Le temps que toute la sequence se joue avant de basculer. */
+const HOLD = EXIT_AT + EXIT_MS;
 
 export default function Index() {
   const router = useRouter();
@@ -24,6 +31,9 @@ export default function Index() {
   // Les lettres s'ecartent a leur place pendant que le trace se termine :
   // le mot se pose, il n'apparait pas.
   const word = useSharedValue(0);
+  // Le bloc entier s'eleve et s'efface : l'ecran suivant prend sa suite au
+  // lieu de le remplacer d'un coup.
+  const exit = useSharedValue(0);
 
   useEffect(() => {
     track("app_opened");
@@ -31,15 +41,34 @@ export default function Index() {
 
   useEffect(() => {
     word.value = withDelay(
-      1020,
+      WORD_AT,
       withTiming(1, { duration: motion.slow, easing: Easing.out(Easing.cubic) }),
     );
-  }, [word]);
+    exit.value = withDelay(
+      EXIT_AT,
+      withTiming(1, { duration: EXIT_MS, easing: Easing.in(Easing.cubic) }),
+    );
+  }, [word, exit]);
 
-  const wordStyle = useAnimatedStyle(() => ({
-    opacity: word.value,
-    letterSpacing: 3 + word.value * 8,
-    transform: [{ translateY: (1 - word.value) * 6 }],
+  const wordStyle = useAnimatedStyle(() => {
+    const tracking = 3 + word.value * 8;
+    return {
+      opacity: word.value,
+      letterSpacing: tracking,
+      // La chasse ajoute une gouttiere APRES le N : sans compensation a
+      // gauche, le mot se decale visuellement du symbole a mesure qu'il
+      // s'ecarte, et l'ensemble finit desaxe.
+      paddingLeft: tracking,
+      transform: [{ translateY: (1 - word.value) * 6 }],
+    };
+  });
+
+  const exitStyle = useAnimatedStyle(() => ({
+    opacity: 1 - exit.value,
+    transform: [
+      { translateY: -exit.value * 18 },
+      { scale: 1 - exit.value * 0.03 },
+    ],
   }));
 
   useEffect(() => {
@@ -63,8 +92,12 @@ export default function Index() {
 
   return (
     <View style={styles.container} testID="splash-screen">
-      <SkynMark size={92} />
-      <Animated.Text style={[styles.word, wordStyle]}>SKYN</Animated.Text>
+      <Animated.View style={[styles.block, exitStyle]}>
+        <MarkIntro size={92} />
+        {/* Le dessin deborde de son carre pour laisser entrer le point ;
+            on remonte le mot de ce debord pour qu'il reste colle a la marque. */}
+        <Animated.Text style={[styles.word, wordStyle]}>SKYN</Animated.Text>
+      </Animated.View>
     </View>
   );
 }
@@ -75,11 +108,12 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bg,
     alignItems: "center",
     justifyContent: "center",
-    gap: 26,
   },
+  block: { alignItems: "center" },
   word: {
     fontFamily: type.wordmark.fontFamily,
     fontSize: 22,
     color: colors.fg,
+    marginTop: -20,
   },
 });

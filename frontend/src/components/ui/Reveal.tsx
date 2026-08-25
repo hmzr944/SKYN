@@ -1,8 +1,9 @@
 import { Children, ReactNode, isValidElement, useEffect } from "react";
-import { AccessibilityInfo, StyleProp, ViewStyle } from "react-native";
+import { StyleProp, ViewStyle } from "react-native";
 import Animated, {
   Easing,
   useAnimatedStyle,
+  useReducedMotion,
   useSharedValue,
   withDelay,
   withTiming,
@@ -24,27 +25,6 @@ type RevealProps = {
   style?: StyleProp<ViewStyle>;
 };
 
-/** Respecte "Reduire les animations" : on coupe le deplacement, pas le contenu. */
-function useReducedMotion() {
-  const reduced = useSharedValue(false);
-  useEffect(() => {
-    let alive = true;
-    AccessibilityInfo.isReduceMotionEnabled()
-      .then((on) => {
-        if (alive) reduced.value = on;
-      })
-      .catch(() => {});
-    const sub = AccessibilityInfo.addEventListener("reduceMotionChanged", (on) => {
-      reduced.value = on;
-    });
-    return () => {
-      alive = false;
-      sub.remove();
-    };
-  }, [reduced]);
-  return reduced;
-}
-
 /**
  * Entree directionnelle : l'element arrive d'ou il vient logiquement.
  * Vers le haut pour une carte qui monte dans la pile, depuis la gauche pour
@@ -60,6 +40,7 @@ export function Reveal({
   style,
 }: RevealProps) {
   const t = useSharedValue(0);
+  // Respecte "Reduire les animations" : on coupe le deplacement, pas le contenu.
   const reduced = useReducedMotion();
 
   useEffect(() => {
@@ -68,7 +49,7 @@ export function Reveal({
 
   const aStyle = useAnimatedStyle(() => {
     const rest = 1 - t.value;
-    const shift = reduced.value ? 0 : rest * distance;
+    const shift = reduced ? 0 : rest * distance;
     // Chaque entree de `transform` ne porte qu'une seule cle : RN refuse les
     // objets a cles optionnelles multiples.
     const transform: ({ translateX: number } | { translateY: number } | { scale: number })[] = [];
@@ -78,10 +59,10 @@ export function Reveal({
     else if (from === "left") transform.push({ translateX: shift });
     else if (from === "right") transform.push({ translateX: -shift });
 
-    if (scale && !reduced.value) transform.push({ scale: 0.96 + 0.04 * t.value });
+    if (scale && !reduced) transform.push({ scale: 0.96 + 0.04 * t.value });
 
     return { opacity: t.value, transform };
-  });
+  }, [reduced, distance, from, scale]);
 
   return <Animated.View style={[style, aStyle]}>{children}</Animated.View>;
 }

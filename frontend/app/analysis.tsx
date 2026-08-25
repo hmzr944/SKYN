@@ -11,7 +11,6 @@ import Animated, {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { ScanField } from "@/src/components/analysis/ScanField";
-import { BrandField } from "@/src/components/brand/BrandField";
 import { SkynLockup } from "@/src/components/brand/SkynLockup";
 import { AnimatedPressable } from "@/src/components/ui/AnimatedPressable";
 import { Reveal } from "@/src/components/ui/Reveal";
@@ -243,7 +242,6 @@ export default function AnalysisScreen() {
       </Reveal>
 
       <View style={styles.stage}>
-        <BrandField size={FIELD * 1.9} drift style={styles.brandField} />
         <ScanField
           size={FIELD}
           phase={phase}
@@ -318,7 +316,6 @@ const styles = StyleSheet.create({
     fontVariant: ["tabular-nums"],
   },
   stage: { alignItems: "center", gap: spacing.xl, paddingHorizontal: spacing.l },
-  brandField: { position: "absolute", top: -60 },
   field: { alignSelf: "center" },
   phaseBlock: { alignItems: "center", gap: spacing.xs },
   phaseTitle: { ...type.title, color: colors.fg, textAlign: "center" },

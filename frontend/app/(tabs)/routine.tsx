@@ -20,8 +20,8 @@ import Animated, {
 import { colors, fonts, spacing, radius, shadow } from "@/src/theme";
 import { FadeIn } from "@/src/components/ui/FadeIn";
 import { AnimatedPressable } from "@/src/components/ui/AnimatedPressable";
+import { SkynMark } from "@/src/components/brand/SkynMark";
 import { IntroductionCard } from "@/src/components/IntroductionCard";
-import { BrandField } from "@/src/components/brand/BrandField";
 import { JournalCard } from "@/src/components/JournalCard";
 import { STEP_LABEL } from "@/src/types/analysis";
 import type { ProductPick } from "@/src/types/analysis";
@@ -147,7 +147,7 @@ export default function RoutineScreen() {
     return (
       <SafeAreaView style={styles.container} edges={["top"]}>
         <View style={styles.empty}>
-          <BrandField size={280} drift style={styles.emptyField} />
+          <SkynMark size={76} style={styles.emptyMark} />
           <Text style={styles.emptyTitle}>Pas encore de routine</Text>
           <Text style={styles.emptyHelper}>
             {"Lancez un premier scan : votre routine du matin et du soir sera " +
@@ -316,7 +316,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     paddingHorizontal: spacing.l,
   },
-  emptyField: { position: "absolute", opacity: 0.9 },
+  emptyMark: { marginBottom: spacing.l },
   emptyCta: {
     marginTop: spacing.xl,
     backgroundColor: colors.accent,

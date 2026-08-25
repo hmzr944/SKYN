@@ -8,11 +8,12 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
-import { LinearGradient } from "expo-linear-gradient";
 import Animated, {
   useAnimatedStyle,
+  useReducedMotion,
   useSharedValue,
-  withRepeat,
+  withDelay,
+  withSpring,
   withTiming,
   Easing,
 } from "react-native-reanimated";
@@ -23,30 +24,49 @@ import { FadeIn } from "@/src/components/ui/FadeIn";
 import { SkynMark } from "@/src/components/brand/SkynMark";
 import { useAuth } from "@/src/contexts/AuthContext";
 
+/**
+ * Une lettre du mot, qui monte a sa place.
+ *
+ * Le mot ne s'affiche pas : il se compose. Chaque lettre arrive avec un
+ * decalage, de sorte que l'oeil suit la construction de gauche a droite au
+ * lieu de recevoir un bloc deja fait. C'est le seul endroit de l'app ou le
+ * logotype est a cette taille — il vaut la peine d'etre pose.
+ */
+function Letter({ char, index }: { char: string; index: number }) {
+  const t = useSharedValue(0);
+  const reduced = useReducedMotion();
+
+  useEffect(() => {
+    t.value = withDelay(340 + index * 90, withSpring(1, { damping: 15, stiffness: 170, mass: 0.9 }));
+  }, [t, index]);
+
+  const aStyle = useAnimatedStyle(() => ({
+    opacity: t.value,
+    transform: [{ translateY: reduced ? 0 : (1 - t.value) * 30 }],
+  }), [reduced]);
+
+  return (
+    <Animated.Text style={[styles.logo, aStyle]}>{char}</Animated.Text>
+  );
+}
+
 export default function AuthScreen() {
   const router = useRouter();
   const { continueAsGuest } = useAuth();
   const [starting, setStarting] = useState(false);
 
-  const blobT = useSharedValue(0);
+  // Le filet se trace au lieu de s'allumer : un trait qui apparait d'un bloc
+  // n'a pas ete pose par quelqu'un, il a ete affiche.
+  const rule = useSharedValue(0);
   useEffect(() => {
-    blobT.value = withRepeat(
-      withTiming(1, { duration: 6000, easing: Easing.inOut(Easing.sin) }),
-      -1,
-      true,
+    rule.value = withDelay(
+      760,
+      withTiming(1, { duration: 460, easing: Easing.out(Easing.cubic) }),
     );
-  }, [blobT]);
-  const blobStyleA = useAnimatedStyle(() => ({
-    transform: [
-      { translateY: blobT.value * -18 },
-      { scale: 1 + blobT.value * 0.06 },
-    ],
-  }));
-  const blobStyleB = useAnimatedStyle(() => ({
-    transform: [
-      { translateY: blobT.value * 16 },
-      { scale: 1 - blobT.value * 0.05 },
-    ],
+  }, [rule]);
+  const ruleStyle = useAnimatedStyle(() => ({
+    opacity: rule.value > 0 ? 1 : 0,
+    transform: [{ scaleX: rule.value }],
   }));
 
   const startOnboarding = () => {
@@ -57,33 +77,17 @@ export default function AuthScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={["top", "bottom"]}>
-      {/* Decorative animated blobs */}
-      <Animated.View style={[styles.blob, styles.blobA, blobStyleA]} pointerEvents="none">
-        <LinearGradient
-          colors={[colors.accent, "rgba(255,107,74,0)"]}
-          style={styles.blobFill}
-          start={{ x: 0.3, y: 0.2 }}
-          end={{ x: 1, y: 1 }}
-        />
-      </Animated.View>
-      <Animated.View style={[styles.blob, styles.blobB, blobStyleB]} pointerEvents="none">
-        <LinearGradient
-          colors={[colors.accentSoft, "rgba(255, 77, 109, 0)"]}
-          style={styles.blobFill}
-          start={{ x: 0.2, y: 0.2 }}
-          end={{ x: 1, y: 1 }}
-        />
-      </Animated.View>
-
       {/* Hero */}
       <View style={styles.hero}>
         <FadeIn delay={80} distance={18}>
           <SkynMark size={84} style={{ alignSelf: "center", marginBottom: spacing.l }} />
-          <Text style={styles.logo}>SKYN</Text>
         </FadeIn>
-        <FadeIn delay={200}>
-          <View style={styles.hairline} />
-        </FadeIn>
+        <View style={styles.logoRow}>
+          {"SKYN".split("").map((letter, i) => (
+            <Letter key={i} char={letter} index={i} />
+          ))}
+        </View>
+        <Animated.View style={[styles.hairline, ruleStyle]} />
         <FadeIn delay={260}>
           <Text style={styles.tagline}>{"L'analyse cutanée éditoriale"}</Text>
         </FadeIn>
@@ -139,11 +143,6 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     overflow: "hidden",
   },
-  blob: {
-    position: "absolute",
-    borderRadius: 999,
-    overflow: "hidden",
-  },
   guestBtn: { alignItems: "center", paddingVertical: spacing.m },
   guestBtnText: {
     fontFamily: fonts.bodyMedium,
@@ -151,9 +150,6 @@ const styles = StyleSheet.create({
     color: colors.fgMuted,
     textDecorationLine: "underline",
   },
-  blobFill: { flex: 1, borderRadius: 999 },
-  blobA: { width: 280, height: 280, top: -80, right: -90, opacity: 0.35 },
-  blobB: { width: 240, height: 240, bottom: 60, left: -100, opacity: 0.3 },
   hero: {
     marginTop: spacing.xxxl + spacing.xxl,
     alignItems: "center",
@@ -162,12 +158,13 @@ const styles = StyleSheet.create({
     fontFamily: fonts.logo,
     fontSize: 62,
     color: colors.fg,
-    letterSpacing: 13,
-    // La chasse ajoute une gouttiere apres la derniere lettre : on la
-    // compense a gauche pour que le mot soit optiquement centre.
-    paddingLeft: 13,
   },
+  // La chasse est portee par l'espacement de la rangee, pas par la lettre :
+  // ainsi il n'y a pas de gouttiere apres le N, et le mot est centre sans
+  // compensation.
+  logoRow: { flexDirection: "row", justifyContent: "center", gap: 13 },
   hairline: {
+    alignSelf: "center",
     width: 48,
     height: 2,
     backgroundColor: colors.accent,

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import {
   View,
   Text,
@@ -10,16 +10,17 @@ import {
   ActivityIndicator,
   Platform,
   useWindowDimensions,
+  type StyleProp,
+  type ViewStyle,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
-import { LinearGradient } from "expo-linear-gradient";
 import Animated, {
+  type SharedValue,
+  useAnimatedRef,
+  useAnimatedScrollHandler,
   useAnimatedStyle,
   useSharedValue,
-  withRepeat,
-  withTiming,
-  Easing,
 } from "react-native-reanimated";
 
 import { useRouter } from "expo-router";
@@ -88,9 +89,37 @@ const SLIDES = [
   },
 ] as const;
 
+/**
+ * Une couche de la page, decalee a sa propre vitesse.
+ *
+ * `rate` dit a quelle profondeur elle se trouve : positif, elle suit le
+ * defilement et parait loin ; negatif, elle le devance et parait proche. A
+ * zero, elle est solidaire de la page.
+ */
+function Parallax({
+  scrollX,
+  index,
+  width,
+  rate,
+  style,
+  children,
+}: {
+  scrollX: SharedValue<number>;
+  index: number;
+  width: number;
+  rate: number;
+  style?: StyleProp<ViewStyle>;
+  children: React.ReactNode;
+}) {
+  const aStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: (scrollX.value - index * width) * rate }],
+  }));
+  return <Animated.View style={[style, aStyle]} pointerEvents="none">{children}</Animated.View>;
+}
+
 export default function OnboardingScreen() {
   const { width: SCREEN_W, height: SCREEN_H } = useWindowDimensions();
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useAnimatedRef<Animated.ScrollView>();
   const [page, setPage] = useState(0);
   const { busy, error, handleGoogle } = useProviderAuth();
   const { continueAsGuest } = useAuth();
@@ -128,31 +157,16 @@ export default function OnboardingScreen() {
   // glyphe, ce qui ressemblait a un bug d'affichage plutot qu'a un parti pris.
   const watermarkSize = Math.round(Math.min(SCREEN_W * 0.62, 240));
 
-  // Meme probleme pour les bulles decoratives : 280 px fixes sur un ecran de
-  // 320 px recouvraient tout le coin superieur et passaient derriere le texte.
-  const blobA = Math.round(SCREEN_W * 0.78);
-  const blobB = Math.round(SCREEN_W * 0.66);
-
-  const blobT = useSharedValue(0);
-  useEffect(() => {
-    blobT.value = withRepeat(
-      withTiming(1, { duration: 6000, easing: Easing.inOut(Easing.sin) }),
-      -1,
-      true,
-    );
-  }, [blobT]);
-  const blobStyleA = useAnimatedStyle(() => ({
-    transform: [
-      { translateY: blobT.value * -18 },
-      { scale: 1 + blobT.value * 0.06 },
-    ],
-  }));
-  const blobStyleB = useAnimatedStyle(() => ({
-    transform: [
-      { translateY: blobT.value * 16 },
-      { scale: 1 - blobT.value * 0.05 },
-    ],
-  }));
+  // Position du pager, suivie image par image sur le thread d'animation. Elle
+  // sert a decaler les couches de chaque page a des vitesses differentes : le
+  // filigrane derriere, l'illustration devant. Une page qui glisse d'un bloc
+  // est un changement d'ecran ; des couches qui glissent a des vitesses
+  // differentes donnent une profondeur, et c'est ce qui fait qu'on sent le
+  // deplacement au lieu de le constater.
+  const scrollX = useSharedValue(0);
+  const onScroll = useAnimatedScrollHandler((e) => {
+    scrollX.value = e.contentOffset.x;
+  });
 
   const goToPage = (p: number) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -174,40 +188,6 @@ export default function OnboardingScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={["top", "bottom"]}>
-      {/* Decorative animated blobs */}
-      <Animated.View
-        style={[
-          styles.blob,
-          styles.blobA,
-          { width: blobA, height: blobA, top: -blobA * 0.32, right: -blobA * 0.30 },
-          blobStyleA,
-        ]}
-        pointerEvents="none"
-      >
-        <LinearGradient
-          colors={[colors.accent, "rgba(255,77,109,0)"]}
-          style={styles.blobFill}
-          start={{ x: 0.3, y: 0.2 }}
-          end={{ x: 1, y: 1 }}
-        />
-      </Animated.View>
-      <Animated.View
-        style={[
-          styles.blob,
-          styles.blobB,
-          { width: blobB, height: blobB, bottom: blobB * 0.22, left: -blobB * 0.42 },
-          blobStyleB,
-        ]}
-        pointerEvents="none"
-      >
-        <LinearGradient
-          colors={[colors.accentSoft, "rgba(255, 77, 109, 0)"]}
-          style={styles.blobFill}
-          start={{ x: 0.2, y: 0.2 }}
-          end={{ x: 1, y: 1 }}
-        />
-      </Animated.View>
-
       {/* Header */}
       <View style={styles.header}>
         <SkynLockup size={24} still />
@@ -228,12 +208,14 @@ export default function OnboardingScreen() {
       </View>
 
       {/* Pages */}
-      <ScrollView
+      <Animated.ScrollView
         ref={scrollRef}
         horizontal
         pagingEnabled
         showsHorizontalScrollIndicator={false}
         onMomentumScrollEnd={onMomentumEnd}
+        onScroll={onScroll}
+        scrollEventThrottle={16}
         scrollEnabled={false}
         style={{ flex: 1 }}
       >
@@ -260,16 +242,22 @@ export default function OnboardingScreen() {
                 ]}
               >
                 {/* Filigrane numéroté — signature récurrente, jamais identique */}
-                <Text
-                  style={[
-                    styles.watermark,
-                    { fontSize: watermarkSize, letterSpacing: -watermarkSize * 0.038 },
-                    isCover && styles.watermarkCover,
-                  ]}
-                  pointerEvents="none"
+                <Parallax
+                  scrollX={scrollX}
+                  index={i}
+                  width={SCREEN_W}
+                  rate={0.32}
+                  style={[styles.watermarkLayer, isCover && styles.watermarkCover]}
                 >
-                  {slide.kicker.slice(0, 2)}
-                </Text>
+                  <Text
+                    style={[
+                      styles.watermark,
+                      { fontSize: watermarkSize, letterSpacing: -watermarkSize * 0.038 },
+                    ]}
+                  >
+                    {slide.kicker.slice(0, 2)}
+                  </Text>
+                </Parallax>
 
                 <FadeIn distance={10}>
                   <Text style={[styles.kicker, { color: kickerColor }]}>{slide.kicker}</Text>
@@ -395,7 +383,7 @@ export default function OnboardingScreen() {
             </ScrollView>
           );
         })}
-      </ScrollView>
+      </Animated.ScrollView>
 
       {/* Barre de navigation — identique sur les cinq écrans.
           Auparavant la dernière slide remplaçait cette barre par les seuls
@@ -509,10 +497,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
     alignSelf: "center",
   },
-  watermark: {
+  watermarkLayer: {
     position: "absolute",
     top: -18,
     alignSelf: "center",
+  },
+  watermark: {
     fontFamily: fonts.heading,
     color: colors.fg,
     opacity: 0.035,

@@ -1,6 +1,6 @@
 import * as Haptics from "expo-haptics";
 import { ReactNode } from "react";
-import { Platform, StyleProp, ViewStyle } from "react-native";
+import { LayoutChangeEvent, Platform, StyleProp, ViewStyle } from "react-native";
 import { Pressable } from "react-native-gesture-handler";
 import Animated, {
   useAnimatedStyle,
@@ -19,6 +19,8 @@ type Props = {
   disabled?: boolean;
   /** Retour haptique a l'appui. Coupe-le pour les elements secondaires. */
   haptic?: false | "light" | "medium" | "success";
+  /** Mesure de la boite non transformee — l'echelle d'appui ne la fausse pas. */
+  onLayout?: (e: LayoutChangeEvent) => void;
   testID?: string;
 };
 
@@ -46,6 +48,7 @@ export function AnimatedPressable({
   scaleTo = 0.96,
   disabled,
   haptic = "light",
+  onLayout,
   testID,
 }: Props) {
   const scale = useSharedValue(1);
@@ -58,6 +61,7 @@ export function AnimatedPressable({
     <Pressable
       testID={testID}
       onPress={onPress}
+      onLayout={onLayout}
       disabled={disabled}
       onPressIn={() => {
         if (haptic) tap(haptic);

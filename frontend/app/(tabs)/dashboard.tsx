@@ -1,5 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
 import { View, Text, StyleSheet, ScrollView, Dimensions, ActivityIndicator } from "react-native";
+import Animated, {
+  Extrapolation,
+  interpolate,
+  useAnimatedScrollHandler,
+  useAnimatedStyle,
+  useSharedValue,
+} from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
 import * as Haptics from "expo-haptics";
@@ -11,14 +18,18 @@ import { listScans, type ScanSummary } from "@/src/services/scanStore";
 import { CONCERN_LABEL, SKIN_TYPE_LABEL } from "@/src/types/analysis";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { FadeIn } from "@/src/components/ui/FadeIn";
+import { Stagger } from "@/src/components/ui/Reveal";
 import { AnimatedPressable } from "@/src/components/ui/AnimatedPressable";
-import { BrandField } from "@/src/components/brand/BrandField";
 import { SkynLockup } from "@/src/components/brand/SkynLockup";
+import { SkynMarkStill } from "@/src/components/brand/SkynMark";
 import { AnimatedNumber } from "@/src/components/ui/AnimatedNumber";
 
 const { width: SCREEN_W } = Dimensions.get("window");
 const CHART_W = SCREEN_W - spacing.xl * 2 - spacing.m * 2;
 const CHART_H = 110;
+
+/** Hauteur de la barre compacte : elle sort d'exactement sa propre hauteur. */
+const COMPACT_H = 48;
 
 const TIPS = [
   "Hydratez votre peau matin et soir avec une crème adaptée à votre type de peau.",
@@ -134,6 +145,21 @@ export default function DashboardScreen() {
     router.push("/camera");
   };
 
+  // La position de defilement pilote la barre compacte. Elle vit sur le thread
+  // d'animation : la barre suit le doigt image par image, sans passer par React.
+  const scrollY = useSharedValue(0);
+  const onScroll = useAnimatedScrollHandler((e) => {
+    scrollY.value = e.contentOffset.y;
+  });
+
+  const compactStyle = useAnimatedStyle(() => {
+    const p = interpolate(scrollY.value, [56, 116], [0, 1], Extrapolation.CLAMP);
+    return {
+      opacity: p,
+      transform: [{ translateY: -COMPACT_H * (1 - p) }],
+    };
+  });
+
   const last = scans[0];
   const previous = scans[1];
   const delta = last && previous ? last.global_score - previous.global_score : null;
@@ -144,9 +170,22 @@ export default function DashboardScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
-      {/* Le releve occupe le vide en haut a droite sans jamais passer devant. */}
-      <BrandField size={300} drift withPoint style={styles.field} />
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+      {/* La barre compacte descend quand la grande salutation est passee : le
+          contexte ne disparait pas, il change de forme. C'est un objet qui se
+          deplace en reponse au doigt, pas une apparition decidee a l'avance. */}
+      <Animated.View style={[styles.compact, compactStyle]} pointerEvents="none">
+        <SkynMarkStill size={20} />
+        <Text style={styles.compactText} numberOfLines={1}>
+          Bonjour, {firstName}.
+        </Text>
+      </Animated.View>
+
+      <Animated.ScrollView
+        onScroll={onScroll}
+        scrollEventThrottle={16}
+        contentContainerStyle={styles.scroll}
+        showsVerticalScrollIndicator={false}
+      >
         {/* Header */}
         <FadeIn distance={10}>
           <View style={styles.headerRow}>
@@ -210,7 +249,7 @@ export default function DashboardScreen() {
                   </Text>
                 ) : null}
               </View>
-              <View style={styles.pillsRow}>
+              <Stagger style={styles.pillsRow} from="left" distance={18} delay={220} step={70}>
                 <View style={styles.pill}>
                   <View style={styles.pillDot} />
                   <Text style={styles.pillLabel}>{last.severity_label}</Text>
@@ -225,7 +264,7 @@ export default function DashboardScreen() {
                   <Text style={styles.pillLabel}>Lésions</Text>
                   <Text style={styles.pillValue}>{last.lesion_total}</Text>
                 </View>
-              </View>
+              </Stagger>
               {last.top_concerns.length > 0 ? (
                 <Text style={styles.scoreConcerns} numberOfLines={1}>
                   {last.top_concerns.slice(0, 3).map((c) => CONCERN_LABEL[c]).join(" · ")}
@@ -277,14 +316,34 @@ export default function DashboardScreen() {
             </AnimatedPressable>
           </FadeIn>
         ) : null}
-      </ScrollView>
+      </Animated.ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  field: { position: "absolute", top: -70, right: -110 },
   container: { flex: 1, backgroundColor: colors.bg },
+  compact: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 5,
+    height: COMPACT_H,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.s,
+    paddingHorizontal: spacing.xl,
+    backgroundColor: colors.bg,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.borderSubtle,
+  },
+  compactText: {
+    fontFamily: fonts.headingMedium,
+    fontSize: 15,
+    color: colors.fg,
+    letterSpacing: -0.2,
+  },
   scroll: {
     paddingHorizontal: spacing.xl,
     paddingTop: spacing.m,
