@@ -31,7 +31,6 @@ import type { FaceBox } from "@/src/types/analysis";
 const AnimatedPath = Animated.createAnimatedComponent(Path);
 const AnimatedRect = Animated.createAnimatedComponent(Rect);
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
-const AnimatedG = Animated.createAnimatedComponent(G);
 
 export type Detection = { x: number; y: number; radius?: number };
 
@@ -98,8 +97,12 @@ function frame(box?: FaceBox | null) {
  *
  * C'est le symbole de la marque, agrandi et pose sur la capture : meme contour,
  * meme breche. Le trace tourne autour du visage pendant que la bande de lecture
- * le parcourt de haut en bas, puis les zones s'allument une par une et les
- * reperes corail se posent la ou le moteur a trouve quelque chose.
+ * le parcourt de haut en bas, puis les reperes corail se posent la ou le moteur
+ * a trouve quelque chose.
+ *
+ * Il portait aussi cinq cercles blancs censes montrer le decoupage en zones.
+ * Ils etaient a des positions fixes pendant qu'un texte annonçait treize
+ * regions : ils n'indiquaient rien, et encombraient la capture.
  *
  * La legere rotation en Y n'est pas un effet : elle donne au contour l'epaisseur
  * d'un volume, pour qu'on lise une surface examinee sous plusieurs angles
@@ -112,8 +115,6 @@ export function ScanField({ size, phase, imageB64, detections = [], faceBox, sty
   const sweep = useSharedValue(0);
   // La bande de lecture descend puis remonte.
   const band = useSharedValue(0);
-  // L'ouverture des zones, une fois le mapping atteint.
-  const zones = useSharedValue(0);
   // La pose des reperes.
   const marks = useSharedValue(0);
   // L'oscillation du volume.
@@ -142,13 +143,12 @@ export function ScanField({ size, phase, imageB64, detections = [], faceBox, sty
   }, [sweep, band, tilt]);
 
   useEffect(() => {
-    // Les zones s'ouvrent au mapping, les reperes se posent aux patterns.
-    zones.value = withTiming(phase >= 1 ? 1 : 0, { duration: motion.slow });
+    // Les reperes se posent a la phase des motifs, pas avant.
     marks.value = withDelay(
       phase >= 2 ? 120 : 0,
       withSpring(phase >= 2 ? 1 : 0, motion.springDrop),
     );
-  }, [phase, zones, marks]);
+  }, [phase, marks]);
 
   const contourProps = useAnimatedProps(() => ({
     strokeDashoffset: FACE_LENGTH * (1 - sweep.value),
@@ -159,10 +159,6 @@ export function ScanField({ size, phase, imageB64, detections = [], faceBox, sty
     y: -6 + band.value * (MARK_VIEWBOX + 2),
   }));
 
-  // Les reperes n'apparaissent qu'a partir du decoupage : avant, il n'y a
-  // rien a montrer, et des points poses trop tot laisseraient croire que le
-  // moteur a conclu avant d'avoir lu.
-  const markGroupProps = useAnimatedProps(() => ({ opacity: zones.value }));
 
   const tiltStyle = useAnimatedStyle(() => ({
     transform: [
@@ -220,12 +216,15 @@ export function ScanField({ size, phase, imageB64, detections = [], faceBox, sty
           />
 
           {/* Les reperes vivent DANS le contour : rien ne peut se poser hors
-              du visage, meme si une coordonnee derape. */}
-          <AnimatedG animatedProps={markGroupProps as never}>
-            {list.map((d, i) => (
-              <DetectionMark key={i} d={d} progress={marks} index={i} frame={f} />
-            ))}
-          </AnimatedG>
+              du visage, meme si une coordonnee derape.
+
+              Pas de groupe anime autour d'eux : leur apparition est deja
+              portee par `marks`, qui vaut zero avant la phase des motifs. Un
+              groupe SVG dont on animerait l'opacite ajouterait une couche dont
+              rien ne garantit qu'elle se propage pareil sur les trois cibles. */}
+          {list.map((d, i) => (
+            <DetectionMark key={i} d={d} progress={marks} index={i} frame={f} />
+          ))}
         </G>
 
         {/* Le contour — le symbole lui-meme, a l'echelle du visage. */}
