@@ -16,9 +16,10 @@ Ce que ce banc mesure honnêtement :
   * les faux positifs — combien de lesions rapportees sur un visage vierge.
 
 Ce qu'il NE mesure pas : la fidelite a de vraies lesions. Une lesion peinte est
-un disque assombri et rougi ; une vraie a du relief, un halo, une texture. Ce
-banc valide la geometrie et l'attribution de zone, pas la reconnaissance
-clinique. Il faut des images annotees pour ça, et ce banc ne les remplace pas.
+une modulation lisse de la couleur locale ; une vraie a du relief, un halo, une
+texture, parfois un centre purulent. Ce banc valide la geometrie et
+l'attribution de zone, pas la reconnaissance clinique. Il faut des images
+annotees pour ça, et ce banc ne les remplace pas.
 """
 from __future__ import annotations
 
@@ -36,6 +37,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from backend.skyn_engine.v2.pipeline import analyze_face  # noqa: E402
 from backend.skyn_engine.v2.zones import ZONE_LANDMARKS  # noqa: E402
+
+
+# Amplitude de la modulation, en unites LAB (0-255 pour L, centre 128 pour a/b).
+# Une papule inflammatoire est nettement plus rouge, un peu plus sombre, et sa
+# teinte jaune bouge a peine.
+D_ROUGE = 16.0
+D_LUM = 7.0
+D_JAUNE = 1.0
 
 
 @dataclass
@@ -94,8 +103,23 @@ def plant(
         raise SystemExit(f"zone trop petite apres marge : {zone}")
 
     rng = np.random.default_rng(seed)
-    out = img.copy()
     planted: List[Planted] = []
+
+    # On peint en LAB, et RELATIVEMENT a la peau qui se trouve la.
+    #
+    # La premiere version fondait un disque d'une couleur ABSOLUE (un rouge
+    # fixe) dans l'image. C'etait faux, et le banc s'est mis a mentir : sur une
+    # joue claire, fondre vers un rouge sombre assombrit beaucoup et ne rougit
+    # que peu — la lesion prenait la signature d'une ombre, que le moteur a
+    # raison de rejeter. Mesure a l'appui : joue gauche L=156, joue droite
+    # L=191, et le rappel tombait de 6/6 a 1/6 entre les deux, alors que la
+    # consigne de pose etait identique.
+    #
+    # Une vraie lesion inflammatoire n'impose pas une couleur : elle MODULE
+    # celle de la peau autour — plus rouge, un peu plus sombre, teinte jaune a
+    # peu pres inchangee. C'est ce qu'on fait ici, et le meme geste vaut alors
+    # sur une joue claire comme sur une joue sombre.
+    lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB).astype(np.float32)
 
     # Diametre plausible d'une papule : 2 a 4 mm. On l'exprime en pixels via
     # la largeur du visage, ~140 mm chez un adulte.
@@ -105,22 +129,20 @@ def plant(
         cx, cy = int(xs[i]), int(ys[i])
         r = max(3, int(round(rng.uniform(1.0, 2.0) * px_per_mm)))
 
-        # Une papule est plus rouge et un peu plus sombre que la peau autour.
-        # On peint en degrade pour eviter un disque a bord franc, qui serait
-        # trop facile a detecter et fausserait le rappel a la hausse.
-        patch = out[max(0, cy - r * 3):cy + r * 3, max(0, cx - r * 3):cx + r * 3]
-        if patch.size == 0:
-            continue
-        overlay = out.copy()
-        cv2.circle(overlay, (cx, cy), r, (60, 60, 205), -1)  # BGR : rouge
-        alpha = np.zeros(out.shape[:2], np.float32)
+        # Degrade : un disque a bord franc serait trop facile a detecter et
+        # gonflerait le rappel.
+        alpha = np.zeros(img.shape[:2], np.float32)
         cv2.circle(alpha, (cx, cy), r, 1.0, -1)
         alpha = cv2.GaussianBlur(alpha, (0, 0), r * 0.55)
-        alpha = np.clip(alpha * 0.75, 0, 1)[..., None]
-        out = (out * (1 - alpha) + overlay * alpha).astype(np.uint8)
+        alpha = np.clip(alpha, 0, 1)
+
+        lab[:, :, 0] -= alpha * D_LUM
+        lab[:, :, 1] += alpha * D_ROUGE
+        lab[:, :, 2] += alpha * D_JAUNE
 
         planted.append(Planted(zone=zone, x=cx, y=cy, radius=r))
 
+    out = cv2.cvtColor(np.clip(lab, 0, 255).astype(np.uint8), cv2.COLOR_LAB2BGR)
     return out, planted
 
 
