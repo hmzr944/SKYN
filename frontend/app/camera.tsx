@@ -5,14 +5,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { LayoutChangeEvent, Platform, StyleSheet, Text, View } from "react-native";
 import Svg, { Defs, G, Mask, Path, Rect } from "react-native-svg";
-import Animated, {
-  Easing,
-  useAnimatedProps,
-  useSharedValue,
-  withRepeat,
-  withSpring,
-  withTiming,
-} from "react-native-reanimated";
+import { useSharedValue, withSpring, withTiming } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { AnimatedPressable } from "@/src/components/ui/AnimatedPressable";
@@ -31,14 +24,23 @@ import {
   type GuideState,
 } from "@/src/services/faceGuide";
 import { colors, motion, radius, spacing, type } from "@/src/theme";
-import { FACE_CLOSED, FACE_PATH } from "@/src/theme/mark";
+import { FACE_CLOSED } from "@/src/theme/mark";
 import { storage } from "@/src/utils/storage";
-
-const AnimatedPath = Animated.createAnimatedComponent(Path);
 
 /** Base64 nu, sans entete : c'est ce que le reste de l'app attend. */
 const cleanB64 = (b?: string | null) =>
   b ? (b.startsWith("data:") ? b.split(",")[1] ?? "" : b) : "";
+
+/**
+ * Encombrement du visage dans le repere du symbole.
+ *
+ * Il n'occupe pas tout le carre de 64 : il s'inscrit dans 36,8 x 44,5, centre
+ * a peu pres au milieu. Dimensionner la boite plutot que le dessin donnerait
+ * une forme trop petite entouree de vide.
+ */
+const CONTENT_W = 36.8;
+const CONTENT_H = 44.5;
+const CENTER = { x: 32, y: 32.3 };
 
 /**
  * Le scan, en une seule session continue.
@@ -157,38 +159,34 @@ export default function CameraScreen() {
    * Et l'apercu etant en miroir, l'abscisse doit etre retournee : sans ca, la
    * couronne partirait du cote oppose au visage.
    */
+  /**
+   * Place la couronne juste a l'exterieur de la fenetre de visee.
+   *
+   * Elle etait auparavant dimensionnee sur le visage DETECTE alors que la
+   * fenetre l'est sur l'ECRAN : deux logiques independantes, et les traits
+   * finissaient par tomber sur l'image des que le visage etait un peu grand.
+   *
+   * La couronne appartient au cadre, pas au sujet. Comme a l'enregistrement de
+   * Face ID, ou le cercle ne bouge pas : c'est le visage qui vient s'y placer.
+   * Ce qui suit le visage, c'est l'allumage des traits — pas leur position.
+   */
   const placeRing = useCallback(
-    (d: { cx: number; cy: number; hRatio: number }, vw: number, vh: number) => {
-      const { w, h } = stageRef.current;
-      if (!w || !h || !vw || !vh) return;
+    (w: number, h: number, k: number, centerY: number) => {
+      if (!w || !h || !k) return;
 
-      const scale = Math.max(w / vw, h / vh);
-      const dispW = vw * scale;
-      const dispH = vh * scale;
-      const offX = (w - dispW) / 2;
-      const offY = (h - dispH) / 2;
+      // La forme mesure CONTENT_H de haut : son point le plus eloigne du centre
+      // est donc a la moitie de cette hauteur. On se pose juste au-dela.
+      const outside = (CONTENT_H / 2) * k * 1.06;
 
-      const faceH = d.hRatio * dispH;
+      // Les traits allumes s'allongent encore au-dela du rayon : on compte
+      // cette marge, sinon la couronne sort du cadre.
+      const reach = (r: number) => r + 1.6 * Math.max(6, r * 0.07) + 4;
+      const room = Math.min(w / 2, h / 2) - 6;
+      let r = outside;
+      if (reach(r) > room) r = Math.max(40, (room - 13.6) / 1.112);
 
-      // Rayon : il entoure le visage, mais reste borne par le cadre.
-      const wanted = faceH * 0.62;
-      const room = Math.min(w, h) / 2 - 10;
-      const r = Math.max(40, Math.min(wanted, room / 1.18));
-
-      // Encombrement reel : les traits allumes s'allongent de 60 % au-dela du
-      // rayon, il faut compter cette marge sinon la couronne sort du cadre.
-      const reach = r + 1.6 * Math.max(6, r * 0.07) + 4;
-
-      // Le centre suit le visage MAIS reste borne : un visage cadre pres du
-      // bord ferait sortir la couronne de l'ecran. Elle s'arrete alors au bord
-      // — et le guidage demande de toute facon de se recentrer.
-      const clamp = (v: number, lo: number, hi: number) =>
-        hi < lo ? (lo + hi) / 2 : Math.max(lo, Math.min(hi, v));
-      const x = clamp(w - (offX + d.cx * dispW), reach, w - reach);
-      const y = clamp(offY + d.cy * dispH, reach, h - reach);
-
-      ringX.value = withSpring(x, motion.spring);
-      ringY.value = withSpring(y, motion.spring);
+      ringX.value = withSpring(w / 2, motion.spring);
+      ringY.value = withSpring(centerY, motion.spring);
       ringR.value = withSpring(r, motion.spring);
     },
     [ringX, ringY, ringR],
@@ -267,7 +265,6 @@ export default function CameraScreen() {
               // L'angle doit tenir un court instant avant d'etre echantillonne :
               // une image prise en plein mouvement serait floue.
               if (d) {
-                placeRing(d, v.videoWidth, v.videoHeight);
                 if (framingOk(d)) {
                   const sp = spanRef.current;
                   const next = sp
@@ -313,21 +310,8 @@ export default function CameraScreen() {
         /* noop */
       }
     };
-  }, [canUseCamera, sample, placeRing, ringP]);
+  }, [canUseCamera, sample, ringP]);
 
-  /* ————— animations ————— */
-  const breath = useSharedValue(0);
-  useEffect(() => {
-    breath.value = withRepeat(
-      withTiming(1, { duration: 2200, easing: Easing.inOut(Easing.sin) }),
-      -1,
-      true,
-    );
-  }, [breath]);
-
-  const trackProps = useAnimatedProps(() => ({
-    strokeOpacity: 0.16 + breath.value * 0.1,
-  }));
   /* ————— repli manuel ————— */
   const manualCapture = async () => {
     const photo = await cameraRef.current?.takePictureAsync({
@@ -355,14 +339,25 @@ export default function CameraScreen() {
   };
 
   /* ————— geometrie ————— */
-  const CONTENT_W = 36.8;
-  const CONTENT_H = 44.5;
-  const CENTER = { x: 32, y: 32.3 };
-  const k = Math.min((stage.w * 0.78) / CONTENT_W, (stage.h * 0.74) / CONTENT_H);
+  // La fenetre doit laisser de la place a la couronne, sinon les traits
+  // retombent sur l'image. On prend donc la plus petite des deux tailles :
+  // celle qui cadre bien le visage, et celle qui laisse la marge necessaire.
+  //
+  // La marge requise vient de la geometrie de la couronne : rayon a 1,06 fois
+  // la demi-hauteur de la forme, plus l'allongement des traits allumes. Le
+  // facteur 26,3 est ce cumul rapporte a l'echelle.
+  const kCadrage = Math.min((stage.w * 0.78) / CONTENT_W, (stage.h * 0.74) / CONTENT_H);
+  const kMarge = (Math.min(stage.w, stage.h) / 2 - 20) / 26.3;
+  const k = Math.max(1, Math.min(kCadrage, kMarge));
   const tx = stage.w / 2 - CENTER.x * k;
   const ty = stage.h / 2 - CENTER.y * k;
-  const stroke = k > 0 ? 2.6 / k : 0;
   const laid = stage.w > 0 && stage.h > 0;
+
+  // La couronne depend de la mise en page, pas de la detection : on la place
+  // quand le cadre change, une fois pour toutes.
+  useEffect(() => {
+    if (laid) placeRing(stage.w, stage.h, k, ty + CENTER.y * k);
+  }, [laid, stage.w, stage.h, k, ty, placeRing]);
 
   return (
     <SafeAreaView style={styles.container} edges={["top", "bottom"]}>
@@ -416,16 +411,6 @@ export default function CameraScreen() {
 
             <G transform={`translate(${tx}, ${ty}) scale(${k})`}>
               {!canUseCamera ? <Path d={FACE_CLOSED} fill={colors.fg} opacity={0.05} /> : null}
-              {/* Le contour reste discret : c'est la couronne qui porte la
-                  progression, comme a l'enregistrement de Face ID. */}
-              <AnimatedPath
-                d={FACE_PATH}
-                fill="none"
-                stroke={colors.fg}
-                strokeWidth={stroke}
-                strokeLinecap="round"
-                animatedProps={trackProps}
-              />
             </G>
 
             {/* La couronne vit dans le repere de l'ecran, pas dans celui du
