@@ -1,18 +1,13 @@
-import { useEffect } from "react";
 import { StyleSheet, useWindowDimensions, View } from "react-native";
 import Svg, { Circle, Path } from "react-native-svg";
 import Animated, {
-  Easing,
   useAnimatedProps,
   useReducedMotion,
-  useSharedValue,
-  withDelay,
-  withSpring,
-  withTiming,
   type SharedValue,
 } from "react-native-reanimated";
 
-import { colors, motion, palette } from "@/src/theme";
+import type { IntroValues } from "@/src/animation/introTimeline";
+import { colors, palette } from "@/src/theme";
 import { MARK_DOT, MARK_LENGTH, MARK_PATH, MARK_VIEWBOX, markMetrics } from "@/src/theme/mark";
 
 const AnimatedPath = Animated.createAnimatedComponent(Path);
@@ -85,51 +80,25 @@ const COUCHES = [
   { retard: 0.16, k: 5, ampMax: 0.04, vitesse: 1.5, teinte: palette.terre, alpha: 0.22, ferme: false },
 ];
 
-/** Duree de la maree, montee et retrait compris. */
-export const TIDE_MS = 2250;
-/** Duree totale de la sequence d'ouverture, mot compris. */
-export const INTRO_DURATION = 2500;
-
-/** Le point se pose quand la crete vient de passer le centre. */
-const DOT_AT = 1250;
-const DRAW_AT = 1350;
-const DRAW_MS = 780;
-
-export function WaveIntro({ markSize = 96 }: { markSize?: number }) {
+/**
+ * La vague ne pilote plus le temps.
+ *
+ * Elle recevait auparavant ses propres retards et les exportait pour que
+ * l'ecran s'y accorde ; la sequence vivait donc a deux endroits. Elle recoit
+ * maintenant des valeurs deja animees par la timeline d'ouverture, et ne
+ * s'occupe plus que de DESSINER.
+ */
+export function WaveIntro({
+  values,
+  markSize = 96,
+}: {
+  values: IntroValues;
+  markSize?: number;
+}) {
   const { width, height } = useWindowDimensions();
   const reduced = useReducedMotion();
   const { stroke, dot } = markMetrics(markSize);
-
-  /** 0 : la maree est en bas et agitee. 1 : elle est au centre et plate. */
-  const tide = useSharedValue(0);
-  /** Fondu de sortie des vagues, une fois la marque en place. */
-  const fade = useSharedValue(0);
-  const drop = useSharedValue(0);
-  const draw = useSharedValue(0);
-
-  useEffect(() => {
-    if (reduced) {
-      // Aucune maree : la marque se pose, et c'est tout.
-      tide.value = 1;
-      fade.value = 1;
-      drop.value = 1;
-      draw.value = 1;
-      return;
-    }
-    // Progression LINEAIRE, volontairement : la forme du mouvement (montee,
-    // crete, retrait, apaisement) est deja calculee image par image plus bas.
-    // Une courbe d'acceleration par-dessus deformait ce decoupage — la crete
-    // arrivait au tiers du temps et l'ecran etait vide aux deux tiers.
-    tide.value = withTiming(1, { duration: TIDE_MS, easing: Easing.linear });
-    // Les vagues sortent d'elles-memes par le bas ; ce fondu n'est qu'un
-    // filet de securite sur les tres petits ecrans, ou le retrait est court.
-    fade.value = withDelay(TIDE_MS - 200, withTiming(1, { duration: 420 }));
-    drop.value = withDelay(DOT_AT, withSpring(1, motion.springDrop));
-    draw.value = withDelay(
-      DRAW_AT,
-      withTiming(1, { duration: DRAW_MS, easing: Easing.bezier(0.33, 1, 0.68, 1) }),
-    );
-  }, [reduced, tide, fade, drop, draw]);
+  const { tide, fade, drop, draw } = values;
 
   const dotProps = useAnimatedProps(() => ({ r: dot * drop.value }));
   const drawProps = useAnimatedProps(() => ({

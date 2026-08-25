@@ -12,7 +12,6 @@ import Svg, {
   Stop,
 } from "react-native-svg";
 import Animated, {
-  Easing,
   useReducedMotion,
   SharedValue,
   useAnimatedProps,
@@ -25,6 +24,7 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 
+import { ease } from "@/src/animation/ease";
 import { colors, motion, palette } from "@/src/theme";
 import { FACE_CLOSED, FACE_LENGTH, FACE_PATH, MARK_VIEWBOX } from "@/src/theme/mark";
 import type { FaceBox } from "@/src/types/analysis";
@@ -148,7 +148,7 @@ export function ScanField({ size, phase, imageB64, detections = [], faceBox, sty
     }
     sweep.value = withRepeat(
       withSequence(
-        withTiming(1, { duration: motion.sweep, easing: Easing.bezier(0.33, 1, 0.68, 1) }),
+        withTiming(1, { duration: motion.sweep, easing: ease.expoOut }),
         withTiming(1, { duration: 260 }),
         withTiming(0, { duration: 0 }),
       ),
@@ -156,12 +156,12 @@ export function ScanField({ size, phase, imageB64, detections = [], faceBox, sty
       false,
     );
     band.value = withRepeat(
-      withTiming(1, { duration: 1600, easing: Easing.inOut(Easing.quad) }),
+      withTiming(1, { duration: 1600, easing: ease.sineInOut }),
       -1,
       true,
     );
     tilt.value = withRepeat(
-      withTiming(1, { duration: 3800, easing: Easing.inOut(Easing.sin) }),
+      withTiming(1, { duration: 3800, easing: ease.sineInOut }),
       -1,
       true,
     );

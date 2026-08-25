@@ -2,7 +2,6 @@ import { useEffect } from "react";
 import { StyleProp, ViewStyle } from "react-native";
 import Svg, { Circle, Path } from "react-native-svg";
 import Animated, {
-  Easing,
   useAnimatedProps,
   useReducedMotion,
   useSharedValue,
@@ -11,6 +10,7 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 
+import { ease } from "@/src/animation/ease";
 import { colors, motion, palette } from "@/src/theme";
 import { MARK_DOT, MARK_LENGTH, MARK_PATH, MARK_VIEWBOX, markMetrics } from "@/src/theme/mark";
 
@@ -55,7 +55,7 @@ export function SkynMark({ size = 64, onDark, playKey = 0, style }: Props) {
     drop.value = withSpring(1, motion.springDrop);
     draw.value = withDelay(
       210,
-      withTiming(1, { duration: motion.sweep, easing: Easing.bezier(0.33, 1, 0.68, 1) }),
+      withTiming(1, { duration: motion.sweep, easing: ease.expoOut }),
     );
   }, [playKey, reduced, drop, draw]);
 

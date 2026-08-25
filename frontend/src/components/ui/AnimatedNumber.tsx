@@ -1,7 +1,7 @@
+import { ease } from "@/src/animation/ease";
 import { useEffect } from "react";
 import { StyleProp, TextInput, TextStyle } from "react-native";
 import Animated, {
-  Easing,
   useAnimatedProps,
   useSharedValue,
   withDelay,
@@ -31,7 +31,7 @@ export function AnimatedNumber({ value, delay = 240, duration = 1000, style }: P
 
   useEffect(() => {
     n.value = 0;
-    n.value = withDelay(delay, withTiming(value, { duration, easing: Easing.out(Easing.cubic) }));
+    n.value = withDelay(delay, withTiming(value, { duration, easing: ease.out }));
   }, [value, delay, duration, n]);
 
   const animatedProps = useAnimatedProps(() => ({

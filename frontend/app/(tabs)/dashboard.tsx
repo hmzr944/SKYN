@@ -269,7 +269,13 @@ export default function DashboardScreen() {
                   ) : null}
                 </View>
               </View>
-              <Stagger style={styles.pillsRow} from="left" distance={18} delay={220} step={70}>
+              <Stagger
+                style={styles.pillsRow}
+                direction="left"
+                distance={18}
+                delay={220}
+                amount={140}
+              >
                 <View style={styles.pill}>
                   <View style={styles.pillDot} />
                   <Text style={styles.pillLabel}>{last.severity_label}</Text>

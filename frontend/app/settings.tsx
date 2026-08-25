@@ -4,7 +4,6 @@ import { useRouter } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import { Alert, Linking, Platform, ScrollView, StyleSheet, Switch, Text, View } from "react-native";
 import Animated, {
-  Easing,
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
@@ -12,6 +11,7 @@ import Animated, {
 } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { ease } from "@/src/animation/ease";
 import { SkynLockup } from "@/src/components/brand/SkynLockup";
 import { AnimatedPressable } from "@/src/components/ui/AnimatedPressable";
 import { Reveal } from "@/src/components/ui/Reveal";
@@ -400,7 +400,7 @@ function Fold({
   useEffect(() => {
     t.value = withTiming(isOpen ? 1 : 0, {
       duration: reduced ? 0 : motion.base,
-      easing: Easing.out(Easing.cubic),
+      easing: ease.out,
     });
   }, [isOpen, t, reduced]);
 

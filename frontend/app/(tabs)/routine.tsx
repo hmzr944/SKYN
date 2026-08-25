@@ -14,9 +14,9 @@ import Animated, {
   useAnimatedStyle,
   withSpring,
   withTiming,
-  Easing,
 } from "react-native-reanimated";
 
+import { ease } from "@/src/animation/ease";
 import { colors, fonts, spacing, radius, shadow } from "@/src/theme";
 import { FadeIn } from "@/src/components/ui/FadeIn";
 import { AnimatedPressable } from "@/src/components/ui/AnimatedPressable";
@@ -130,7 +130,7 @@ export default function RoutineScreen() {
     const done = steps.filter((p) => doneIds.includes(p.id)).length;
     progress.value = withTiming(steps.length ? done / steps.length : 0, {
       duration: 420,
-      easing: Easing.out(Easing.cubic),
+      easing: ease.out,
     });
   }, [steps, doneIds, progress]);
   const progressStyle = useAnimatedStyle(() => ({

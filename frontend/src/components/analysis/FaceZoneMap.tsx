@@ -2,13 +2,13 @@ import { useEffect, useMemo } from "react";
 import { View, Text, StyleSheet, Pressable } from "react-native";
 import Svg, { Path, Ellipse, G, Circle, Defs, ClipPath } from "react-native-svg";
 import Animated, {
-  Easing,
   useAnimatedProps,
   useSharedValue,
   withDelay,
   withTiming,
 } from "react-native-reanimated";
 
+import { ease } from "@/src/animation/ease";
 import { colors, fonts, spacing } from "@/src/theme";
 import { FACE_EXTENT, facePathAt } from "@/src/theme/mark";
 import type { Lesion, ZoneKey } from "@/src/types/analysis";
@@ -160,7 +160,7 @@ function ZoneEllipse({
 }) {
   const t = useSharedValue(0);
   useEffect(() => {
-    t.value = withDelay(delay, withTiming(1, { duration: 460, easing: Easing.out(Easing.cubic) }));
+    t.value = withDelay(delay, withTiming(1, { duration: 460, easing: ease.out }));
   }, [t, delay]);
 
   const props = useAnimatedProps(() => ({ opacity: opacity * t.value }));

@@ -1,7 +1,6 @@
 import { Children, ReactNode, isValidElement, useEffect } from "react";
 import { StyleProp, ViewStyle } from "react-native";
 import Animated, {
-  Easing,
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
@@ -9,6 +8,7 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 
+import { ease } from "@/src/animation/ease";
 import { motion } from "@/src/theme";
 
 type Direction = "up" | "down" | "left" | "right" | "none";
@@ -44,7 +44,7 @@ export function Reveal({
   const reduced = useReducedMotion();
 
   useEffect(() => {
-    t.value = withDelay(delay, withTiming(1, { duration, easing: Easing.out(Easing.cubic) }));
+    t.value = withDelay(delay, withTiming(1, { duration, easing: ease.out }));
   }, [t, delay, duration]);
 
   const aStyle = useAnimatedStyle(() => {
@@ -69,33 +69,97 @@ export function Reveal({
 
 type StaggerProps = {
   children: ReactNode;
-  /** Decalage entre deux enfants. */
+  /** Ecart entre deux voisins, en millisecondes. */
   step?: number;
+  /**
+   * Duree TOTALE du decalage, repartie sur l'ensemble.
+   *
+   * A preferer a `step` des que le nombre d'elements varie : une liste de
+   * trois et une liste de douze prennent alors le meme temps a se deposer.
+   * Avec `step`, la seconde durerait quatre fois plus longtemps et
+   * l'utilisateur attendrait devant un ecran qui se remplit encore.
+   */
+  amount?: number;
   /** Retard avant le premier enfant. */
   delay?: number;
-  from?: Direction;
+  /**
+   * D'ou part la propagation.
+   *
+   * Ce n'est pas decoratif : une liste qui s'ouvre depuis son centre se lit
+   * comme un depliage, depuis ses bords comme une convergence, depuis la fin
+   * comme un retour en arriere. Le sens porte une information que l'ordre
+   * seul ne porte pas.
+   */
+  from?: StaggerFrom;
+  direction?: Direction;
   distance?: number;
   style?: StyleProp<ViewStyle>;
 };
 
+export type StaggerFrom = "start" | "end" | "center" | "edges" | "random";
+
+/** Rang de propagation de chaque element, en nombre de pas. */
+function ordre(n: number, from: StaggerFrom): number[] {
+  const r = new Array(n).fill(0);
+  switch (from) {
+    case "end":
+      for (let i = 0; i < n; i++) r[i] = n - 1 - i;
+      break;
+    case "center": {
+      const c = (n - 1) / 2;
+      for (let i = 0; i < n; i++) r[i] = Math.abs(i - c);
+      break;
+    }
+    case "edges": {
+      const c = (n - 1) / 2;
+      for (let i = 0; i < n; i++) r[i] = c - Math.abs(i - c);
+      break;
+    }
+    case "random": {
+      const m = [...Array(n).keys()];
+      for (let i = n - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [m[i], m[j]] = [m[j], m[i]];
+      }
+      for (let i = 0; i < n; i++) r[i] = m[i];
+      break;
+    }
+    default:
+      for (let i = 0; i < n; i++) r[i] = i;
+  }
+  return r;
+}
+
 /**
  * Enveloppe chaque enfant dans un Reveal decale.
+ *
  * Une liste qui apparait d'un bloc ne dit rien ; une liste qui se depose
  * ligne par ligne montre qu'elle a ete construite.
  */
 export function Stagger({
   children,
   step = motion.stagger,
+  amount,
   delay = 0,
-  from = "up",
+  from = "start",
+  direction = "up",
   distance = 14,
   style,
 }: StaggerProps) {
   const items = Children.toArray(children).filter(isValidElement);
+  const n = items.length;
+  const rangs = ordre(n, from);
+  const pas = amount !== undefined ? (n > 1 ? amount / (n - 1) : 0) : step;
+
   return (
     <Animated.View style={style}>
       {items.map((child, i) => (
-        <Reveal key={child.key ?? i} delay={delay + i * step} from={from} distance={distance}>
+        <Reveal
+          key={child.key ?? i}
+          delay={delay + rangs[i] * pas}
+          from={direction}
+          distance={distance}
+        >
           {child}
         </Reveal>
       ))}

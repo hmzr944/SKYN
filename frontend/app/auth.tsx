@@ -15,9 +15,9 @@ import Animated, {
   withDelay,
   withSpring,
   withTiming,
-  Easing,
 } from "react-native-reanimated";
 
+import { ease } from "@/src/animation/ease";
 import { colors, fonts, spacing, radius, shadow } from "@/src/theme";
 import { AnimatedPressable } from "@/src/components/ui/AnimatedPressable";
 import { FadeIn } from "@/src/components/ui/FadeIn";
@@ -61,7 +61,7 @@ export default function AuthScreen() {
   useEffect(() => {
     rule.value = withDelay(
       760,
-      withTiming(1, { duration: 460, easing: Easing.out(Easing.cubic) }),
+      withTiming(1, { duration: 460, easing: ease.out }),
     );
   }, [rule]);
   const ruleStyle = useAnimatedStyle(() => ({

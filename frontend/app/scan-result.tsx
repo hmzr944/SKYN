@@ -19,10 +19,10 @@ import Animated, {
   withTiming,
   withRepeat,
   useAnimatedStyle,
-  Easing,
 } from "react-native-reanimated";
 import * as Haptics from "expo-haptics";
 
+import { ease } from "@/src/animation/ease";
 import { colors, fonts, spacing, radius, shadow } from "@/src/theme";
 import { getScan } from "@/src/services/scanStore";
 import { FadeIn } from "@/src/components/ui/FadeIn";
@@ -58,7 +58,7 @@ function ScoreRing({ value, size = 168 }: { value: number; size?: number }) {
   const [shown, setShown] = useState(0);
 
   useEffect(() => {
-    p.value = withTiming(value / 100, { duration: 1500, easing: Easing.out(Easing.cubic) });
+    p.value = withTiming(value / 100, { duration: 1500, easing: ease.out });
     const start = Date.now();
     const id = setInterval(() => {
       const t = Math.min(1, (Date.now() - start) / 1500);
@@ -117,7 +117,7 @@ function ConcernRow({
     // pas un tableau qui s'affiche.
     w.value = withDelay(
       index * 90,
-      withTiming(v, { duration: 900, easing: Easing.out(Easing.cubic) }),
+      withTiming(v, { duration: 900, easing: ease.out }),
     );
   }, [v, w, index]);
   const barStyle = useAnimatedStyle(() => ({ width: `${w.value * 100}%` }));
@@ -242,7 +242,7 @@ export default function ScanResultScreen() {
   const pulse = useSharedValue(0);
   useEffect(() => {
     pulse.value = withRepeat(
-      withTiming(1, { duration: 1400, easing: Easing.inOut(Easing.sin) }),
+      withTiming(1, { duration: 1400, easing: ease.sineInOut }),
       -1,
       true,
     );

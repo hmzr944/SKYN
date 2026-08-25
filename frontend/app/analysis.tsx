@@ -3,13 +3,13 @@ import { useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import { Dimensions, StyleSheet, Text, View } from "react-native";
 import Animated, {
-  Easing,
   useAnimatedStyle,
   useSharedValue,
   withTiming,
 } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { ease } from "@/src/animation/ease";
 import { ScanField } from "@/src/components/analysis/ScanField";
 import { SkynLockup } from "@/src/components/brand/SkynLockup";
 import { AnimatedPressable } from "@/src/components/ui/AnimatedPressable";
@@ -282,7 +282,7 @@ function Segment({ active }: { active: boolean }) {
   useEffect(() => {
     t.value = withTiming(active ? 1 : 0, {
       duration: motion.slow,
-      easing: Easing.out(Easing.cubic),
+      easing: ease.out,
     });
   }, [active, t]);
 

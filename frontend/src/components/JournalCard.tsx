@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import Animated, {
-  Easing,
   useAnimatedStyle,
   useSharedValue,
   withDelay,
   withTiming,
 } from "react-native-reanimated";
 
+import { ease } from "@/src/animation/ease";
 import { Chip } from "@/src/components/ui/Chip";
 import { Disclosure } from "@/src/components/ui/Disclosure";
 import { Reveal } from "@/src/components/ui/Reveal";
@@ -141,7 +141,7 @@ function Segment({ filled, index }: { filled: boolean; index: number }) {
     // n'apparait pas d'un bloc.
     t.value = withDelay(
       index * 45,
-      withTiming(filled ? 1 : 0, { duration: 320, easing: Easing.out(Easing.cubic) }),
+      withTiming(filled ? 1 : 0, { duration: 320, easing: ease.out }),
     );
   }, [filled, index, t]);
 

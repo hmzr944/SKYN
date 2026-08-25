@@ -1,13 +1,13 @@
 import { ReactNode, useEffect, useState } from "react";
 import { LayoutChangeEvent, Pressable, StyleSheet, Text, View } from "react-native";
 import Animated, {
-  Easing,
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
   withTiming,
 } from "react-native-reanimated";
 
+import { ease } from "@/src/animation/ease";
 import { colors, motion, spacing, type } from "@/src/theme";
 
 /**
@@ -39,7 +39,7 @@ export function Disclosure({
   useEffect(() => {
     t.value = withTiming(open ? 1 : 0, {
       duration: reduced ? 0 : motion.base,
-      easing: Easing.out(Easing.cubic),
+      easing: ease.out,
     });
   }, [open, t, reduced]);
 
