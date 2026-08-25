@@ -293,6 +293,12 @@ def detect_lesions(fm: FaceMap) -> LesionReport:
     return _build_report(fm, lesions, px_per_mm)
 
 
+# Exces de rouge exige quand la lesion est aussi plus sombre que la peau
+# voisine. Le seuil ordinaire (1,8) frole le bruit de fond d'une peau normale ;
+# on demande ici une marge nette au-dessus.
+RED_IF_DARK = 4.5
+
+
 def _classify(red: float, dark: float, yellow: float, core_l: float,
               core_s: float, skin_s: float, r_px: float, px_per_mm: float,
               src: str):
@@ -302,8 +308,25 @@ def _classify(red: float, dark: float, yellow: float, core_l: float,
     # Pustule : halo rouge + coeur clair nettement desature
     if red > 1.6 and core_l > 0.8 and core_s < skin_s * 0.82:
         return "pustule"
-    # Papule : rouge et en relief (donc pas plus sombre que la peau voisine)
-    if red > 1.8 and dark > -1.2 and d_mm >= 1.2:
+    # Papule : le niveau de preuve exige depend de l'obscurite.
+    #
+    # L'ancienne regle imposait `dark > -1.2`, en supposant qu'une lesion en
+    # relief ne peut pas etre plus sombre que la peau voisine. C'est faux : une
+    # papule inflammatoire est erythemateuse ET plus foncee, d'autant plus sur
+    # peau mate. Une lesion franchement rouge et franchement sombre ne
+    # correspondait alors a AUCUNE regle et disparaissait du rapport.
+    #
+    # Mais lever la condition sans rien mettre a la place ne marche pas non
+    # plus : les ombres legerement rosees passent en masse. C'est ce que la
+    # garde faisait de utile, et le banc d'essai l'a montre — le rappel montait
+    # de 3 a 27 % pendant que les faux positifs passaient de 4 a 49.
+    #
+    # Une tache sombre doit donc apporter DAVANTAGE de preuve coloree qu'une
+    # tache en relief : c'est la seule facon de distinguer une lesion d'une
+    # ombre, puisque l'obscurite seule est ambigue.
+    if d_mm >= 1.2 and (
+        (dark > -1.2 and red > 1.8) or (dark <= -1.2 and red > RED_IF_DARK)
+    ):
         return "papule"
     # Comedon ouvert : petit, sombre, ET BRUN.
     #

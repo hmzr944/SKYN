@@ -16,7 +16,7 @@ if BACKEND not in sys.path:
     sys.path.insert(0, BACKEND)
 
 from skyn_engine.v2.concerns import CONCERN_KEYS, build_fingerprint
-from skyn_engine.v2.lesions import LesionReport, _severity
+from skyn_engine.v2.lesions import LesionReport, RED_IF_DARK, _classify, _severity
 from skyn_engine.v2.matching import (
     ACTIVE_STEPS,
     ESSENTIAL_STEPS,
@@ -118,6 +118,63 @@ class TestSeverity:
     def test_severity_separates_mild_from_severe(self):
         """v1 plafonnait a 5 detections : acne legere et severe se confondaient."""
         assert _severity(4.0)[0] < _severity(24.0)[0]
+
+
+# --------------------------------------------------------------------------
+# Classification d'une lesion
+#
+# Ces cas viennent du banc d'essai a lesions synthetiques
+# (backend/tools/synth_lesions.py) : ce sont les signatures reelles mesurees
+# sur des lesions posees a des positions connues, et sur les structures qui
+# produisaient des faux positifs.
+# --------------------------------------------------------------------------
+def classify(red, dark, yellow, *, core_l=-5.0, core_s=100.0, skin_s=60.0,
+             r_px=4.0, px_per_mm=2.6, src="rouge"):
+    return _classify(red, dark, yellow, core_l, core_s, skin_s,
+                     r_px, px_per_mm, src)
+
+
+class TestClassification:
+    def test_papule_rouge_et_sombre_est_retenue(self):
+        """Le cas qui disparaissait : franchement rouge ET franchement sombre.
+
+        L'ancienne regle exigeait `dark > -1.2`, en supposant qu'une lesion en
+        relief ne peut pas etre plus foncee que la peau voisine. Une papule
+        inflammatoire l'est pourtant souvent. Elle ne correspondait alors a
+        aucune regle et n'apparaissait pas dans le rapport : le rappel du banc
+        d'essai plafonnait a 3 %.
+        """
+        assert classify(13.2, -12.2, 4.7, core_l=-17.6, core_s=135.7) == "papule"
+
+    def test_papule_en_relief_reste_retenue(self):
+        assert classify(2.5, -0.4, 0.2) == "papule"
+
+    def test_ombre_rosee_est_rejetee(self):
+        """Une ombre un peu rouge ne doit pas devenir une lesion.
+
+        Sans cette exigence renforcee, le rappel montait a 27 % mais les faux
+        positifs sur visage vierge passaient de 4 a 49 : le moteur cessait
+        d'etre credible.
+        """
+        assert classify(RED_IF_DARK - 1.0, -4.0, 0.2) is None
+
+    def test_seuil_plus_exigeant_quand_la_lesion_est_sombre(self):
+        """Une meme rougeur suffit en relief, pas dans le sombre."""
+        red = 2.5
+        assert red < RED_IF_DARK
+        assert classify(red, -0.4, 0.2) == "papule"
+        assert classify(red, -4.0, 0.2) is None
+
+    def test_poil_n_est_pas_un_comedon(self):
+        """Sombre et neutre : c'est un poil, pas du sebum oxyde."""
+        assert classify(0.5, -4.0, 0.0, r_px=2.0) is None
+
+    def test_comedon_demande_une_teinte_chaude(self):
+        assert classify(0.5, -4.0, 0.6, r_px=2.0, core_s=48.0) == "comedon"
+
+    def test_coeur_desature_reste_un_poil(self):
+        """Meme legerement chaud, un noyau tres desature n'est pas une lesion."""
+        assert classify(0.5, -4.0, 0.6, r_px=2.0, core_s=60.0 * 0.4) is None
 
 
 # --------------------------------------------------------------------------
