@@ -158,7 +158,7 @@ export default function HistoryScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg, paddingHorizontal: spacing.xl },
   title: {
-    fontFamily: fonts.heading,
+    fontFamily: fonts.display,
     fontSize: 24,
     color: colors.fg,
     letterSpacing: -0.3,
@@ -221,7 +221,7 @@ const styles = StyleSheet.create({
     color: colors.fg,
   },
   cardScore: {
-    fontFamily: fonts.heading,
+    fontFamily: fonts.display,
     fontSize: 32,
     color: colors.accent,
     letterSpacing: -0.5,
@@ -231,7 +231,7 @@ const styles = StyleSheet.create({
     paddingTop: spacing.xxl,
   },
   emptyTitle: {
-    fontFamily: fonts.heading,
+    fontFamily: fonts.display,
     fontSize: 20,
     color: colors.fg,
     marginBottom: spacing.s,

@@ -4,8 +4,12 @@ import * as ImagePicker from "expo-image-picker";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { LayoutChangeEvent, Platform, StyleSheet, Text, View } from "react-native";
-import Svg, { Defs, G, Mask, Path, Rect } from "react-native-svg";
-import { useSharedValue, withSpring, withTiming } from "react-native-reanimated";
+import Svg, { Defs, Mask, Path, Rect } from "react-native-svg";
+import Animated, {
+  useAnimatedProps,
+  useSharedValue,
+  withTiming,
+} from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { AnimatedPressable } from "@/src/components/ui/AnimatedPressable";
@@ -23,24 +27,34 @@ import {
   type Angle,
   type GuideState,
 } from "@/src/services/faceGuide";
-import { colors, motion, radius, spacing, type } from "@/src/theme";
-import { FACE_CLOSED } from "@/src/theme/mark";
+import { colors, radius, spacing, type } from "@/src/theme";
+import { FACE_EXTENT, facePathAt } from "@/src/theme/mark";
 import { storage } from "@/src/utils/storage";
 
 /** Base64 nu, sans entete : c'est ce que le reste de l'app attend. */
+const AnimatedPath = Animated.createAnimatedComponent(Path);
+
 const cleanB64 = (b?: string | null) =>
   b ? (b.startsWith("data:") ? b.split(",")[1] ?? "" : b) : "";
 
 /**
- * Encombrement du visage dans le repere du symbole.
+ * Ce qui separe la boite du detecteur du contour de la marque.
  *
- * Il n'occupe pas tout le carre de 64 : il s'inscrit dans 36,8 x 44,5, centre
- * a peu pres au milieu. Dimensionner la boite plutot que le dessin donnerait
- * une forme trop petite entouree de vide.
+ * BlazeFace rend une boite serree : elle s'arrete aux sourcils en haut et sous
+ * la levre en bas. Le contour, lui, couvre le visage entier, front et menton
+ * compris. Sans ce facteur, l'ovale se poserait au milieu du visage au lieu de
+ * l'entourer.
  */
-const CONTENT_W = 36.8;
-const CONTENT_H = 44.5;
-const CENTER = { x: 32, y: 32.3 };
+const BOX_TO_OVAL = 1.26;
+
+/** Le detecteur centre sa boite sous les yeux : l'ovale doit remonter. */
+const BOX_RISE = 0.13;
+
+/** Lissage exponentiel de la detection, avant l'interpolation d'affichage. */
+const SMOOTH = 0.45;
+
+/** Sans visage pendant ce delai, le cadre revient au centre. */
+const LOST_MS = 700;
 
 /**
  * Le scan, en une seule session continue.
@@ -78,12 +92,18 @@ export default function CameraScreen() {
   // l'ecart entre le yaw le plus a gauche et le plus a droite vus nettement.
   const spanRef = useRef<{ min: number; max: number } | null>(null);
 
-  // Geometrie de la couronne, en pixels d'ecran. Elle vit en valeurs animees :
-  // la couronne suit le visage image par image sans repasser par le rendu.
-  const ringX = useSharedValue(0);
-  const ringY = useSharedValue(0);
+  // Geometrie du cadre, en pixels d'ecran. Elle vit en valeurs animees : le
+  // contour et la couronne suivent le visage image par image, sans repasser
+  // par le rendu React — a 9 detections par seconde, un aller-retour par React
+  // se verrait immediatement comme une saccade.
+  const faceX = useSharedValue(0);
+  const faceY = useSharedValue(0);
+  const faceK = useSharedValue(0);
   const ringR = useSharedValue(0);
   const ringP = useSharedValue(0);
+  /** Derniere position lissee, cote JS : la detection saute, l'affichage non. */
+  const smoothRef = useRef<{ x: number; y: number; k: number } | null>(null);
+  const lastSeenRef = useRef(0);
   // Le repere de l'ecran change avec la mise en page : on le lit dans une ref
   // pour que la boucle de detection ne travaille jamais sur une valeur perimee.
   const stageRef = useRef({ w: 0, h: 0 });
@@ -149,47 +169,78 @@ export default function CameraScreen() {
     });
 
   /**
-   * Place la couronne sur le visage detecte.
+   * Pose le cadre sur le visage.
    *
-   * La video est affichee en `cover` : elle est agrandie jusqu'a remplir le
-   * cadre, puis rognee. Il faut donc refaire ce calcul pour convertir les
-   * coordonnees de detection en pixels d'ecran — sinon la couronne derive des
-   * que les proportions de la camera different de celles du cadre.
+   * Le contour et la couronne ne sont plus ancres a l'ecran : ils vont sur le
+   * visage, et l'y suivent. Le cadre fixe obligeait a se placer dedans, avec
+   * les consignes qui vont avec — "reculez", "centrez-vous". C'est a l'app de
+   * trouver le visage, pas a la personne de trouver le cadre.
    *
-   * Et l'apercu etant en miroir, l'abscisse doit etre retournee : sans ca, la
-   * couronne partirait du cote oppose au visage.
+   * La video est affichee en `cover` : agrandie jusqu'a remplir le champ, puis
+   * rognee. Il faut refaire ce calcul pour convertir une detection en pixels
+   * d'ecran, sinon le cadre derive des que les proportions de la camera
+   * different de celles du champ. Et l'apercu etant en miroir, l'abscisse doit
+   * etre retournee : sans ca, le cadre partirait du cote oppose au visage.
    */
-  /**
-   * Place la couronne juste a l'exterieur de la fenetre de visee.
-   *
-   * Elle etait auparavant dimensionnee sur le visage DETECTE alors que la
-   * fenetre l'est sur l'ECRAN : deux logiques independantes, et les traits
-   * finissaient par tomber sur l'image des que le visage etait un peu grand.
-   *
-   * La couronne appartient au cadre, pas au sujet. Comme a l'enregistrement de
-   * Face ID, ou le cercle ne bouge pas : c'est le visage qui vient s'y placer.
-   * Ce qui suit le visage, c'est l'allumage des traits — pas leur position.
-   */
-  const placeRing = useCallback(
-    (w: number, h: number, k: number, centerY: number) => {
-      if (!w || !h || !k) return;
+  const placeFrame = useCallback(
+    (d: { cx: number; cy: number; hRatio: number } | null, videoW: number, videoH: number) => {
+      const { w, h } = stageRef.current;
+      if (!w || !h) return;
 
-      // La forme mesure CONTENT_H de haut : son point le plus eloigne du centre
-      // est donc a la moitie de cette hauteur. On se pose juste au-dela.
-      const outside = (CONTENT_H / 2) * k * 1.06;
+      let target: { x: number; y: number; k: number };
 
-      // Les traits allumes s'allongent encore au-dela du rayon : on compte
-      // cette marge, sinon la couronne sort du cadre.
-      const reach = (r: number) => r + 1.6 * Math.max(6, r * 0.07) + 4;
-      const room = Math.min(w / 2, h / 2) - 6;
-      let r = outside;
-      if (reach(r) > room) r = Math.max(40, (room - 13.6) / 1.112);
+      if (d && videoW && videoH) {
+        const cover = Math.max(w / videoW, h / videoH);
+        const dw = videoW * cover;
+        const dh = videoH * cover;
+        const ox = (w - dw) / 2;
+        const oy = (h - dh) / 2;
 
-      ringX.value = withSpring(w / 2, motion.spring);
-      ringY.value = withSpring(centerY, motion.spring);
-      ringR.value = withSpring(r, motion.spring);
+        const faceH = d.hRatio * dh;
+        const k = (faceH * BOX_TO_OVAL) / FACE_EXTENT.h;
+        target = {
+          x: w - (ox + d.cx * dw),
+          y: oy + d.cy * dh - faceH * BOX_RISE,
+          k,
+        };
+        lastSeenRef.current = Date.now();
+      } else if (Date.now() - lastSeenRef.current < LOST_MS) {
+        // Perte breve : on ne bouge pas. Un cadre qui repart au centre a chaque
+        // image manquee clignoterait plus qu'il ne suivrait.
+        return;
+      } else {
+        // Repos : au centre, a une taille de visage plausible.
+        target = { x: w / 2, y: h / 2, k: Math.min(w * 0.78 / FACE_EXTENT.w, h * 0.7 / FACE_EXTENT.h) };
+        smoothRef.current = null;
+      }
+
+      // Deux lissages successifs, et ils ne font pas la meme chose : celui-ci
+      // absorbe le bruit du detecteur, l'interpolation qui suit comble les
+      // ~110 ms entre deux detections.
+      const prev = smoothRef.current;
+      const sm = prev
+        ? {
+            x: prev.x + (target.x - prev.x) * SMOOTH,
+            y: prev.y + (target.y - prev.y) * SMOOTH,
+            k: prev.k + (target.k - prev.k) * SMOOTH,
+          }
+        : target;
+      smoothRef.current = sm;
+
+      const ms = { duration: 150 };
+      faceX.value = withTiming(sm.x, ms);
+      faceY.value = withTiming(sm.y, ms);
+      faceK.value = withTiming(sm.k, ms);
+
+      // La couronne se pose juste au-dela du contour, et son rayon n'est JAMAIS
+      // reduit pour tenir dans le champ. La version precedente le faisait, et
+      // des que le visage approchait d'un bord les traits retombaient sur la
+      // peau — exactement ce qu'ils ne doivent pas faire. Un trait coupe par le
+      // bord de l'ecran se lit comme un cadre qui sort ; un trait pose sur une
+      // joue se lit comme un bug.
+      ringR.value = withTiming((FACE_EXTENT.h / 2) * sm.k * 1.12, ms);
     },
-    [ringX, ringY, ringR],
+    [faceX, faceY, faceK, ringR],
   );
 
   /** Echantillonne l'angle courant, sans ceremonie : ni flash ni compte a rebours. */
@@ -249,9 +300,11 @@ export default function CameraScreen() {
           if (stopped) return;
           const v = document.querySelector("video");
           const now = performance.now();
-          // ~5 images par seconde : au-dela on chauffe le telephone sans rien
-          // gagner, l'oeil ne suit pas des corrections plus rapides.
-          if (v && v.readyState >= 2 && v.videoWidth > 0 && now - last > 180) {
+          // ~9 images par seconde. Le guidage seul s'accommodait de 5 : une
+          // consigne toutes les 200 ms suffit a corriger une posture. Un cadre
+          // qui SUIT le visage, non — a 5 images par seconde il saute
+          // visiblement d'une position a l'autre.
+          if (v && v.readyState >= 2 && v.videoWidth > 0 && now - last > 110) {
             last = now;
             try {
               const d = readDetection(
@@ -259,6 +312,7 @@ export default function CameraScreen() {
                 v.videoWidth,
                 v.videoHeight,
               );
+              placeFrame(d, v.videoWidth, v.videoHeight);
               const state = evaluate(d, coveredRef.current);
               setGuide(state);
 
@@ -310,7 +364,7 @@ export default function CameraScreen() {
         /* noop */
       }
     };
-  }, [canUseCamera, sample, ringP]);
+  }, [canUseCamera, sample, ringP, placeFrame]);
 
   /* ————— repli manuel ————— */
   const manualCapture = async () => {
@@ -339,25 +393,19 @@ export default function CameraScreen() {
   };
 
   /* ————— geometrie ————— */
-  // La fenetre doit laisser de la place a la couronne, sinon les traits
-  // retombent sur l'image. On prend donc la plus petite des deux tailles :
-  // celle qui cadre bien le visage, et celle qui laisse la marge necessaire.
-  //
-  // La marge requise vient de la geometrie de la couronne : rayon a 1,06 fois
-  // la demi-hauteur de la forme, plus l'allongement des traits allumes. Le
-  // facteur 26,3 est ce cumul rapporte a l'echelle.
-  const kCadrage = Math.min((stage.w * 0.78) / CONTENT_W, (stage.h * 0.74) / CONTENT_H);
-  const kMarge = (Math.min(stage.w, stage.h) / 2 - 20) / 26.3;
-  const k = Math.max(1, Math.min(kCadrage, kMarge));
-  const tx = stage.w / 2 - CENTER.x * k;
-  const ty = stage.h / 2 - CENTER.y * k;
   const laid = stage.w > 0 && stage.h > 0;
 
-  // La couronne depend de la mise en page, pas de la detection : on la place
-  // quand le cadre change, une fois pour toutes.
+  // Position de repos, le temps qu'un visage apparaisse. Le cadre part de la
+  // pour aller au visage : il ne surgit pas de nulle part.
   useEffect(() => {
-    if (laid) placeRing(stage.w, stage.h, k, ty + CENTER.y * k);
-  }, [laid, stage.w, stage.h, k, ty, placeRing]);
+    if (laid) placeFrame(null, 0, 0);
+  }, [laid, stage.w, stage.h, placeFrame]);
+
+  // Le contour se recalcule a chaque image plutot que d'etre transforme : `d`
+  // n'est qu'une chaine, et une chaine se met a jour partout de la meme façon.
+  const facePathProps = useAnimatedProps(() => ({
+    d: facePathAt(faceX.value, faceY.value, faceK.value),
+  }));
 
   return (
     <SafeAreaView style={styles.container} edges={["top", "bottom"]}>
@@ -401,21 +449,24 @@ export default function CameraScreen() {
             <Defs>
               <Mask id="skyn-window">
                 <Rect width={stage.w} height={stage.h} fill="white" />
-                <G transform={`translate(${tx}, ${ty}) scale(${k})`}>
-                  <Path d={FACE_CLOSED} fill="black" />
-                </G>
+                {/* Le trou du voile : c'est lui qui suit le visage. */}
+                <AnimatedPath fill="black" animatedProps={facePathProps} />
               </Mask>
             </Defs>
 
             <Rect width={stage.w} height={stage.h} fill={colors.bg} mask="url(#skyn-window)" />
 
-            <G transform={`translate(${tx}, ${ty}) scale(${k})`}>
-              {!canUseCamera ? <Path d={FACE_CLOSED} fill={colors.fg} opacity={0.05} /> : null}
-            </G>
+            {/* Le trait du contour, sur le bord du trou. */}
+            <AnimatedPath
+              fill="none"
+              stroke={colors.accent}
+              strokeWidth={2}
+              animatedProps={facePathProps}
+            />
 
             {/* La couronne vit dans le repere de l'ecran, pas dans celui du
                 dessin : son epaisseur ne doit pas suivre l'echelle du visage. */}
-            <ScanRing cx={ringX} cy={ringY} radius={ringR} progress={ringP} />
+            <ScanRing cx={faceX} cy={faceY} radius={ringR} progress={ringP} />
           </Svg>
         ) : null}
 
@@ -444,9 +495,6 @@ export default function CameraScreen() {
             {guideMessage(guide)}
           </Text>
         </Reveal>
-        <Text style={styles.hint}>
-          Tournez lentement la tête — les prises se font toutes seules.
-        </Text>
       </View>
 
       <View style={styles.controls}>
@@ -524,10 +572,11 @@ const styles = StyleSheet.create({
   },
   permBtnText: { ...type.kicker, color: colors.accent },
 
-  guidance: { alignItems: "center", paddingHorizontal: spacing.l, paddingTop: spacing.m, gap: 6 },
+  guidance: { alignItems: "center", paddingHorizontal: spacing.l, paddingTop: spacing.m },
+  // Une seule ligne. Il y en avait deux, qui disaient la meme chose : la
+  // consigne du moment, et un rappel permanent de tourner la tete.
   guide: { ...type.subtitle, color: colors.fg, textAlign: "center", minHeight: 26 },
   guideOk: { color: colors.accent },
-  hint: { ...type.bodySmall, color: colors.fgDim, textAlign: "center" },
 
   controls: {
     flexDirection: "row",

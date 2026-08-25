@@ -14,8 +14,10 @@ SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
   const [iconsLoaded, iconsError] = useIconFonts();
-  // Une seule famille pour toute l'app : la hierarchie vient de la graisse.
+  // Outfit porte l'interface, Fraunces porte les titres et les chiffres.
   const [fontsLoaded, fontsError] = useFonts({
+    Fraunces_400Regular: require("@/assets/fonts/Fraunces-Regular.ttf"),
+    Fraunces_600SemiBold: require("@/assets/fonts/Fraunces-SemiBold.ttf"),
     Outfit_300Light: require("@/assets/fonts/Outfit-Light.ttf"),
     Outfit_400Regular: require("@/assets/fonts/Outfit-Regular.ttf"),
     Outfit_500Medium: require("@/assets/fonts/Outfit-Medium.ttf"),

@@ -19,9 +19,6 @@
 export type GuideState =
   | "loading"
   | "searching"
-  | "too_far"
-  | "too_close"
-  | "off_center"
   | "turn_left"
   | "turn_right"
   | "hold"
@@ -31,14 +28,22 @@ export type GuideState =
 export type Angle = "left" | "center" | "right";
 export const ANGLES: Angle[] = ["center", "right", "left"];
 
-/** Seuils de cadrage et d'orientation. */
+/**
+ * Seuils d'orientation, et bornes d'exploitabilite.
+ *
+ * Les bornes de taille ne servent plus a demander a quelqu'un de se
+ * rapprocher : le cadre suit desormais le visage, ou qu'il soit et quelle que
+ * soit sa taille. Elles ne servent qu'a decider en silence si une prise vaut
+ * la peine d'etre gardee — un visage a dix pixels de haut ne donne rien a
+ * analyser, et il vaut mieux attendre l'image suivante que sortir un ordre.
+ */
 const T = {
   /** Hauteur du visage rapportee a la hauteur de l'image. */
-  minFace: 0.26,
-  maxFace: 0.66,
-  /** Ecart tolere au centre — large, parce qu'on tourne la tete. */
-  offX: 0.2,
-  offY: 0.2,
+  minFace: 0.16,
+  maxFace: 0.92,
+  /** Le visage doit rester dans le champ, sans plus. */
+  offX: 0.34,
+  offY: 0.34,
   /** En deca, la tete est consideree de face. */
   center: 0.18,
   /** Au-dela, elle est consideree tournee. */
@@ -74,17 +79,15 @@ export function framingOk(d: Detection): boolean {
 /**
  * Etat du guidage.
  *
- * L'ordre compte : on corrige d'abord le cadrage, puis on oriente. Demander de
- * tourner la tete a quelqu'un qui est hors champ ne sert a rien.
+ * Il ne reste qu'une consigne possible : dans quel sens tourner. Le cadrage
+ * n'en produit plus aucune. Dire "reculez" ou "centrez-vous" a quelqu'un qui
+ * se regarde deja dans l'ecran revient a lui faire faire le travail de l'app —
+ * c'est au cadre de venir sur le visage, pas l'inverse.
  */
 export function evaluate(d: Detection | null, covered: Angle[]): GuideState {
   const reste = ANGLES.filter((a) => !covered.includes(a));
   if (reste.length === 0) return "done";
   if (!d) return "searching";
-
-  if (d.hRatio < T.minFace) return "too_far";
-  if (d.hRatio > T.maxFace) return "too_close";
-  if (Math.abs(d.cx - 0.5) > T.offX || Math.abs(d.cy - 0.5) > T.offY) return "off_center";
 
   const ici = angleOf(d.yaw);
   // L'angle courant manque encore : on est au bon endroit, il suffit de tenir.
@@ -101,13 +104,7 @@ export function guideMessage(state: GuideState): string {
     case "loading":
       return "Préparation…";
     case "searching":
-      return "Aucun visage détecté";
-    case "too_far":
-      return "Rapprochez-vous";
-    case "too_close":
-      return "Reculez un peu";
-    case "off_center":
-      return "Centrez votre visage";
+      return "Montrez-nous votre visage";
     case "turn_left":
       return "Tournez lentement vers la gauche";
     case "turn_right":

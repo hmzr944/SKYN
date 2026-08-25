@@ -412,7 +412,7 @@ export default function ScanResultScreen() {
               </View>
               {data.hormonal_pattern && (
                 <Text style={styles.note}>
-                  Répartition majoritairement mandibulaire — un profil souvent
+                  Répartition majoritairement mandibulaire, un profil souvent
                   associé à une composante hormonale. À évoquer avec un médecin
                   si les poussées suivent un cycle.
                 </Text>
@@ -539,7 +539,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.l,
   },
   loadingTitle: {
-    fontFamily: fonts.heading,
+    fontFamily: fonts.display,
     fontSize: 24,
     color: colors.fg,
     textAlign: "center",
@@ -566,7 +566,7 @@ const styles = StyleSheet.create({
   hero: { alignItems: "center", paddingHorizontal: spacing.xl, paddingTop: spacing.s },
   ringCenter: { flex: 1, alignItems: "center", justifyContent: "center" },
   ringValue: {
-    fontFamily: fonts.heading,
+    fontFamily: fonts.display,
     fontSize: 46,
     color: colors.fg,
     letterSpacing: -2,
@@ -575,7 +575,7 @@ const styles = StyleSheet.create({
   ringUnit: { fontFamily: fonts.body, fontSize: 11, color: colors.fgDim, letterSpacing: 1 },
 
   diagnosis: {
-    fontFamily: fonts.heading,
+    fontFamily: fonts.display,
     fontSize: 26,
     lineHeight: 31,
     color: colors.fg,
@@ -660,7 +660,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.m,
     minWidth: 84,
   },
-  lesionCount: { fontFamily: fonts.heading, fontSize: 22, color: colors.fg },
+  lesionCount: { fontFamily: fonts.display, fontSize: 22, color: colors.fg },
   lesionName: { fontFamily: fonts.body, fontSize: 11, color: colors.fgMuted },
   note: {
     fontFamily: fonts.body,
@@ -821,7 +821,7 @@ const styles = StyleSheet.create({
     borderTopColor: colors.borderSubtle,
   },
   totalLabel: { fontFamily: fonts.body, fontSize: 13, color: colors.fgMuted },
-  totalValue: { fontFamily: fonts.heading, fontSize: 18, color: colors.fg },
+  totalValue: { fontFamily: fonts.display, fontSize: 18, color: colors.fg },
 
   scheduleIntro: {
     fontFamily: fonts.body,

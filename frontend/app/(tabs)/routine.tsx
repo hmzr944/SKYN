@@ -307,7 +307,7 @@ export default function RoutineScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
   header: { paddingHorizontal: spacing.l, paddingTop: spacing.m, paddingBottom: spacing.s },
-  title: { fontFamily: fonts.heading, fontSize: 30, color: colors.fg, letterSpacing: -0.6 },
+  title: { fontFamily: fonts.display, fontSize: 30, color: colors.fg, letterSpacing: -0.6 },
   subtitle: { fontFamily: fonts.body, fontSize: 13, color: colors.fgMuted, marginTop: 2 },
 
   empty: {
@@ -327,7 +327,7 @@ const styles = StyleSheet.create({
     ...shadow.button,
   },
   emptyTitle: {
-    fontFamily: fonts.heading,
+    fontFamily: fonts.display,
     fontSize: 24,
     lineHeight: 30,
     color: colors.fg,
@@ -353,7 +353,7 @@ const styles = StyleSheet.create({
   },
   streakTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" },
   streakNum: {
-    fontFamily: fonts.heading,
+    fontFamily: fonts.display,
     fontSize: 52,
     color: colors.accent,
     lineHeight: 56,
@@ -362,7 +362,7 @@ const styles = StyleSheet.create({
   streakLabel: { fontFamily: fonts.body, fontSize: 13, color: colors.onInverseMuted },
   streakStats: { flexDirection: "row", gap: spacing.l },
   streakStat: { alignItems: "flex-end" },
-  streakStatVal: { fontFamily: fonts.headingMedium, fontSize: 18, color: colors.bg },
+  streakStatVal: { fontFamily: fonts.display, fontSize: 18, color: colors.bg },
   streakStatLabel: { fontFamily: fonts.body, fontSize: 10, color: "rgba(255,248,242,0.5)" },
 
   dayGrid: {

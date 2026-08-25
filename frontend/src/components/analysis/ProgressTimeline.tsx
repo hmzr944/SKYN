@@ -229,7 +229,7 @@ const styles = StyleSheet.create({
   },
   footLabel: { fontFamily: fonts.body, fontSize: 10, color: colors.fgDim },
   footValue: {
-    fontFamily: fonts.heading,
+    fontFamily: fonts.display,
     fontSize: 26,
     color: colors.fg,
     letterSpacing: -0.8,

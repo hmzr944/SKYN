@@ -248,10 +248,10 @@ export default function SettingsScreen() {
               setOpen={setOpen}
               label="Licences"
               body={
-                "Outfit — Rodrigo Fuenzalida, sous SIL Open Font License 1.1.\n\n" +
-                "MediaPipe (guidage du cadrage) — Google, licence Apache 2.0.\n\n" +
-                "OpenCV, SciPy, NumPy — licences BSD.\n\n" +
-                "React Native et Expo — licence MIT."
+                "Outfit, de Rodrigo Fuenzalida, sous SIL Open Font License 1.1.\n\n" +
+                "MediaPipe (guidage du cadrage), de Google, licence Apache 2.0.\n\n" +
+                "OpenCV, SciPy et NumPy, licences BSD.\n\n" +
+                "React Native et Expo, licence MIT."
               }
             />
             <View style={styles.sep} />

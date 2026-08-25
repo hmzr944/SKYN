@@ -46,6 +46,12 @@ class FaceAnalysis:
     cautions: List[str] = field(default_factory=list)
     quality: Dict = field(default_factory=dict)
     flags: List[str] = field(default_factory=list)
+    # La boite du visage dans l'image, en pixels, avec les dimensions de
+    # l'image. Les coordonnees des lesions sont normalisees SUR CETTE BOITE :
+    # sans elle, le client ne peut pas les replacer sur la photo, et il les
+    # dessinait jusqu'ici sur l'image entiere — d'ou des reperes a cote du
+    # visage, parfois hors du visage.
+    face_box: Dict[str, int] = field(default_factory=dict)
     elapsed_ms: int = 0
 
     def to_dict(self) -> dict:
@@ -229,8 +235,17 @@ def analyze_face(image_b64: str, profile: Optional[dict] = None) -> FaceAnalysis
         cautions=routine.cautions,
         quality=asdict(fm.quality),
         flags=fp.flags + ph.notes,
+        face_box=_face_box(fm),
         elapsed_ms=int((time.time() - t0) * 1000),
     )
+
+
+def _face_box(fm) -> Dict[str, int]:
+    """La boite du visage et la taille de l'image, en pixels."""
+    bx, by, bw, bh = fm.bbox
+    h, w = fm.rgb.shape[:2]
+    return {"x": int(bx), "y": int(by), "w": int(bw), "h": int(bh),
+            "image_w": int(w), "image_h": int(h)}
 
 
 def analyze_multi(images: List[str], profile: Optional[dict] = None) -> FaceAnalysis:

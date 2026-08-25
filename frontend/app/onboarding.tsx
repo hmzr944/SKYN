@@ -49,7 +49,7 @@ const CONTENT_MAX_W = 480;
 // identique — c'est le fil qui tient l'ensemble sans le rendre répétitif.
 const SLIDES = [
   {
-    kicker: "01 — LE CONSTAT",
+    kicker: "01 · LE CONSTAT",
     accent: "coral" as const,
     cover: true,
     title: "Votre peau,\ndécryptée.",
@@ -57,7 +57,7 @@ const SLIDES = [
       "SKYN analyse votre peau en quelques secondes et vous révèle ce qu'elle a vraiment à dire.",
   },
   {
-    kicker: "02 — SUR MESURE",
+    kicker: "02 · SUR MESURE",
     accent: "lime" as const,
     Illustration: PromiseIllustration,
     title: "Un diagnostic\nqui vous ressemble",
@@ -65,7 +65,7 @@ const SLIDES = [
       "Calibré sur votre âge, votre environnement et vos priorités pour des recommandations vraiment personnalisées.",
   },
   {
-    kicker: "03 — LA TECHNOLOGIE",
+    kicker: "03 · LA TECHNOLOGIE",
     accent: "coral" as const,
     Illustration: TechIllustration,
     title: "Une technologie\nde pointe",
@@ -73,7 +73,7 @@ const SLIDES = [
       "Notre moteur cartographie votre peau zone par zone et détecte les micro-patterns invisibles à l'œil nu.",
   },
   {
-    kicker: "04 — CONFIDENTIEL",
+    kicker: "04 · CONFIDENTIEL",
     accent: "lime" as const,
     Illustration: PrivacyIllustration,
     title: "Vos données\nvous appartiennent",
@@ -81,7 +81,7 @@ const SLIDES = [
       "Vos photos sont analysées puis immédiatement supprimées. Rien n'est partagé, rien n'est conservé.",
   },
   {
-    kicker: "05 — À VOUS DE JOUER",
+    kicker: "05 · À VOUS DE JOUER",
     accent: "coral" as const,
     Illustration: CaptureIllustration,
     title: "Prêt à découvrir\nvotre peau ?",
@@ -537,7 +537,7 @@ const styles = StyleSheet.create({
     borderRadius: 1,
   },
   title: {
-    fontFamily: fonts.heading,
+    fontFamily: fonts.display,
     color: colors.fg,
     fontSize: 36,
     lineHeight: 42,

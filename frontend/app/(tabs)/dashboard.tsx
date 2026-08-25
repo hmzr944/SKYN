@@ -278,7 +278,7 @@ export default function DashboardScreen() {
         {!loading && scans.length > 0 ? (
           <FadeIn delay={140}>
             <View style={styles.chartCard}>
-              <Text style={styles.chartLabel}>EVOLUTION — 4 DERNIERS SCANS</Text>
+              <Text style={styles.chartLabel}>EVOLUTION SUR 4 SCANS</Text>
               <View style={styles.chartWrap}>
                 <ScoreChart scores={chartScores} />
               </View>
@@ -362,7 +362,7 @@ const styles = StyleSheet.create({
     letterSpacing: 4,
   },
   greeting: {
-    fontFamily: fonts.heading,
+    fontFamily: fonts.display,
     fontSize: 32,
     color: colors.fg,
     letterSpacing: -0.5,
@@ -396,7 +396,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xl,
   },
   heroTitle: {
-    fontFamily: fonts.heading,
+    fontFamily: fonts.display,
     fontSize: 28,
     color: colors.onAccent,
     lineHeight: 34,
@@ -444,7 +444,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.l,
   },
   scoreValue: {
-    fontFamily: fonts.heading,
+    fontFamily: fonts.display,
     fontSize: 64,
     color: colors.accent,
     letterSpacing: -1,
@@ -532,7 +532,7 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
   sectionTitle: {
-    fontFamily: fonts.heading,
+    fontFamily: fonts.display,
     fontSize: 20,
     color: colors.fg,
     letterSpacing: -0.3,
@@ -550,7 +550,7 @@ const styles = StyleSheet.create({
     maxWidth: 240,
   },
   tipNumber: {
-    fontFamily: fonts.heading,
+    fontFamily: fonts.display,
     fontSize: 28,
     color: colors.accentSoft,
     marginBottom: spacing.xs,

@@ -247,6 +247,7 @@ export default function AnalysisScreen() {
           phase={phase}
           imageB64={imageB64}
           detections={detections}
+          faceBox={analysis?.face_box}
           style={styles.field}
         />
 

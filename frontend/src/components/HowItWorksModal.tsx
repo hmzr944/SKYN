@@ -75,7 +75,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.l,
   },
   title: {
-    fontFamily: fonts.heading,
+    fontFamily: fonts.display,
     fontSize: 24,
     color: colors.fg,
     marginBottom: spacing.l,
@@ -96,7 +96,7 @@ const styles = StyleSheet.create({
     flexShrink: 0,
   },
   numberText: {
-    fontFamily: fonts.heading,
+    fontFamily: fonts.display,
     fontSize: 18,
     color: colors.onOk,
   },

@@ -32,7 +32,7 @@ const QUESTIONS_META = [
   { n: "04", label: "PRIORITÉ" },
 ];
 
-const AGE_OPTIONS = ["Moins de 25", "25 – 40", "40 – 60", "60 +"];
+const AGE_OPTIONS = ["Moins de 25", "25 à 40", "40 à 60", "60 et plus"];
 const AGE_VALUES = ["<25", "25-40", "40-60", "60+"];
 const ENV_OPTIONS = [
   { label: "Urbain / Pollué", value: "Urbain" },
@@ -46,7 +46,7 @@ const SKIN_OPTIONS = [
   { label: "Mixte (zone T brillante)", value: "Mixte" },
   { label: "Grasse", value: "Grasse" },
   { label: "Sèche", value: "Sèche" },
-  { label: "Je ne sais pas — détectez-le", value: "auto" },
+  { label: "Je ne sais pas, détectez-le", value: "auto" },
 ];
 
 /** Une option du questionnaire : la coche "pop" avec un léger effet ressort
@@ -162,7 +162,7 @@ export default function ProfileSetupScreen() {
       setSaving(false);
       setError(
         e?.message?.includes("401") || e?.message?.includes("403")
-          ? "Session expirée — reconnectez-vous."
+          ? "Session expirée. Reconnectez-vous."
           : "Connexion impossible. Vérifiez votre réseau et réessayez.",
       );
     }
@@ -428,7 +428,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.s,
   },
   question: {
-    fontFamily: fonts.heading,
+    fontFamily: fonts.display,
     color: colors.fg,
     textAlign: "left",
     fontSize: 36,

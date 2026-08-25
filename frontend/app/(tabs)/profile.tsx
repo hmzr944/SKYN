@@ -168,7 +168,7 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.xxl,
   },
   title: {
-    fontFamily: fonts.heading,
+    fontFamily: fonts.display,
     fontSize: 24,
     color: colors.fg,
     letterSpacing: -0.3,
@@ -189,7 +189,7 @@ const styles = StyleSheet.create({
     ...shadow.button,
   },
   avatarText: {
-    fontFamily: fonts.heading,
+    fontFamily: fonts.display,
     fontSize: 28,
     color: colors.onAccent,
   },

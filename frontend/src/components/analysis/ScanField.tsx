@@ -26,10 +26,12 @@ import Animated, {
 
 import { colors, motion, palette } from "@/src/theme";
 import { FACE_CLOSED, FACE_LENGTH, FACE_PATH, MARK_VIEWBOX } from "@/src/theme/mark";
+import type { FaceBox } from "@/src/types/analysis";
 
 const AnimatedPath = Animated.createAnimatedComponent(Path);
 const AnimatedRect = Animated.createAnimatedComponent(Rect);
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
+const AnimatedG = Animated.createAnimatedComponent(G);
 
 export type Detection = { x: number; y: number; radius?: number };
 
@@ -39,17 +41,57 @@ type Props = {
   phase: number;
   imageB64?: string | null;
   detections?: Detection[];
+  /** La boite du visage dans la photo. Absente sur les analyses anciennes. */
+  faceBox?: FaceBox | null;
   style?: StyleProp<ViewStyle>;
 };
 
-/** Les zones du decoupage, en coordonnees du repere 64x64. */
-const ZONES = [
-  { x: 32, y: 18, r: 7 }, // front
-  { x: 21, y: 30, r: 6 }, // joue gauche
-  { x: 43, y: 30, r: 6 }, // joue droite
-  { x: 32, y: 31, r: 4 }, // nez
-  { x: 32, y: 44, r: 5.5 }, // menton
-];
+/**
+ * L'encombrement du contour dans le repere 64x64, mesure au navigateur
+ * (getBBox) : les points de controle d'une courbe debordent de la courbe, une
+ * lecture a l'oeil sur le chemin donnerait une boite trop large.
+ */
+const OVAL = { x: 14.238, y: 10.2, w: 35.524, h: 44.3 };
+const OVAL_CX = OVAL.x + OVAL.w / 2;
+const OVAL_CY = OVAL.y + OVAL.h / 2;
+
+/**
+ * Ou poser la photo et les reperes.
+ *
+ * Les coordonnees d'une lesion sont normalisees sur la BOITE DU VISAGE, pas
+ * sur l'image. Elles etaient pourtant multipliees par les 64 unites du repere
+ * entier : une lesion en bord de joue tombait alors a cote du contour, et on
+ * voyait des reperes flotter hors du visage.
+ *
+ * On cadre donc la photo sur la boite du visage, en la posant sur la boite du
+ * contour. Les deux reperes coincident alors par construction, et un repere
+ * tombe exactement sur ce que le moteur a vu.
+ */
+function frame(box?: FaceBox | null) {
+  if (!box || !box.w || !box.h || !box.image_w || !box.image_h) {
+    // Sans la boite (analyses d'avant son ajout), on ne peut plus faire
+    // coincider photo et reperes : on replace les reperes sur le contour, ce
+    // qui reste anatomiquement juste, et on renonce a la photo dessous.
+    return { known: false, s: 1, imgX: 0, imgY: 0, imgW: MARK_VIEWBOX, imgH: MARK_VIEWBOX,
+             markX: (nx: number) => OVAL.x + nx * OVAL.w,
+             markY: (ny: number) => OVAL.y + ny * OVAL.h,
+             markR: (nr: number) => nr * OVAL.h };
+  }
+  // Recouvrement : la boite du visage couvre au moins celle du contour, le
+  // debord est rogne par le contour lui-meme.
+  const s = Math.max(OVAL.w / box.w, OVAL.h / box.h);
+  return {
+    known: true,
+    s,
+    imgW: box.image_w * s,
+    imgH: box.image_h * s,
+    imgX: OVAL_CX - (box.x + box.w / 2) * s,
+    imgY: OVAL_CY - (box.y + box.h / 2) * s,
+    markX: (nx: number) => OVAL_CX + (nx - 0.5) * box.w * s,
+    markY: (ny: number) => OVAL_CY + (ny - 0.5) * box.h * s,
+    markR: (nr: number) => nr * Math.max(box.w, box.h) * s,
+  };
+}
 
 /**
  * Le champ d'analyse.
@@ -63,7 +105,8 @@ const ZONES = [
  * d'un volume, pour qu'on lise une surface examinee sous plusieurs angles
  * plutot qu'un gabarit plaque sur une photo.
  */
-export function ScanField({ size, phase, imageB64, detections = [], style }: Props) {
+export function ScanField({ size, phase, imageB64, detections = [], faceBox, style }: Props) {
+  const f = frame(faceBox);
   // Le contour se trace en boucle : le balayage n'est pas fini tant que
   // l'analyse tourne. Il se fige a la derniere phase.
   const sweep = useSharedValue(0);
@@ -116,7 +159,10 @@ export function ScanField({ size, phase, imageB64, detections = [], style }: Pro
     y: -6 + band.value * (MARK_VIEWBOX + 2),
   }));
 
-  const zoneProps = useAnimatedProps(() => ({ opacity: zones.value * 0.5 }));
+  // Les reperes n'apparaissent qu'a partir du decoupage : avant, il n'y a
+  // rien a montrer, et des points poses trop tot laisseraient croire que le
+  // moteur a conclu avant d'avoir lu.
+  const markGroupProps = useAnimatedProps(() => ({ opacity: zones.value }));
 
   const tiltStyle = useAnimatedStyle(() => ({
     transform: [
@@ -143,36 +189,26 @@ export function ScanField({ size, phase, imageB64, detections = [], style }: Pro
         </Defs>
 
         <G clipPath="url(#skyn-face)">
-          {imageB64 ? (
+          {imageB64 && f.known ? (
             <SvgImage
               href={{ uri: `data:image/jpeg;base64,${imageB64}` }}
-              x="0"
-              y="0"
-              width={MARK_VIEWBOX}
-              height={MARK_VIEWBOX}
-              preserveAspectRatio="xMidYMid slice"
-              opacity={0.55}
+              x={f.imgX}
+              y={f.imgY}
+              width={f.imgW}
+              height={f.imgH}
+              preserveAspectRatio="none"
+              opacity={0.62}
             />
           ) : (
             <Path d={FACE_CLOSED} fill={colors.surfaceSunken} />
           )}
 
           {/* Voile terre : la capture passe au second plan, le trace au premier. */}
-          <Path d={FACE_CLOSED} fill={palette.terre} opacity={imageB64 ? 0.28 : 0.06} />
-
-          {/* Le decoupage en zones, une fois le mapping atteint. */}
-          {ZONES.map((z, i) => (
-            <AnimatedCircle
-              key={i}
-              cx={z.x}
-              cy={z.y}
-              r={z.r}
-              fill="none"
-              stroke={imageB64 ? palette.creme : palette.terre}
-              strokeWidth={0.6}
-              animatedProps={zoneProps}
-            />
-          ))}
+          <Path
+            d={FACE_CLOSED}
+            fill={palette.terre}
+            opacity={imageB64 && f.known ? 0.22 : 0.06}
+          />
 
           {/* La bande de lecture. */}
           <AnimatedRect
@@ -182,6 +218,14 @@ export function ScanField({ size, phase, imageB64, detections = [], style }: Pro
             fill="url(#skyn-band)"
             animatedProps={bandProps}
           />
+
+          {/* Les reperes vivent DANS le contour : rien ne peut se poser hors
+              du visage, meme si une coordonnee derape. */}
+          <AnimatedG animatedProps={markGroupProps as never}>
+            {list.map((d, i) => (
+              <DetectionMark key={i} d={d} progress={marks} index={i} frame={f} />
+            ))}
+          </AnimatedG>
         </G>
 
         {/* Le contour — le symbole lui-meme, a l'echelle du visage. */}
@@ -195,28 +239,28 @@ export function ScanField({ size, phase, imageB64, detections = [], style }: Pro
           animatedProps={contourProps}
         />
 
-        {/* Les reperes : la ou le moteur a trouve quelque chose. */}
-        {list.map((d, i) => (
-          <DetectionMark key={i} d={d} progress={marks} index={i} />
-        ))}
       </Svg>
     </Animated.View>
   );
 }
 
-/** Un repere se pose au ressort, avec son halo — comme le point du symbole. */
+/** Un repere se pose au ressort, avec son halo, comme le point du symbole. */
 function DetectionMark({
   d,
   progress,
   index,
+  frame: f,
 }: {
   d: Detection;
   progress: SharedValue<number>;
   index: number;
+  frame: ReturnType<typeof frame>;
 }) {
-  const cx = d.x * MARK_VIEWBOX;
-  const cy = d.y * MARK_VIEWBOX;
-  const r = Math.max(1.6, (d.radius ?? 0.04) * MARK_VIEWBOX * 0.9);
+  const cx = f.markX(d.x);
+  const cy = f.markY(d.y);
+  // Un plancher de lisibilite : une lesion de 2 mm mesure moins d'un demi-point
+  // dans ce repere, et un cercle plus fin que son trait ne se voit pas.
+  const r = Math.max(1.2, f.markR(d.radius ?? 0.03) * 1.6);
 
   // Chaque repere part legerement apres le precedent : la lecture se fait
   // point par point, pas d'un bloc.

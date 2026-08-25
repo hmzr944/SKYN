@@ -139,7 +139,24 @@ export interface FaceAnalysis {
   cautions: string[];
   quality: Quality;
   flags: string[];
+  /**
+   * La boite du visage dans la photo, en pixels, avec la taille de la photo.
+   *
+   * Les coordonnees des lesions sont normalisees SUR CETTE BOITE, pas sur
+   * l'image : sans elle on ne peut pas les replacer sur la photo. Absente des
+   * analyses enregistrees avant son ajout — le rendu doit donc s'en passer.
+   */
+  face_box?: FaceBox;
   elapsed_ms: number;
+}
+
+export interface FaceBox {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  image_w: number;
+  image_h: number;
 }
 
 /** Libelles francais affichables. */

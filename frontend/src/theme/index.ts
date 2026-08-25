@@ -68,6 +68,18 @@ export const colors = {
   white: palette.creme,
 } as const;
 
+/**
+ * Deux familles, et un partage net entre les deux.
+ *
+ * Outfit porte l'interface : etiquettes, boutons, corps de texte, tout ce
+ * qu'on lit vite et souvent. Fraunces porte ce qu'on REGARDE : le titre d'un
+ * ecran, un score, un chiffre. C'est une serif a fort contraste, donc elle ne
+ * supporte pas le petit corps ni les capitales espacees — elle n'y va jamais.
+ *
+ * Une seule famille rendait chaque ecran uniforme : tout se ressemblait, et
+ * rien n'attirait l'oeil en premier. Deux familles donnent un point d'entree a
+ * chaque ecran, et c'est ce qui fait qu'une page de texte cesse d'etre un mur.
+ */
 export const fonts = {
   logo: "Outfit_700Bold",
   heading: "Outfit_600SemiBold",
@@ -75,12 +87,15 @@ export const fonts = {
   body: "Outfit_400Regular",
   bodyMedium: "Outfit_500Medium",
   bodyLight: "Outfit_300Light",
+  /** Serif d'affichage. Jamais sous 18 px, jamais en capitales espacees. */
+  display: "Fraunces_600SemiBold",
+  displayRegular: "Fraunces_400Regular",
 } as const;
 
-/** Une seule famille : la hierarchie vient de la graisse et de la chasse. */
 export const type = {
-  display: { fontFamily: fonts.heading, fontSize: 34, lineHeight: 36, letterSpacing: -1.2 },
-  title: { fontFamily: fonts.heading, fontSize: 24, lineHeight: 28, letterSpacing: -0.6 },
+  display: { fontFamily: fonts.display, fontSize: 34, lineHeight: 38, letterSpacing: -0.6 },
+  title: { fontFamily: fonts.display, fontSize: 24, lineHeight: 30, letterSpacing: -0.3 },
+  /** Titre de section, plus discret : la serif y serait trop presente. */
   subtitle: { fontFamily: fonts.headingMedium, fontSize: 18, lineHeight: 24, letterSpacing: -0.3 },
   body: { fontFamily: fonts.body, fontSize: 15, lineHeight: 23 },
   bodySmall: { fontFamily: fonts.body, fontSize: 13, lineHeight: 20 },
@@ -93,7 +108,7 @@ export const type = {
     textTransform: "uppercase" as const,
   },
   wordmark: { fontFamily: fonts.logo, fontSize: 16, letterSpacing: 6.4 },
-  number: { fontFamily: fonts.logo, fontSize: 46, lineHeight: 46, letterSpacing: -2 },
+  number: { fontFamily: fonts.display, fontSize: 46, lineHeight: 50, letterSpacing: -1 },
 } as const;
 
 export const spacing = {

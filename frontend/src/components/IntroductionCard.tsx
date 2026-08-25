@@ -82,7 +82,7 @@ function Idle({
     <>
       <Text style={styles.helper}>
         {"Quand vous commencez un actif, la peau peut réagir les premières semaines. " +
-          "C'est le moment où l'on abandonne le plus souvent — suivez-le et vous saurez " +
+          "C'est le moment où l'on abandonne le plus souvent. Suivez-le et vous saurez " +
           "quoi faire."}
       </Text>
       <View style={styles.chips}>

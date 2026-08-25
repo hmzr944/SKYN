@@ -277,7 +277,7 @@ export function readTracking(t: Tracking, day = dayNumber(t)): Verdict {
       title: "Des zones qui ne réagissaient pas",
       body:
         "Une remontée liée au renouvellement cellulaire touche les zones qui marquaient " +
-        "déjà. Sur des zones nouvelles, l'explication est plus probablement ailleurs — " +
+        "déjà. Sur des zones nouvelles, l'explication est plus probablement ailleurs : " +
         "un autre produit, une friction, autre chose.",
       action: "Vérifier ce qui a changé d'autre cette semaine",
     };
@@ -286,7 +286,7 @@ export function readTracking(t: Tracking, day = dayNumber(t)): Verdict {
   if (day <= 7) {
     return {
       level: "early",
-      title: `Jour ${day} — trop tôt pour conclure`,
+      title: `Jour ${day} : trop tôt pour conclure`,
       body:
         "Les premiers jours ne veulent rien dire, dans un sens comme dans l'autre. " +
         "Continuez à noter : c'est la troisième semaine qui est informative.",
@@ -319,7 +319,7 @@ export function readTracking(t: Tracking, day = dayNumber(t)): Verdict {
       body:
         `Une augmentation des lésions dans les premières semaines d'un actif de ce type ` +
         `est fréquemment rapportée et se résorbe le plus souvent avant huit semaines. ` +
-        `Vous êtes au jour ${day}. Ce n'est pas une certitude — c'est ce qui est le plus courant.`,
+        `Vous êtes au jour ${day}. Ce n'est pas une certitude, c'est ce qui est le plus courant.`,
       action: "Tenir encore, sans augmenter la fréquence",
     };
   }
