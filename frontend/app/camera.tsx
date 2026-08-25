@@ -10,6 +10,7 @@ import Animated, {
   useAnimatedProps,
   useSharedValue,
   withRepeat,
+  withSpring,
   withTiming,
 } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -29,7 +30,7 @@ import {
   type Angle,
   type GuideState,
 } from "@/src/services/faceGuide";
-import { colors, radius, spacing, type } from "@/src/theme";
+import { colors, motion, radius, spacing, type } from "@/src/theme";
 import { FACE_CLOSED, FACE_PATH } from "@/src/theme/mark";
 import { storage } from "@/src/utils/storage";
 
@@ -74,13 +75,23 @@ export default function CameraScreen() {
   // Amplitude de rotation reellement balayee, pour la couronne : on retient
   // l'ecart entre le yaw le plus a gauche et le plus a droite vus nettement.
   const spanRef = useRef<{ min: number; max: number } | null>(null);
-  const [sweep, setSweep] = useState(0);
+
+  // Geometrie de la couronne, en pixels d'ecran. Elle vit en valeurs animees :
+  // la couronne suit le visage image par image sans repasser par le rendu.
+  const ringX = useSharedValue(0);
+  const ringY = useSharedValue(0);
+  const ringR = useSharedValue(0);
+  const ringP = useSharedValue(0);
+  // Le repere de l'ecran change avec la mise en page : on le lit dans une ref
+  // pour que la boucle de detection ne travaille jamais sur une valeur perimee.
+  const stageRef = useRef({ w: 0, h: 0 });
   const busyRef = useRef(false);
   const doneRef = useRef(false);
 
   const [stage, setStage] = useState({ w: 0, h: 0 });
   const onStageLayout = (e: LayoutChangeEvent) => {
     const { width, height } = e.nativeEvent.layout;
+    stageRef.current = { w: width, h: height };
     setStage((s) => (s.w === width && s.h === height ? s : { w: width, h: height }));
   };
 
@@ -134,6 +145,54 @@ export default function CameraScreen() {
       img.onerror = () => resolve(b64);
       img.src = b64.startsWith("data:") ? b64 : `data:image/jpeg;base64,${b64}`;
     });
+
+  /**
+   * Place la couronne sur le visage detecte.
+   *
+   * La video est affichee en `cover` : elle est agrandie jusqu'a remplir le
+   * cadre, puis rognee. Il faut donc refaire ce calcul pour convertir les
+   * coordonnees de detection en pixels d'ecran — sinon la couronne derive des
+   * que les proportions de la camera different de celles du cadre.
+   *
+   * Et l'apercu etant en miroir, l'abscisse doit etre retournee : sans ca, la
+   * couronne partirait du cote oppose au visage.
+   */
+  const placeRing = useCallback(
+    (d: { cx: number; cy: number; hRatio: number }, vw: number, vh: number) => {
+      const { w, h } = stageRef.current;
+      if (!w || !h || !vw || !vh) return;
+
+      const scale = Math.max(w / vw, h / vh);
+      const dispW = vw * scale;
+      const dispH = vh * scale;
+      const offX = (w - dispW) / 2;
+      const offY = (h - dispH) / 2;
+
+      const faceH = d.hRatio * dispH;
+
+      // Rayon : il entoure le visage, mais reste borne par le cadre.
+      const wanted = faceH * 0.62;
+      const room = Math.min(w, h) / 2 - 10;
+      const r = Math.max(40, Math.min(wanted, room / 1.18));
+
+      // Encombrement reel : les traits allumes s'allongent de 60 % au-dela du
+      // rayon, il faut compter cette marge sinon la couronne sort du cadre.
+      const reach = r + 1.6 * Math.max(6, r * 0.07) + 4;
+
+      // Le centre suit le visage MAIS reste borne : un visage cadre pres du
+      // bord ferait sortir la couronne de l'ecran. Elle s'arrete alors au bord
+      // — et le guidage demande de toute facon de se recentrer.
+      const clamp = (v: number, lo: number, hi: number) =>
+        hi < lo ? (lo + hi) / 2 : Math.max(lo, Math.min(hi, v));
+      const x = clamp(w - (offX + d.cx * dispW), reach, w - reach);
+      const y = clamp(offY + d.cy * dispH, reach, h - reach);
+
+      ringX.value = withSpring(x, motion.spring);
+      ringY.value = withSpring(y, motion.spring);
+      ringR.value = withSpring(r, motion.spring);
+    },
+    [ringX, ringY, ringR],
+  );
 
   /** Echantillonne l'angle courant, sans ceremonie : ni flash ni compte a rebours. */
   const sample = useCallback(
@@ -207,15 +266,21 @@ export default function CameraScreen() {
 
               // L'angle doit tenir un court instant avant d'etre echantillonne :
               // une image prise en plein mouvement serait floue.
-              if (d && framingOk(d)) {
-                const sp = spanRef.current;
-                const next = sp
-                  ? { min: Math.min(sp.min, d.yaw), max: Math.max(sp.max, d.yaw) }
-                  : { min: d.yaw, max: d.yaw };
-                spanRef.current = next;
-                // Une amplitude d'environ 1,2 couvre confortablement un profil
-                // a l'autre : au-dela on demanderait un effort inutile.
-                setSweep(Math.max(0, Math.min(1, (next.max - next.min) / 1.2)));
+              if (d) {
+                placeRing(d, v.videoWidth, v.videoHeight);
+                if (framingOk(d)) {
+                  const sp = spanRef.current;
+                  const next = sp
+                    ? { min: Math.min(sp.min, d.yaw), max: Math.max(sp.max, d.yaw) }
+                    : { min: d.yaw, max: d.yaw };
+                  spanRef.current = next;
+                  // Une amplitude d'environ 1,2 couvre confortablement un
+                  // profil a l'autre : au-dela on demanderait un effort inutile.
+                  ringP.value = withTiming(
+                    Math.max(0, Math.min(1, (next.max - next.min) / 1.2)),
+                    { duration: 220 },
+                  );
+                }
               }
 
               const angle = d && framingOk(d) ? angleOf(d.yaw) : null;
@@ -248,7 +313,7 @@ export default function CameraScreen() {
         /* noop */
       }
     };
-  }, [canUseCamera, sample]);
+  }, [canUseCamera, sample, placeRing, ringP]);
 
   /* ————— animations ————— */
   const breath = useSharedValue(0);
@@ -365,12 +430,7 @@ export default function CameraScreen() {
 
             {/* La couronne vit dans le repere de l'ecran, pas dans celui du
                 dessin : son epaisseur ne doit pas suivre l'echelle du visage. */}
-            <ScanRing
-              cx={stage.w / 2}
-              cy={ty + CENTER.y * k}
-              radius={(CONTENT_H / 2) * k * 1.1}
-              progress={sweep}
-            />
+            <ScanRing cx={ringX} cy={ringY} radius={ringR} progress={ringP} />
           </Svg>
         ) : null}
 

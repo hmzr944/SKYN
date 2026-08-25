@@ -1,12 +1,7 @@
-import { useEffect } from "react";
-import Animated, {
-  useAnimatedProps,
-  useSharedValue,
-  withSpring,
-} from "react-native-reanimated";
+import Animated, { SharedValue, useAnimatedProps } from "react-native-reanimated";
 import { Line } from "react-native-svg";
 
-import { colors, motion } from "@/src/theme";
+import { colors } from "@/src/theme";
 
 const AnimatedLine = Animated.createAnimatedComponent(Line);
 
@@ -14,103 +9,94 @@ const AnimatedLine = Animated.createAnimatedComponent(Line);
  * La couronne de traits, façon enregistrement Face ID.
  *
  * Chaque trait represente une direction de rotation. Ils s'allument a mesure
- * que la tete balaie l'amplitude, et le geste devient evident sans qu'on ait
- * a l'expliquer : il faut completer le cercle.
+ * que la tete balaie l'amplitude : le geste devient evident sans explication,
+ * parce qu'une couronne ne dit pas seulement COMBIEN il reste, elle dit aussi
+ * DE QUEL COTE aller.
  *
- * C'est nettement plus lisible qu'une jauge lineaire — une jauge dit COMBIEN
- * il reste, une couronne dit AUSSI dans quelle direction aller.
+ * Position, rayon et progression arrivent en valeurs animees : la couronne
+ * suit le visage image par image, sans repasser par le rendu React. C'est ce
+ * qui lui permet de coller au mouvement au lieu de sauter.
  */
 
 /** Assez de traits pour lire une progression continue, pas assez pour moutonner. */
 const TICKS = 36;
 
-function Tick({
-  index,
-  total,
-  cx,
-  cy,
-  rInner,
-  rOuter,
-  lit,
-}: {
-  index: number;
-  total: number;
-  cx: number;
-  cy: number;
-  rInner: number;
-  rOuter: number;
-  lit: boolean;
-}) {
+type Geo = {
+  cx: SharedValue<number>;
+  cy: SharedValue<number>;
+  radius: SharedValue<number>;
+  /** Part de l'amplitude couverte, entre 0 et 1. */
+  progress: SharedValue<number>;
+};
+
+function Tick({ index, cx, cy, radius, progress }: Geo & { index: number }) {
   // On part du haut et on tourne : c'est le sens de lecture d'un cadran.
-  const angle = (index / total) * Math.PI * 2 - Math.PI / 2;
+  const angle = (index / TICKS) * Math.PI * 2 - Math.PI / 2;
   const cos = Math.cos(angle);
   const sin = Math.sin(angle);
+  // Distance au sommet dans les deux sens : le remplissage est symetrique,
+  // il ne privilegie aucun cote.
+  const fromTop = Math.min(index, TICKS - index);
 
-  const t = useSharedValue(0);
-  useEffect(() => {
-    t.value = withSpring(lit ? 1 : 0, motion.spring);
-  }, [lit, t]);
+  /** Allumage continu plutot que binaire : la transition se lit mieux. */
+  const litness = () => {
+    "worklet";
+    return Math.max(0, Math.min(1, (progress.value * TICKS - fromTop * 2) / 2));
+  };
 
-  const props = useAnimatedProps(() => {
-    // Un trait allume s'allonge vers l'exterieur : le relief se voit meme du
-    // coin de l'oeil, pendant qu'on regarde son propre visage.
-    const grow = rOuter + t.value * (rOuter - rInner) * 0.55;
+  const baseProps = useAnimatedProps(() => {
+    const r = radius.value;
+    const len = Math.max(6, r * 0.07);
     return {
-      x2: cx + cos * grow,
-      y2: cy + sin * grow,
-      opacity: 0.18 + t.value * 0.82,
+      x1: cx.value + cos * r,
+      y1: cy.value + sin * r,
+      x2: cx.value + cos * (r + len),
+      y2: cy.value + sin * (r + len),
+    };
+  });
+
+  const litProps = useAnimatedProps(() => {
+    const r = radius.value;
+    const len = Math.max(6, r * 0.07);
+    const l = litness();
+    // Un trait allume s'allonge : le relief se voit du coin de l'oeil, pendant
+    // qu'on regarde son propre visage.
+    return {
+      x1: cx.value + cos * r,
+      y1: cy.value + sin * r,
+      x2: cx.value + cos * (r + len * (1 + 0.6 * l)),
+      y2: cy.value + sin * (r + len * (1 + 0.6 * l)),
+      opacity: l,
     };
   });
 
   return (
-    <AnimatedLine
-      x1={cx + cos * rInner}
-      y1={cy + sin * rInner}
-      stroke={lit ? colors.accent : colors.fg}
-      strokeWidth={2}
-      strokeLinecap="round"
-      animatedProps={props}
-    />
+    <>
+      <AnimatedLine
+        stroke={colors.fg}
+        strokeWidth={2}
+        strokeLinecap="round"
+        opacity={0.16}
+        animatedProps={baseProps}
+      />
+      {/* Le trait allume est superpose : on evite d'animer une couleur, ce qui
+          coute cher et rend mal sur certains navigateurs. */}
+      <AnimatedLine
+        stroke={colors.accent}
+        strokeWidth={2.4}
+        strokeLinecap="round"
+        animatedProps={litProps}
+      />
+    </>
   );
 }
 
-export function ScanRing({
-  cx,
-  cy,
-  radius,
-  progress,
-}: {
-  cx: number;
-  cy: number;
-  radius: number;
-  /** Part de l'amplitude couverte, entre 0 et 1. */
-  progress: number;
-}) {
-  const rInner = radius;
-  const rOuter = radius + Math.max(8, radius * 0.06);
-  // Les traits s'allument des deux cotes a partir du haut, comme un cercle
-  // qu'on referme — c'est la lecture que donne Face ID.
-  const litCount = Math.round(progress * TICKS);
-
+export function ScanRing(geo: Geo) {
   return (
     <>
-      {Array.from({ length: TICKS }).map((_, i) => {
-        // Distance au sommet, dans les deux sens : le remplissage est
-        // symetrique, il ne privilegie pas un cote.
-        const fromTop = Math.min(i, TICKS - i);
-        return (
-          <Tick
-            key={i}
-            index={i}
-            total={TICKS}
-            cx={cx}
-            cy={cy}
-            rInner={rInner}
-            rOuter={rOuter}
-            lit={fromTop * 2 < litCount}
-          />
-        );
-      })}
+      {Array.from({ length: TICKS }).map((_, i) => (
+        <Tick key={i} index={i} {...geo} />
+      ))}
     </>
   );
 }
