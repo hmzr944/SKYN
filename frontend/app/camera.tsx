@@ -10,12 +10,12 @@ import Animated, {
   useAnimatedProps,
   useSharedValue,
   withRepeat,
-  withSpring,
   withTiming,
 } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { AnimatedPressable } from "@/src/components/ui/AnimatedPressable";
+import { ScanRing } from "@/src/components/analysis/ScanRing";
 import { Reveal } from "@/src/components/ui/Reveal";
 import { track } from "@/src/services/analytics";
 import {
@@ -29,8 +29,8 @@ import {
   type Angle,
   type GuideState,
 } from "@/src/services/faceGuide";
-import { colors, motion, radius, spacing, type } from "@/src/theme";
-import { FACE_CLOSED, FACE_LENGTH, FACE_PATH } from "@/src/theme/mark";
+import { colors, radius, spacing, type } from "@/src/theme";
+import { FACE_CLOSED, FACE_PATH } from "@/src/theme/mark";
 import { storage } from "@/src/utils/storage";
 
 const AnimatedPath = Animated.createAnimatedComponent(Path);
@@ -71,6 +71,10 @@ export default function CameraScreen() {
   const coveredRef = useRef<Angle[]>([]);
   const capturesRef = useRef<string[]>([]);
   const holdSinceRef = useRef<number | null>(null);
+  // Amplitude de rotation reellement balayee, pour la couronne : on retient
+  // l'ecart entre le yaw le plus a gauche et le plus a droite vus nettement.
+  const spanRef = useRef<{ min: number; max: number } | null>(null);
+  const [sweep, setSweep] = useState(0);
   const busyRef = useRef(false);
   const doneRef = useRef(false);
 
@@ -203,6 +207,17 @@ export default function CameraScreen() {
 
               // L'angle doit tenir un court instant avant d'etre echantillonne :
               // une image prise en plein mouvement serait floue.
+              if (d && framingOk(d)) {
+                const sp = spanRef.current;
+                const next = sp
+                  ? { min: Math.min(sp.min, d.yaw), max: Math.max(sp.max, d.yaw) }
+                  : { min: d.yaw, max: d.yaw };
+                spanRef.current = next;
+                // Une amplitude d'environ 1,2 couvre confortablement un profil
+                // a l'autre : au-dela on demanderait un effort inutile.
+                setSweep(Math.max(0, Math.min(1, (next.max - next.min) / 1.2)));
+              }
+
               const angle = d && framingOk(d) ? angleOf(d.yaw) : null;
               const wanted = angle && !coveredRef.current.includes(angle) ? angle : null;
               if (wanted) {
@@ -245,20 +260,9 @@ export default function CameraScreen() {
     );
   }, [breath]);
 
-  // Le contour se remplit a mesure que les angles sont couverts : c'est la
-  // seule jauge de l'ecran, et elle est portee par la forme de la marque.
-  const fill = useSharedValue(0);
-  useEffect(() => {
-    fill.value = withSpring(covered.length / ANGLES.length, motion.spring);
-  }, [covered.length, fill]);
-
   const trackProps = useAnimatedProps(() => ({
     strokeOpacity: 0.16 + breath.value * 0.1,
   }));
-  const fillProps = useAnimatedProps(() => ({
-    strokeDashoffset: FACE_LENGTH * (1 - fill.value),
-  }));
-
   /* ————— repli manuel ————— */
   const manualCapture = async () => {
     const photo = await cameraRef.current?.takePictureAsync({
@@ -347,7 +351,8 @@ export default function CameraScreen() {
 
             <G transform={`translate(${tx}, ${ty}) scale(${k})`}>
               {!canUseCamera ? <Path d={FACE_CLOSED} fill={colors.fg} opacity={0.05} /> : null}
-              {/* Le contour en creux, puis la part couverte par-dessus. */}
+              {/* Le contour reste discret : c'est la couronne qui porte la
+                  progression, comme a l'enregistrement de Face ID. */}
               <AnimatedPath
                 d={FACE_PATH}
                 fill="none"
@@ -356,16 +361,16 @@ export default function CameraScreen() {
                 strokeLinecap="round"
                 animatedProps={trackProps}
               />
-              <AnimatedPath
-                d={FACE_PATH}
-                fill="none"
-                stroke={colors.accent}
-                strokeWidth={stroke}
-                strokeLinecap="round"
-                strokeDasharray={FACE_LENGTH}
-                animatedProps={fillProps}
-              />
             </G>
+
+            {/* La couronne vit dans le repere de l'ecran, pas dans celui du
+                dessin : son epaisseur ne doit pas suivre l'echelle du visage. */}
+            <ScanRing
+              cx={stage.w / 2}
+              cy={ty + CENTER.y * k}
+              radius={(CONTENT_H / 2) * k * 1.1}
+              progress={sweep}
+            />
           </Svg>
         ) : null}
 

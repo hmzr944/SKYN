@@ -215,11 +215,11 @@ function ProductCard({ p }: { p: ProductPick }) {
                 <Text style={styles.buyText}>Où l&apos;acheter</Text>
               </AnimatedPressable>
             ) : null}
-            {p.url ? (
-              <Text style={styles.link} onPress={() => Linking.openURL(p.url!)}>
-                Fiche marque →
-              </Text>
-            ) : null}
+            {/* Plus de lien profond vers le site de marque : sur les 28 liens
+                distincts du catalogue, 8 renvoyaient deja une 404, et une page
+                qui repond aujourd'hui peut disparaitre demain. Un lien mort au
+                moment ou l'on demande d'acheter est le pire endroit pour
+                echouer — on ne garde que la recherche, qui aboutit toujours. */}
           </View>
         </View>
       )}

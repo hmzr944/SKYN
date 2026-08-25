@@ -75,7 +75,8 @@ class Pick:
             "actives": p.get("actives", []),
             "family": p.get("family"),
             "evidence": p.get("evidence", {}),
-            "url": p.get("url"),
+            # Le lien du fabricant n'est plus transmis : il pourrit. Seule la
+            # recherche marchande est exposee, elle aboutit toujours.
             "buy_url": _buy_url(p),
             "irritation": p.get("irritation", 0.0),
             "match": round(self.score * 100),

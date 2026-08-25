@@ -305,8 +305,19 @@ def _classify(red: float, dark: float, yellow: float, core_l: float,
     # Papule : rouge et en relief (donc pas plus sombre que la peau voisine)
     if red > 1.8 and dark > -1.2 and d_mm >= 1.2:
         return "papule"
-    # Comedon : petit, sombre, peu colore
-    if dark < -1.5 and red < 1.6 and d_mm <= 2.2:
+    # Comedon ouvert : petit, sombre, ET BRUN.
+    #
+    # L'exigence de chroma est ce qui separe une lesion d'un poil. Un comedon
+    # ouvert est du sebum oxyde : il tire vers le brun, donc b* positif. Un
+    # poil, une ombre ou un debut de barbe sont sombres et NEUTRES. Sans cette
+    # condition, la regle "sombre et peu rouge" decrivait exactement un poil —
+    # d'ou des comedons rapportes entre les sourcils, ou il n'y a que l'ombre
+    # inter-sourciliere et quelques poils epars.
+    if dark < -1.5 and red < 1.6 and d_mm <= 2.2 and yellow > 0.35:
+        # Un noyau tres desature par rapport a la peau environnante reste un
+        # poil, meme legerement chaud.
+        if core_s < skin_s * 0.55:
+            return None
         return "comedon"
     # Marque post-inflammatoire rouge (erythemateuse) : plate et etendue
     if red > 1.2 and abs(dark) < 1.0 and d_mm > 1.8:
