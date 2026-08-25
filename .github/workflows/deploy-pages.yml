@@ -1,0 +1,123 @@
+name: Publier l'app sur GitHub Pages
+
+# Pourquoi cette publication existe
+#
+# Servir l'application depuis Modal reveillait un conteneur Python pour CHAQUE
+# fichier statique : le bundle, les polices, et surtout les 11 Mo de WASM du
+# guidage. L'essentiel du quota partait donc en distribution de fichiers, pas
+# en analyse.
+#
+# GitHub Pages sert ces fichiers gratuitement et sans limite de bande passante
+# pour un depot public. Modal n'est plus reveille que par /api — c'est-a-dire
+# uniquement quand quelqu'un lance vraiment une analyse.
+
+on:
+  workflow_dispatch:
+    inputs:
+      branche:
+        description: "Branche a publier"
+        required: false
+        default: "claude/skin-scan-dermatology-7rjq0x"
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Une seule publication a la fois ; on laisse finir celle en cours.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Récupérer le code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.branche }}
+
+      - name: Installer Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Installer les dépendances
+        working-directory: frontend
+        run: npm ci --no-audit --no-fund
+
+      - name: Régler la base de chemins pour Pages
+        working-directory: frontend
+        # Pages sert un depot de projet sous /SKYN : sans cette base, tous les
+        # chemins d'assets pointeraient a la racine du domaine et l'app
+        # resterait blanche. La variable d'environnement EXPO_BASE_URL est
+        # ignoree par cette version : il faut passer par app.json.
+        #
+        # Le reglage est applique ICI et pas dans le depot, parce que le
+        # deploiement Modal sert la meme app A LA RACINE : une base commune
+        # casserait l'un ou l'autre.
+        run: |
+          node -e "
+            const fs = require('fs');
+            const c = JSON.parse(fs.readFileSync('app.json', 'utf8'));
+            c.expo.experiments = { ...c.expo.experiments, baseUrl: '/SKYN' };
+            fs.writeFileSync('app.json', JSON.stringify(c, null, 2));
+          "
+
+      - name: Construire l'application web
+        working-directory: frontend
+        env:
+          # L'app est servie depuis Pages : l'API reste sur Modal. Sans cette
+          # variable, le client tape des URL relatives et chercherait l'API sur
+          # github.io.
+          EXPO_PUBLIC_BACKEND_URL: https://hmzr944--skyn.modal.run
+        # --clear : Metro reutilise son cache et ne reinjecterait pas la
+        # variable, ce qui produirait un bundle qui compile mais n'appelle
+        # aucune API.
+        run: npx expo export --platform web --output-dir dist --clear
+
+      - name: Préparer le routage SPA
+        working-directory: frontend/dist
+        run: |
+          set -euo pipefail
+          # Pages ne connait pas les routes cote client : sans ce doublon, un
+          # acces direct a /SKYN/routine renverrait une 404 du serveur.
+          cp index.html 404.html
+          # Empeche Pages de passer le dossier dans Jekyll, qui ignorerait les
+          # fichiers commençant par un underscore — donc tout _expo/.
+          touch .nojekyll
+          test -d _expo || { echo "::error::bundle absent"; exit 1; }
+          test -d mediapipe || { echo "::error::ressources du guidage absentes"; exit 1; }
+          grep -q '"/SKYN/_expo' index.html || {
+            echo "::error::les chemins ne portent pas la base /SKYN — l'app serait blanche"
+            exit 1
+          }
+
+      - name: Vérifier que l'API visée est la bonne
+        working-directory: frontend/dist
+        run: |
+          set -euo pipefail
+          if ! grep -rq "hmzr944--skyn.modal.run" _expo/static/js/web/*.js; then
+            echo "::error::l'URL de l'API n'est pas dans le bundle — la variable n'a pas ete prise"
+            exit 1
+          fi
+          echo "API visée : présente dans le bundle."
+
+      - name: Empaqueter pour Pages
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: frontend/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Publier
+        id: deployment
+        uses: actions/deploy-pages@v4

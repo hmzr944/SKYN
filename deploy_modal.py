@@ -36,6 +36,9 @@ image = (
             # Demo sans compte : indispensable pour tester depuis un telephone
             # sans passer par la creation d'un compte Supabase.
             "SKYN_ALLOW_GUEST": "1",
+            # L'app peut etre servie depuis GitHub Pages : le conteneur n'est
+            # alors reveille que par les appels d'analyse.
+            "CORS_ORIGINS": "https://hmzr944.github.io,http://localhost:8081,http://localhost:19006",
         }
     )
     # Code backend monte au demarrage : les redeploiements sont instantanes.
@@ -63,7 +66,13 @@ app = modal.App("skyn")
     # MediaPipe charge son maillage facial en memoire ; 2 Go suffisent
     # largement sans torch.
     memory=2048,
-    scaledown_window=900,  # reste chaud 15 min apres la derniere visite
+    # COUT — c'est ce reglage qui domine la facture, pas le calcul.
+    #
+    # A 900 s, une visite de dix secondes faisait facturer quinze minutes de
+    # 2 vCPU et 2 Go. L'essentiel du quota partait en attente, pas en analyse.
+    # A 60 s on garde le benefice du conteneur chaud pendant qu'on navigue,
+    # et on cesse de payer un quart d'heure de vide apres chaque passage.
+    scaledown_window=60,
     timeout=120,
     # La base de demo vit en memoire : avec plusieurs conteneurs, un rapport
     # cree ici serait introuvable la-bas (404).
