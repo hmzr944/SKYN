@@ -171,6 +171,10 @@ const styles = StyleSheet.create({
     marginBottom: spacing.l,
   },
   filterPill: {
+    minWidth: 44,
+    alignItems: "center",
+    minHeight: 44,
+    justifyContent: "center",
     backgroundColor: colors.surface,
     borderRadius: radius.pill,
     paddingVertical: 6,

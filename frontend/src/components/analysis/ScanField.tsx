@@ -13,6 +13,7 @@ import Svg, {
 } from "react-native-svg";
 import Animated, {
   Easing,
+  useReducedMotion,
   SharedValue,
   useAnimatedProps,
   useAnimatedStyle,
@@ -120,7 +121,21 @@ export function ScanField({ size, phase, imageB64, detections = [], faceBox, sty
   // L'oscillation du volume.
   const tilt = useSharedValue(0);
 
+  // Trois boucles tournent ici en permanence : le trace, la bande de lecture
+  // et le basculement du volume. C'est l'ecran le plus penible de l'app pour
+  // quelqu'un sujet au mal des transports, et le seul dont on ne peut pas
+  // detourner le regard puisqu'il faut attendre.
+  const reduced = useReducedMotion();
+
   useEffect(() => {
+    if (reduced) {
+      // Le contenu reste, le mouvement s'arrete : le contour se pose entier,
+      // la bande et le volume ne bougent plus.
+      sweep.value = withTiming(1, { duration: motion.slow });
+      band.value = 0.5;
+      tilt.value = 0.5;
+      return;
+    }
     sweep.value = withRepeat(
       withSequence(
         withTiming(1, { duration: motion.sweep, easing: Easing.bezier(0.33, 1, 0.68, 1) }),
@@ -140,7 +155,7 @@ export function ScanField({ size, phase, imageB64, detections = [], faceBox, sty
       -1,
       true,
     );
-  }, [sweep, band, tilt]);
+  }, [reduced, sweep, band, tilt]);
 
   useEffect(() => {
     // Les reperes se posent a la phase des motifs, pas avant.

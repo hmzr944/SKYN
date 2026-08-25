@@ -34,14 +34,23 @@ export const colors = {
   surfaceSunken: t(0.07),
 
   // ————— texte —————
+  //
+  // Les opacites sont calees sur le CONTRASTE MESURE, pas sur ce qui paraissait
+  // joli. Le texte secondaire etait a 4,02:1 et le tertiaire a 2,29:1, sous le
+  // minimum de 4,5:1 : quelqu'un qui lit son telephone dehors ne voyait
+  // simplement pas les dates ni les surtitres.
   fg: palette.terre,
-  fgMuted: t(0.58),
-  fgDim: t(0.38),
-  fgFaint: t(0.14),
+  fgMuted: t(0.78), // 7,0:1 sur le fond, 5,5:1 sur la surface la plus creusee
+  fgDim: t(0.68), // 4,6:1 sur la surface la plus creusee
+  // Purement decoratif : rails vides, separateurs. Ne porte jamais de sens —
+  // c'est toujours la portion REMPLIE, en corail, qui informe.
+  fgFaint: t(0.22),
 
   // ————— bordures —————
-  borderSubtle: t(0.07),
-  borderMid: t(0.14),
+  // Une bordure qui delimite un controle doit atteindre 3:1 (WCAG 1.4.11).
+  // borderMid etait a 1,32:1 : le contour des puces etait invisible.
+  borderSubtle: t(0.12),
+  borderMid: t(0.54), // 3,0:1 sur la surface la plus creusee
   borderActive: palette.terre,
 
   // ————— accent : la zone qui demande de l'attention —————
@@ -50,7 +59,11 @@ export const colors = {
   accentSoft: c(0.14),
   accentSofter: c(0.07),
   accentLine: c(0.45),
-  onAccent: palette.creme,
+  // Du texte CREME sur le corail ne fait que 3,01:1. Du texte TERRE y atteint
+  // 5,08:1 — et l'app garde un seul rouge, au lieu d'un corail de marque a
+  // cote d'un rouge fonce reserve aux boutons, ce qui se lisait comme une
+  // erreur plutot que comme un systeme.
+  onAccent: palette.terre,
 
   // ————— bloc terre : surfaces inversees —————
   inverse: palette.terre,

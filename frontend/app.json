@@ -1,34 +1,47 @@
 {
   "expo": {
     "name": "SKYN",
-    "slug": "frontend",
+    "slug": "skyn",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "frontend",
-    "userInterfaceStyle": "dark",
+    "scheme": "skyn",
+    "userInterfaceStyle": "light",
     "newArchEnabled": true,
+    "description": "Analyse de peau et routine construite sur ce que l'analyse mesure.",
+    "primaryColor": "#FF4D6D",
     "ios": {
       "bundleIdentifier": "com.skyn.app",
-      "supportsTablet": true,
+      "buildNumber": "1",
+      "supportsTablet": false,
       "usesAppleSignIn": true,
       "infoPlist": {
-        "NSCameraUsageDescription": "Scan your face for skin analysis",
-        "NSPhotoLibraryUsageDescription": "Save your skin analysis reports"
+        "NSCameraUsageDescription": "SKYN utilise la caméra pour analyser votre peau. Les photos servent uniquement au calcul, puis sont supprimées.",
+        "NSPhotoLibraryUsageDescription": "SKYN accède à vos photos pour analyser une image que vous avez déjà prise. Elle n'est ni conservée ni partagée.",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
+      "package": "com.skyn.app",
+      "versionCode": 1,
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#0D0D0D"
+        "backgroundColor": "#2A1D18"
       },
       "edgeToEdgeEnabled": true,
-      "permissions": ["android.permission.CAMERA"]
+      "permissions": ["android.permission.CAMERA"],
+      "blockedPermissions": ["android.permission.RECORD_AUDIO"]
     },
     "web": {
       "bundler": "metro",
       "output": "single",
-      "favicon": "./assets/images/favicon.png"
+      "favicon": "./assets/images/favicon.png",
+      "themeColor": "#FFF6F0",
+      "backgroundColor": "#FFF6F0",
+      "lang": "fr",
+      "shortName": "SKYN",
+      "display": "standalone",
+      "orientation": "portrait"
     },
     "plugins": [
       "expo-router",
@@ -36,17 +49,25 @@
         "expo-splash-screen",
         {
           "image": "./assets/images/splash-icon.png",
-          "imageWidth": 200,
+          "imageWidth": 180,
           "resizeMode": "contain",
-          "backgroundColor": "#0D0D0D"
+          "backgroundColor": "#FFF6F0"
         }
       ],
       "expo-font",
       "expo-apple-authentication",
       [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/notification-icon.png",
+          "color": "#FF4D6D"
+        }
+      ],
+      [
         "expo-camera",
         {
-          "cameraPermission": "Scan your face for skin analysis"
+          "cameraPermission": "SKYN utilise la caméra pour analyser votre peau. Les photos servent uniquement au calcul, puis sont supprimées.",
+          "recordAudioAndroid": false
         }
       ]
     ],

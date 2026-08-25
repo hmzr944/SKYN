@@ -2,7 +2,7 @@ import * as Clipboard from "expo-clipboard";
 import Constants from "expo-constants";
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
-import { Alert, Platform, ScrollView, StyleSheet, Switch, Text, View } from "react-native";
+import { Alert, Linking, Platform, ScrollView, StyleSheet, Switch, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { SkynLockup } from "@/src/components/brand/SkynLockup";
@@ -17,7 +17,9 @@ import {
   remindersSupported,
   type ReminderPrefs,
 } from "@/src/services/reminders";
+import { deleteAccount, deletionMessage } from "@/src/services/account";
 import { eraseAll, exportAll, summarize, type DataSummary } from "@/src/services/userData";
+import { useAuth } from "@/src/contexts/AuthContext";
 import { colors, radius, spacing, type } from "@/src/theme";
 
 /**
@@ -28,8 +30,20 @@ import { colors, radius, spacing, type } from "@/src/theme";
  * Pas de bouton qui ne mene nulle part — c'est precisement ce qu'il y avait
  * avant, et un reglage inerte fait douter du reste de l'app.
  */
+/**
+ * Les documents integraux, a une URL publique.
+ *
+ * Les depliants ci-dessous en donnent l'essentiel en français lisible ; les
+ * boutiques d'applications, elles, exigent une adresse web stable, et la loi
+ * française des mentions accessibles depuis n'importe ou. Les deux coexistent :
+ * le texte court pour lire, l'URL pour faire foi.
+ */
+const LEGAL = "https://hmzr944.github.io/SKYN/legal";
+
 export default function SettingsScreen() {
   const router = useRouter();
+  const { user } = useAuth();
+  const aUnCompte = !!user && user.user_id !== "guest";
   const [reminders, setReminders] = useState<ReminderPrefs>(DEFAULT_PREFS);
   const [data, setData] = useState<DataSummary | null>(null);
   const [open, setOpen] = useState<string | null>(null);
@@ -58,6 +72,33 @@ export default function SettingsScreen() {
     );
   };
 
+  /** Demande confirmation, ici comme sur le web ou Alert n'a qu'un bouton. */
+  const confirmer = (titre: string, question: string, faire: () => void) => {
+    if (Platform.OS === "web") {
+      if (typeof window !== "undefined" && window.confirm(`${titre}\n\n${question}`)) faire();
+      return;
+    }
+    Alert.alert(titre, question, [
+      { text: "Annuler", style: "cancel" },
+      { text: "Supprimer", style: "destructive", onPress: faire },
+    ]);
+  };
+
+  const onDeleteAccount = () => {
+    confirmer(
+      "Supprimer votre compte ?",
+      "Cela ferme votre compte et supprime vos analyses, ici et en ligne. " +
+        "C'est définitif : rien ne pourra être récupéré.",
+      async () => {
+        const r = await deleteAccount(user?.user_id ?? null);
+        await refresh();
+        setReminders(DEFAULT_PREFS);
+        Alert.alert("Suppression", deletionMessage(r));
+        router.replace("/auth");
+      },
+    );
+  };
+
   const onErase = () => {
     // Une suppression definitive se confirme. Sur le web, Alert n'a pas de
     // boutons multiples : on passe par la confirmation native du navigateur.
@@ -70,14 +111,7 @@ export default function SettingsScreen() {
       setReminders(DEFAULT_PREFS);
       Alert.alert("Données supprimées", `${n} entrées effacées de cet appareil.`);
     };
-    if (Platform.OS === "web") {
-      if (typeof window !== "undefined" && window.confirm(question)) done();
-      return;
-    }
-    Alert.alert("Tout supprimer ?", question, [
-      { text: "Annuler", style: "cancel" },
-      { text: "Supprimer", style: "destructive", onPress: done },
-    ]);
+    confirmer("Tout supprimer ?", question, done);
   };
 
   const version =
@@ -86,7 +120,13 @@ export default function SettingsScreen() {
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
       <View style={styles.header}>
-        <AnimatedPressable style={styles.back} scaleTo={0.9} onPress={() => router.back()}>
+        <AnimatedPressable
+          style={styles.back}
+          scaleTo={0.9}
+          hitSlop={8}
+          accessibilityLabel="Retour"
+          onPress={() => router.back()}
+        >
           <Text style={styles.backText}>←</Text>
         </AnimatedPressable>
         <SkynLockup size={22} still />
@@ -155,6 +195,17 @@ export default function SettingsScreen() {
               danger
               onPress={onErase}
             />
+            {aUnCompte ? (
+              <>
+                <View style={styles.sep} />
+                <Row
+                  label="Supprimer mon compte"
+                  hint="Ferme le compte et efface aussi la copie en ligne"
+                  danger
+                  onPress={onDeleteAccount}
+                />
+              </>
+            ) : null}
           </View>
         </Reveal>
 
@@ -215,8 +266,11 @@ export default function SettingsScreen() {
                 "Accès, rectification, effacement, portabilité : ces droits s'exercent " +
                 "directement depuis la section « Vos données » ci-dessus, sans avoir à " +
                 "nous écrire ni à nous croire sur parole.\n\n" +
-                "L'export vous rend l'intégralité de ce qui est conservé. La suppression " +
-                "efface tout, immédiatement."
+                "L'export vous rend l'intégralité de ce qui est conservé.\n\n" +
+                "« Supprimer mes données » efface ce qui est sur cet appareil. " +
+                "« Supprimer mon compte » ferme en plus le compte et efface la copie " +
+                "en ligne de vos scores. L'app vous dit ensuite ce qui a réellement " +
+                "été supprimé, y compris si quelque chose a échoué."
               }
             />
           </View>
@@ -254,6 +308,20 @@ export default function SettingsScreen() {
                 "OpenCV, SciPy et NumPy, licences BSD.\n\n" +
                 "React Native et Expo, licence MIT."
               }
+            />
+            <View style={styles.sep} />
+            <Row
+              label="Documents légaux"
+              hint="Confidentialité, mentions légales, conditions"
+              onPress={() => {
+                Linking.openURL(`${LEGAL}/confidentialite.html`).catch(() => {
+                  Alert.alert(
+                    "Page indisponible",
+                    "Impossible d'ouvrir le navigateur. Les points essentiels " +
+                      "restent dépliables ci-dessus.",
+                  );
+                });
+              }}
             />
             <View style={styles.sep} />
             <View style={styles.versionRow}>
@@ -388,9 +456,9 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.s,
   },
   back: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: colors.surfaceSunken,

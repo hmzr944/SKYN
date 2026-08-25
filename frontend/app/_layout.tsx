@@ -1,5 +1,6 @@
 import { useFonts } from "expo-font";
 import { Stack } from "expo-router";
+import { Text, TextInput } from "react-native";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import { useEffect } from "react";
@@ -11,6 +12,20 @@ import { useIconFonts } from "@/src/hooks/use-icon-fonts";
 import { colors, motion } from "@/src/theme";
 
 SplashScreen.preventAutoHideAsync();
+
+/**
+ * Le texte suit les reglages du systeme, jusqu'a un point.
+ *
+ * Quelqu'un qui a agrandi le texte de son telephone doit le voir agrandi ici
+ * aussi — c'est souvent le reglage d'accessibilite le plus utilise. Mais au
+ * dela d'une fois et demie, une mise en page a colonne fixe se disloque et
+ * devient moins lisible qu'avant. On laisse donc grandir, puis on s'arrete.
+ */
+const TEXT_SCALE_MAX = 1.5;
+type Scalable = { defaultProps?: { maxFontSizeMultiplier?: number } };
+for (const C of [Text, TextInput] as unknown as Scalable[]) {
+  C.defaultProps = { ...(C.defaultProps ?? {}), maxFontSizeMultiplier: TEXT_SCALE_MAX };
+}
 
 export default function RootLayout() {
   const [iconsLoaded, iconsError] = useIconFonts();

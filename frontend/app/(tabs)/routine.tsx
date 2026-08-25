@@ -366,7 +366,7 @@ const styles = StyleSheet.create({
   streakStats: { flexDirection: "row", gap: spacing.l },
   streakStat: { alignItems: "flex-end" },
   streakStatVal: { fontFamily: fonts.display, fontSize: 18, color: colors.bg },
-  streakStatLabel: { fontFamily: fonts.body, fontSize: 10, color: "rgba(255,248,242,0.5)" },
+  streakStatLabel: { fontFamily: fonts.body, fontSize: 10, color: colors.onInverseMuted },
 
   dayGrid: {
     flexDirection: "row",
@@ -383,7 +383,7 @@ const styles = StyleSheet.create({
   dayDotSome: { backgroundColor: "rgba(42, 29, 24, 0.34)" },
   dayDotBoth: { backgroundColor: colors.ok },
   dayDotToday: { borderWidth: 1.5, borderColor: colors.bg },
-  dayInitial: { fontFamily: fonts.body, fontSize: 9, color: "rgba(255,248,242,0.45)" },
+  dayInitial: { fontFamily: fonts.body, fontSize: 9, color: colors.onInverseMuted },
 
   card: {
     backgroundColor: colors.surfaceRaised,

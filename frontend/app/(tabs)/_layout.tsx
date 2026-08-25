@@ -3,8 +3,10 @@ import { useEffect, useState } from "react";
 import { LayoutChangeEvent, View, Text, StyleSheet } from "react-native";
 import Animated, {
   useAnimatedStyle,
+  useReducedMotion,
   useSharedValue,
   withSpring,
+  withTiming,
 } from "react-native-reanimated";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -45,12 +47,18 @@ function TabIcon({
   focused: boolean;
 }) {
   const t = useSharedValue(focused ? 1 : 0);
+  const reduced = useReducedMotion();
   useEffect(() => {
     t.value = withSpring(focused ? 1 : 0, motion.springDrop);
   }, [focused, t]);
-  const aStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: -3 * t.value }, { scale: 1 + 0.09 * t.value }],
-  }));
+  const aStyle = useAnimatedStyle(
+    () => ({
+      transform: reduced
+        ? [{ translateY: 0 }, { scale: 1 }]
+        : [{ translateY: -3 * t.value }, { scale: 1 + 0.09 * t.value }],
+    }),
+    [reduced],
+  );
   return (
     <Animated.View style={aStyle}>
       <Ionicons
@@ -78,6 +86,7 @@ function TabIcon({
 function CustomTabBar({ state, navigation }: BottomTabBarProps) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const reduced = useReducedMotion();
 
   // Centre de chaque onglet, dans le repere de la barre.
   const [centers, setCenters] = useState<Record<string, number>>({});
@@ -93,10 +102,14 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
       // Premiere mesure : le repere se pose la, il ne traverse pas la barre.
       x.value = target - MARK_W / 2;
       ready.value = withSpring(1, motion.springDrop);
+    } else if (reduced) {
+      // Le repere change de place sans traverser : c'est la course qui gene,
+      // pas l'information qu'elle porte.
+      x.value = withTiming(target - MARK_W / 2, { duration: motion.instant });
     } else {
       x.value = withSpring(target - MARK_W / 2, motion.spring);
     }
-  }, [target, x, ready]);
+  }, [target, x, ready, reduced]);
 
   const sliderStyle = useAnimatedStyle(() => ({
     opacity: ready.value,
@@ -140,6 +153,9 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
         style={styles.tab}
         scaleTo={0.92}
         haptic={false}
+        accessibilityRole="tab"
+        accessibilityState={{ selected: focused }}
+        accessibilityLabel={TAB_LABELS[routeName]}
       >
         <TabIcon name={TAB_ICONS[routeName]} focused={focused} />
         <Text style={[styles.label, focused && styles.labelActive]}>
@@ -155,7 +171,7 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
         styles.bar,
         // Le repere a besoin d'air sous lui : colle au bord de l'ecran il
         // paraissait tronque, et sur un appareil sans encoche il l'etait.
-        { height: 66 + insets.bottom, paddingBottom: insets.bottom + spacing.s },
+        { height: 72 + insets.bottom, paddingBottom: insets.bottom + spacing.s },
       ]}
     >
       <View style={styles.row}>
@@ -167,6 +183,7 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
           style={styles.fab}
           scaleTo={0.92}
           haptic={false}
+          accessibilityLabel="Lancer une analyse"
           onPress={() => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
             router.push("/camera");
@@ -219,6 +236,11 @@ const styles = StyleSheet.create({
   },
   tab: {
     flex: 1,
+    // 44 au minimum : la rangee tenait sur 41 px de haut, et les onglets les
+    // plus etroits ne faisaient que 30 px de large. Le dessin ne change pas,
+    // c'est la zone atteignable par le pouce qui grandit.
+    minHeight: 44,
+    minWidth: 44,
     alignItems: "center",
     justifyContent: "center",
     gap: 4,

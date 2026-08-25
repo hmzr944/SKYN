@@ -3,6 +3,7 @@ import { StyleProp, ViewStyle } from "react-native";
 import Svg, { Circle, Path } from "react-native-svg";
 import Animated, {
   Easing,
+  useReducedMotion,
   useAnimatedProps,
   useSharedValue,
   withDelay,
@@ -40,8 +41,16 @@ export function SkynMark({ size = 64, onDark, playKey = 0, style }: Props) {
   const sweep = useSharedValue(0);
   const drop = useSharedValue(0);
   const halo = useSharedValue(0);
+  const reduced = useReducedMotion();
 
   useEffect(() => {
+    if (reduced) {
+      // La marque se pose entiere : le trace ne se joue pas, l'onde non plus.
+      sweep.value = 1;
+      drop.value = 1;
+      halo.value = 0;
+      return;
+    }
     sweep.value = 0;
     drop.value = 0;
     halo.value = 0;
@@ -53,7 +62,7 @@ export function SkynMark({ size = 64, onDark, playKey = 0, style }: Props) {
     // Le point se pose juste avant que le balayage se referme.
     drop.value = withDelay(880, withSpring(1, motion.springDrop));
     halo.value = withDelay(1080, withTiming(1, { duration: 760, easing: Easing.out(Easing.quad) }));
-  }, [playKey, sweep, drop, halo]);
+  }, [playKey, reduced, sweep, drop, halo]);
 
   const sweepProps = useAnimatedProps(() => ({
     strokeDashoffset: FACE_LENGTH * (1 - sweep.value),

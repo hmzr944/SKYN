@@ -79,6 +79,17 @@ jobs:
         # aucune API.
         run: npx expo export --platform web --output-dir dist --clear
 
+      - name: Ajouter les pages légales
+        # Elles doivent vivre a une URL publique et stable : l'App Store la
+        # reclame, et la loi française impose des mentions accessibles.
+        run: |
+          set -euo pipefail
+          mkdir -p frontend/dist/legal
+          cp legal/*.html frontend/dist/legal/
+          if grep -rq "À COMPLÉTER" frontend/dist/legal/; then
+            echo "::warning::les pages légales contiennent encore des marqueurs À COMPLÉTER"
+          fi
+
       - name: Préparer le routage SPA
         working-directory: frontend/dist
         run: |
@@ -91,6 +102,7 @@ jobs:
           touch .nojekyll
           test -d _expo || { echo "::error::bundle absent"; exit 1; }
           test -d mediapipe || { echo "::error::ressources du guidage absentes"; exit 1; }
+          test -f legal/confidentialite.html || { echo "::error::pages légales absentes"; exit 1; }
           grep -q '"/SKYN/_expo' index.html || {
             echo "::error::les chemins ne portent pas la base /SKYN — l'app serait blanche"
             exit 1

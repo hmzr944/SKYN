@@ -449,6 +449,8 @@ const styles = StyleSheet.create({
   },
   optionList: { marginTop: spacing.xl, gap: spacing.s, width: "100%" },
   option: {
+    minHeight: 44,
+    justifyContent: "center",
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.m,
@@ -520,6 +522,8 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   nextBtn: {
+    minHeight: 44,
+    justifyContent: "center",
     backgroundColor: colors.accent,
     paddingHorizontal: 32,
     paddingVertical: 16,

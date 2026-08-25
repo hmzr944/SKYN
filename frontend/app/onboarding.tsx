@@ -621,7 +621,9 @@ const styles = StyleSheet.create({
     paddingTop: spacing.m,
     gap: spacing.s,
   },
-  backBtn: { paddingVertical: 12, paddingRight: spacing.m },
+  backBtn: {
+    minHeight: 44,
+    justifyContent: "center", paddingVertical: 12, paddingRight: spacing.m },
   backText: {
     fontFamily: fonts.body,
     color: colors.fgMuted,
@@ -641,6 +643,8 @@ const styles = StyleSheet.create({
   },
   dotActive: { backgroundColor: colors.accent, width: 20 },
   nextBtn: {
+    minHeight: 44,
+    justifyContent: "center",
     backgroundColor: colors.accent,
     paddingHorizontal: 32,
     paddingVertical: 16,

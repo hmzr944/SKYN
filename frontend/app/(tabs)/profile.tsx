@@ -219,6 +219,8 @@ const styles = StyleSheet.create({
     gap: spacing.s,
   },
   pill: {
+    minHeight: 44,
+    justifyContent: "center",
     backgroundColor: colors.surface,
     borderRadius: radius.pill,
     paddingVertical: 10,
@@ -236,6 +238,8 @@ const styles = StyleSheet.create({
     color: colors.onAccent,
   },
   tag: {
+    minHeight: 44,
+    justifyContent: "center",
     backgroundColor: colors.surface,
     borderRadius: radius.pill,
     paddingVertical: 10,

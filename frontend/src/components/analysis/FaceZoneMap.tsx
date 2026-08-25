@@ -1,15 +1,6 @@
 import { useEffect, useMemo } from "react";
 import { View, Text, StyleSheet, Pressable } from "react-native";
-import Svg, {
-  Path,
-  Ellipse,
-  G,
-  Circle,
-  Defs,
-  ClipPath,
-  LinearGradient,
-  Stop,
-} from "react-native-svg";
+import Svg, { Path, Ellipse, G, Circle, Defs, ClipPath } from "react-native-svg";
 import Animated, {
   Easing,
   useAnimatedProps,
@@ -19,6 +10,7 @@ import Animated, {
 } from "react-native-reanimated";
 
 import { colors, fonts, spacing } from "@/src/theme";
+import { FACE_EXTENT, facePathAt } from "@/src/theme/mark";
 import type { Lesion, ZoneKey } from "@/src/types/analysis";
 import { ZONE_LABEL } from "@/src/types/analysis";
 
@@ -37,11 +29,33 @@ import { ZONE_LABEL } from "@/src/types/analysis";
 const VB_W = 200;
 const VB_H = 260;
 
-// Contour du visage, menton legerement effile.
-const FACE_PATH =
-  "M100,26 C142,26 170,56 172,104 C174,152 156,198 130,222 " +
-  "C118,234 108,240 100,240 C92,240 82,234 70,222 " +
-  "C44,198 26,152 28,104 C30,56 58,26 100,26 Z";
+/**
+ * Le contour est celui de la MARQUE, pas un visage dessine.
+ *
+ * Ce schema portait un ovale a son compte, avec deux yeux et une bouche par
+ * dessus un degrade couleur peau. Resultat : un mannequin, ou un masque. Ce
+ * n'est pas seulement laid, c'est faux — on ne mesure ni les yeux ni la
+ * bouche, et les representer laisse croire le contraire.
+ *
+ * Il reste un contour, parce qu'il faut bien s'orienter : « joue gauche » ne
+ * veut rien dire sans repere. Mais c'est le symbole de SKYN, remis a l'echelle
+ * du releve, et il ne represente rien qu'on ne mesure pas.
+ *
+ * Le chemin est CALCULE aux coordonnees du schema, pas pose puis transforme.
+ * Un `transform` sur le groupe d'un `clipPath` n'est pas repercute de la meme
+ * façon partout : le decoupage retombait alors sur le carre d'origine, et la
+ * carte se vidait entierement de son contenu.
+ */
+const MARK_SCALE = 4.83;
+const FACE_PATH = facePathAt(100, 133, MARK_SCALE);
+
+/** Encombrement du contour une fois pose : sert a placer les lesions. */
+const FACE_BOX = {
+  x: 100 - (FACE_EXTENT.w * MARK_SCALE) / 2,
+  y: 133 - (FACE_EXTENT.h * MARK_SCALE) / 2,
+  w: FACE_EXTENT.w * MARK_SCALE,
+  h: FACE_EXTENT.h * MARK_SCALE,
+};
 
 type ZoneShape = { cx: number; cy: number; rx: number; ry: number; rot?: number };
 
@@ -197,14 +211,7 @@ export function FaceZoneMap({
           <ClipPath id="faceClip">
             <Path d={FACE_PATH} />
           </ClipPath>
-          <LinearGradient id="skinBase" x1="0" y1="0" x2="0" y2="1">
-            <Stop offset="0" stopColor="#FFF1E6" />
-            <Stop offset="1" stopColor="#F6E2D4" />
-          </LinearGradient>
         </Defs>
-
-        {/* Fond du visage */}
-        <Path d={FACE_PATH} fill="url(#skinBase)" />
 
         <G clipPath="url(#faceClip)">
           {entries.map(({ key, shape, score }, i) => {
@@ -215,8 +222,15 @@ export function FaceZoneMap({
             // qui va bien attire l'oeil au mauvais endroit. Ce qui demande de
             // l'attention est ce qui doit ressortir.
             const burden = measured ? 1 - (score as number) / 100 : 0;
-            const opacity = measured
-              ? Math.min(0.92, 0.08 + burden * 0.78 + (isSel ? 0.18 : 0))
+            // En dessous de ce seuil, la zone n'est PAS peinte du tout.
+            // Auparavant toute zone mesuree recevait un fond, meme nette :
+            // treize taches grises dont douze ne signalaient rien, et l'oeil
+            // ne savait plus ou regarder. Une carte de charge ne montre que
+            // ce qui est charge.
+            const SEUIL = 0.2;
+            const visible = measured && (burden > SEUIL || isSel);
+            const opacity = visible
+              ? Math.min(0.9, ((burden - SEUIL) / (1 - SEUIL)) * 0.85 + (isSel ? 0.22 : 0.06))
               : 0;
             return (
               <ZoneEllipse
@@ -236,22 +250,21 @@ export function FaceZoneMap({
             lesions.map((l, i) => (
               <Circle
                 key={`l${i}`}
-                cx={20 + l.x * 160}
-                cy={26 + l.y * 214}
-                r={Math.max(1.8, Math.min(5, l.radius * 150))}
+                cx={FACE_BOX.x + l.x * FACE_BOX.w}
+                cy={FACE_BOX.y + l.y * FACE_BOX.h}
+                // Un plancher plus haut qu'avant : a 1,8 unite sur un schema
+                // de 200, une lesion disparaissait dans la teinte de sa zone.
+                r={Math.max(3.2, Math.min(6, l.radius * 150))}
                 fill={LESION_COLOR[l.type] ?? colors.fg}
-                opacity={0.82}
+                stroke={colors.bg}
+                strokeWidth={1.2}
+                opacity={0.95}
               />
             ))}
         </G>
 
-        {/* Contour + reperes du visage, traces par dessus */}
-        <Path d={FACE_PATH} fill="none" stroke={colors.fg} strokeWidth={1.6} opacity={0.5} />
-        {/* Yeux : simples repères, non analysés */}
-        <Ellipse cx={68} cy={96} rx={11} ry={5} fill="none" stroke={colors.fg} strokeWidth={1.2} opacity={0.35} />
-        <Ellipse cx={132} cy={96} rx={11} ry={5} fill="none" stroke={colors.fg} strokeWidth={1.2} opacity={0.35} />
-        {/* Bouche */}
-        <Path d="M84,182 Q100,190 116,182" fill="none" stroke={colors.fg} strokeWidth={1.4} opacity={0.35} />
+        {/* Le contour, par dessus. Rien d'autre : ni yeux, ni bouche, ni teint. */}
+        <Path d={FACE_PATH} fill="none" stroke={colors.fg} strokeWidth={2} opacity={0.5} />
       </Svg>
 
       {/* Zones cliquables, superposees au SVG */}

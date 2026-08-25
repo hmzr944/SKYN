@@ -417,7 +417,9 @@ const styles = StyleSheet.create({
   heroSubtitle: {
     fontFamily: fonts.body,
     fontSize: 14,
-    color: "rgba(255,248,242,0.8)",
+    // Sur le corail, une demi-teinte tombe a 3,7:1 : le sous-titre est en
+    // terre plein, comme le titre. La hierarchie passe par la taille.
+    color: colors.onAccent,
     marginBottom: spacing.l,
   },
   heroBtn: {
@@ -490,6 +492,9 @@ const styles = StyleSheet.create({
   scoreMax: { fontFamily: fonts.body, fontSize: 16, color: colors.fgDim },
   pillsRow: {
     flexDirection: "row",
+    // Trois pastilles ne tiennent pas sur une ligne de 320 px : elles passent
+    // a la ligne au lieu d'etre rognees par le bord de la carte.
+    flexWrap: "wrap",
     gap: spacing.s,
   },
   pill: {

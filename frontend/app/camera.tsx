@@ -29,6 +29,7 @@ import {
 } from "@/src/services/faceGuide";
 import { colors, radius, spacing, type } from "@/src/theme";
 import { FACE_EXTENT, facePathAt } from "@/src/theme/mark";
+import { useOnline } from "@/src/hooks/useOnline";
 import { storage } from "@/src/utils/storage";
 
 /** Base64 nu, sans entete : c'est ce que le reste de l'app attend. */
@@ -118,6 +119,7 @@ export default function CameraScreen() {
   };
 
   const canUseCamera = !!permission?.granted;
+  const online = useOnline();
 
   useEffect(() => {
     track("scan_started");
@@ -415,6 +417,8 @@ export default function CameraScreen() {
           onPress={() => router.back()}
           style={styles.closeBtn}
           scaleTo={0.9}
+          hitSlop={8}
+          accessibilityLabel="Fermer le scan"
         >
           <Text style={styles.closeText}>✕</Text>
         </AnimatedPressable>
@@ -424,7 +428,16 @@ export default function CameraScreen() {
         <View style={{ width: 36 }} />
       </View>
 
-      {retake === "no_face" ? (
+      {!online ? (
+        <Reveal distance={6} style={styles.noticeWrap}>
+          <View style={styles.notice} testID="camera-offline-notice">
+            <Text style={styles.noticeText}>
+              {"Pas de connexion. L'analyse a besoin du réseau : le scan " +
+                "échouerait à la fin."}
+            </Text>
+          </View>
+        </Reveal>
+      ) : retake === "no_face" ? (
         <Reveal distance={6} style={styles.noticeWrap}>
           <View style={styles.notice} testID="camera-retake-notice">
             <Text style={styles.noticeText}>
@@ -533,9 +546,9 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.s,
   },
   closeBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: colors.surfaceSunken,
@@ -564,6 +577,8 @@ const styles = StyleSheet.create({
   },
   placeholderText: { ...type.bodySmall, color: colors.fgDim, textAlign: "center", maxWidth: 240 },
   permBtn: {
+    minHeight: 44,
+    justifyContent: "center",
     borderWidth: 1,
     borderColor: colors.accent,
     paddingHorizontal: 26,
@@ -580,10 +595,13 @@ const styles = StyleSheet.create({
 
   controls: {
     flexDirection: "row",
+    // Les deux boutons passent a la ligne plutot que de deborder : a 320 px
+    // ils sortaient de l'ecran et faisaient defiler la page lateralement.
+    flexWrap: "wrap",
     alignItems: "center",
     justifyContent: "center",
-    gap: spacing.m,
-    paddingHorizontal: spacing.l,
+    gap: spacing.s,
+    paddingHorizontal: spacing.m,
     paddingTop: spacing.l,
     paddingBottom: spacing.m,
   },
