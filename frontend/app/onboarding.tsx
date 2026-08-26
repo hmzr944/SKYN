@@ -1,12 +1,10 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
   ScrollView,
-  NativeSyntheticEvent,
-  NativeScrollEvent,
   ActivityIndicator,
   Platform,
   useWindowDimensions,
@@ -17,11 +15,13 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
 import Animated, {
   type SharedValue,
-  useAnimatedRef,
-  useAnimatedScrollHandler,
   useAnimatedStyle,
+  useReducedMotion,
   useSharedValue,
+  withTiming,
 } from "react-native-reanimated";
+
+import { ease } from "@/src/animation/ease";
 
 import { useRouter } from "expo-router";
 
@@ -42,6 +42,8 @@ import {
 
 const PAGE_COUNT = 5;
 const CONTENT_MAX_W = 480;
+/** Duree du glissement d'une page a l'autre. */
+const GLISSE = 380;
 
 // Chaque slide a sa propre identité : kicker éditorial, accent dominant
 // (corail/lime en alternance, jamais de nouvelle teinte), et un très grand
@@ -121,8 +123,8 @@ function Parallax({
 
 export default function OnboardingScreen() {
   const { width: SCREEN_W, height: SCREEN_H } = useWindowDimensions();
-  const scrollRef = useAnimatedRef<Animated.ScrollView>();
   const [page, setPage] = useState(0);
+  const reduced = useReducedMotion();
   const { busy, error, handleGoogle } = useProviderAuth();
   const { continueAsGuest } = useAuth();
   const router = useRouter();
@@ -159,30 +161,59 @@ export default function OnboardingScreen() {
   // glyphe, ce qui ressemblait a un bug d'affichage plutot qu'a un parti pris.
   const watermarkSize = Math.round(Math.min(SCREEN_W * 0.62, 240));
 
-  // Position du pager, suivie image par image sur le thread d'animation. Elle
-  // sert a decaler les couches de chaque page a des vitesses differentes : le
-  // filigrane derriere, l'illustration devant. Une page qui glisse d'un bloc
-  // est un changement d'ecran ; des couches qui glissent a des vitesses
-  // differentes donnent une profondeur, et c'est ce qui fait qu'on sent le
-  // deplacement au lieu de le constater.
+  /**
+   * Position du pager, en points, suivie image par image sur le thread
+   * d'animation.
+   *
+   * ────────────────────────────────────────────────────────────────────
+   * POURQUOI CE N'EST PLUS UN DEFILEMENT.
+   *
+   * Les pages vivaient dans un ScrollView horizontal a `scrollEnabled={false}`
+   * qu'on deplacait par `scrollTo()`. Sur Chrome et Firefox ca marchait ; sur
+   * Safari et dans les webviews d'iOS, non — et c'est la que la moitie des
+   * gens ouvrent un lien. Deux raisons, chacune suffisante :
+   *
+   *   - `scrollEnabled={false}` pose `overflow: hidden`, et WebKit refuse le
+   *     defilement PROGRAMME sur une boite masquee ;
+   *   - `pagingEnabled` pose `scroll-snap-type: x mandatory`, qui ramene au
+   *     point d'ancrage le plus proche — celui d'ou l'on vient.
+   *
+   * L'echec etait muet : `scrollRef.current?.scrollTo(...)` avalait tout, et
+   * `setPage()` faisait avancer les points juste apres. On voyait donc la
+   * pagination progresser sur un contenu fige. On ne pouvait plus sortir de
+   * l'onboarding, donc plus entrer dans l'app.
+   *
+   * Une translation ne depend d'aucun de ces deux mecanismes. Elle se comporte
+   * pareil sur iOS, Android, Safari, Chrome et en webview, et elle tourne sur
+   * le thread d'animation au lieu de passer par le defilement natif.
+   *
+   * Elle sert aussi de source aux couches en parallaxe : le filigrane derriere,
+   * l'illustration devant. Une page qui glisse d'un bloc est un changement
+   * d'ecran ; des couches qui glissent a des vitesses differentes donnent une
+   * profondeur, et c'est ce qui fait qu'on sent le deplacement.
+   * ────────────────────────────────────────────────────────────────────
+   */
   const scrollX = useSharedValue(0);
-  const onScroll = useAnimatedScrollHandler((e) => {
-    scrollX.value = e.contentOffset.x;
-  });
+
+  const railStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: -scrollX.value }],
+  }));
 
   const goToPage = (p: number) => {
+    if (p < 0 || p > PAGE_COUNT - 1) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    scrollRef.current?.scrollTo({ x: p * SCREEN_W, animated: true });
+    scrollX.value = withTiming(p * SCREEN_W, {
+      duration: reduced ? 0 : GLISSE,
+      easing: ease.out,
+    });
     setPage(p);
   };
 
-  const onMomentumEnd = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const p = Math.round(e.nativeEvent.contentOffset.x / SCREEN_W);
-    if (p !== page) {
-      setPage(p);
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    }
-  };
+  // La largeur change avec la fenetre : sans ce recalage, une rotation ou un
+  // redimensionnement laisserait le rail entre deux pages.
+  useEffect(() => {
+    scrollX.value = page * SCREEN_W;
+  }, [SCREEN_W, page, scrollX]);
 
   const finishOnboarding = () => storage.setItem("skyn_onboarding_seen", "1");
 
@@ -210,28 +241,32 @@ export default function OnboardingScreen() {
       </View>
 
       {/* Pages */}
-      <Animated.ScrollView
-        ref={scrollRef}
-        horizontal
-        pagingEnabled
-        showsHorizontalScrollIndicator={false}
-        onMomentumScrollEnd={onMomentumEnd}
-        onScroll={onScroll}
-        scrollEventThrottle={16}
-        scrollEnabled={false}
-        style={{ flex: 1 }}
-      >
-        {SLIDES.map((slide, i) => {
+      <View style={styles.viewport}>
+        <Animated.View style={[styles.rail, { width: SCREEN_W * PAGE_COUNT }, railStyle]}>
+          {SLIDES.map((slide, i) => {
           const Illustration = "Illustration" in slide ? slide.Illustration : null;
           const isCover = "cover" in slide && slide.cover;
           const haloColor = slide.accent === "lime" ? colors.okSofter : colors.accentSofter;
           const kickerColor = slide.accent === "lime" ? colors.fg : colors.accent;
+          const active = i === page;
           return (
             <ScrollView
               key={i}
               style={{ width: SCREEN_W }}
               contentContainerStyle={[styles.page, { minHeight: "100%" }]}
               showsVerticalScrollIndicator={false}
+              // Les quatre autres pages restent montees, hors champ. Sans ces
+              // lignes, leurs boutons restent atteignables au clavier et
+              // annonces par le lecteur d'ecran : on peut atterrir sur un
+              // « Continuer avec Google » invisible depuis la page 1.
+              //
+              // Il en faut trois : chacune ne couvre qu'une plateforme.
+              // `accessibilityElementsHidden` est iOS, `importantForAccessibility`
+              // est Android, `aria-hidden` est le web.
+              pointerEvents={active ? "auto" : "none"}
+              accessibilityElementsHidden={!active}
+              importantForAccessibility={active ? "auto" : "no-hide-descendants"}
+              aria-hidden={!active}
             >
               <View
                 style={[
@@ -384,8 +419,9 @@ export default function OnboardingScreen() {
               </View>
             </ScrollView>
           );
-        })}
-      </Animated.ScrollView>
+          })}
+        </Animated.View>
+      </View>
 
       {/* Barre de navigation — identique sur les cinq écrans.
           Auparavant la dernière slide remplaçait cette barre par les seuls
@@ -489,6 +525,10 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.fgDim,
   },
+  // La fenetre montre une page a la fois ; le rail porte les cinq et coulisse
+  // derriere elle.
+  viewport: { flex: 1, overflow: "hidden" },
+  rail: { flex: 1, flexDirection: "row" },
   page: {
     alignItems: "center",
     justifyContent: "center",
