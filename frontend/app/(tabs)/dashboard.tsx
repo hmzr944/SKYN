@@ -18,6 +18,7 @@ import { listScans, type ScanSummary } from "@/src/services/scanStore";
 import { CONCERN_LABEL, SKIN_TYPE_LABEL } from "@/src/types/analysis";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { FadeIn } from "@/src/components/ui/FadeIn";
+import { Swap } from "@/src/components/ui/Swap";
 import { Stagger } from "@/src/components/ui/Reveal";
 import { AnimatedPressable } from "@/src/components/ui/AnimatedPressable";
 import { SkynLockup } from "@/src/components/brand/SkynLockup";
@@ -189,10 +190,13 @@ export default function DashboardScreen() {
         showsVerticalScrollIndicator={false}
       >
         {/* Header */}
+        {/* Le logotype est deja en place, sans entree a lui : la marque de
+            l'ouverture vient de s'y poser, et une entree ici la ferait bouger
+            sous elle au moment de l'echange. Le reste de l'en-tete se depose. */}
+        <View style={styles.headerRow}>
+          <SkynLockup size={24} still />
+        </View>
         <FadeIn distance={10}>
-          <View style={styles.headerRow}>
-            <SkynLockup size={24} still />
-          </View>
           <Text style={styles.greeting} numberOfLines={1}>
             Bonjour, {firstName}.
           </Text>
@@ -209,10 +213,14 @@ export default function DashboardScreen() {
           </FadeIn>
         ) : null}
 
-        {loading ? (
-          <ActivityIndicator color={colors.accent} style={{ marginTop: spacing.xxl }} />
-        ) : !last ? (
-          <FadeIn delay={80}>
+        {/* L'attente ne disparait pas : elle cede la place. Le rond s'efface
+            vers le haut pendant que la carte arrive par en dessous, et la
+            hauteur du bloc ne saute pas entre les deux. Le Swap porte seul
+            cette entree : un FadeIn en plus dedans multiplierait les deux. */}
+        <Swap etat={loading ? "attente" : !last ? "vide" : "rempli"}>
+          {loading ? (
+            <ActivityIndicator color={colors.accent} style={{ marginTop: spacing.xxl }} />
+          ) : !last ? (
             <View style={styles.heroCard}>
               <Text style={styles.heroTitle}>
                 {accord(genre, {
@@ -232,9 +240,7 @@ export default function DashboardScreen() {
                 <Text style={styles.heroBtnText}>{"Lancer l'analyse"}</Text>
               </AnimatedPressable>
             </View>
-          </FadeIn>
-        ) : (
-          <FadeIn delay={80}>
+          ) : (
             <AnimatedPressable
               testID="dashboard-last-scan-card"
               style={styles.scoreCard}
@@ -297,8 +303,8 @@ export default function DashboardScreen() {
                 </Text>
               ) : null}
             </AnimatedPressable>
-          </FadeIn>
-        )}
+          )}
+        </Swap>
 
         {/* Chart */}
         {!loading && scans.length > 0 ? (

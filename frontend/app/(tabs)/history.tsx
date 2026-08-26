@@ -8,6 +8,7 @@ import { colors, fonts, spacing, radius, shadow } from "@/src/theme";
 import { syncPendingReports } from "@/src/services/api";
 import { listScans, type ScanSummary } from "@/src/services/scanStore";
 import { FadeIn } from "@/src/components/ui/FadeIn";
+import { Swap } from "@/src/components/ui/Swap";
 import { AnimatedPressable } from "@/src/components/ui/AnimatedPressable";
 import { ProgressTimeline } from "@/src/components/analysis/ProgressTimeline";
 import { Segmented } from "@/src/components/ui/Segmented";
@@ -76,71 +77,76 @@ export default function HistoryScreen() {
         />
       </FadeIn>
 
-      {loading ? (
-        <ActivityIndicator color={colors.accent} style={{ marginTop: spacing.xxl }} />
-      ) : (
-        <FlatList
-          data={filtered}
-          keyExtractor={(item) => item.id}
-          ListHeaderComponent={<ProgressTimeline />}
-          refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />
-          }
-          renderItem={({ item, index }) => (
-            <FadeIn delay={100 + Math.min(index, 6) * 50} distance={10}>
-              <AnimatedPressable
-                testID={`history-item-${item.id}`}
-                style={styles.card}
-                scaleTo={0.98}
-                disabled={!item.detailed}
-                onPress={() => router.push(`/scan-result?id=${item.id}`)}
-              >
-                <View style={styles.cardLeft}>
-                  <Text style={styles.cardDate}>
-                    {new Date(item.date).toLocaleDateString("fr-FR", {
-                      day: "2-digit",
-                      month: "long",
-                      year: "numeric",
-                    })}
-                  </Text>
-                  <View style={styles.metaRow}>
-                    <View style={styles.metaPill}>
-                      <Text style={styles.metaText}>{item.severity_label}</Text>
-                    </View>
-                    <View style={styles.metaPill}>
-                      <Text style={styles.metaText}>
-                        {item.lesion_total} lésion{item.lesion_total > 1 ? "s" : ""}
-                      </Text>
-                    </View>
-                    {/* Le detail est elague au-dela des douze dernieres analyses :
-                        on le dit plutot que d'ouvrir un ecran vide. */}
-                    {!item.detailed ? (
+      {/* L'attente cede la place a la liste au lieu d'etre remplacee dans
+          la meme image. `fill` garde la hauteur : sans elle la liste ne
+          defilerait plus. */}
+      <Swap etat={loading ? "attente" : "liste"} fill>
+        {loading ? (
+          <ActivityIndicator color={colors.accent} style={{ marginTop: spacing.xxl }} />
+        ) : (
+          <FlatList
+            data={filtered}
+            keyExtractor={(item) => item.id}
+            ListHeaderComponent={<ProgressTimeline />}
+            refreshControl={
+              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />
+            }
+            renderItem={({ item, index }) => (
+              <FadeIn delay={100 + Math.min(index, 6) * 50} distance={10}>
+                <AnimatedPressable
+                  testID={`history-item-${item.id}`}
+                  style={styles.card}
+                  scaleTo={0.98}
+                  disabled={!item.detailed}
+                  onPress={() => router.push(`/scan-result?id=${item.id}`)}
+                >
+                  <View style={styles.cardLeft}>
+                    <Text style={styles.cardDate}>
+                      {new Date(item.date).toLocaleDateString("fr-FR", {
+                        day: "2-digit",
+                        month: "long",
+                        year: "numeric",
+                      })}
+                    </Text>
+                    <View style={styles.metaRow}>
                       <View style={styles.metaPill}>
-                        <Text style={styles.metaText}>Résumé seul</Text>
+                        <Text style={styles.metaText}>{item.severity_label}</Text>
                       </View>
-                    ) : null}
+                      <View style={styles.metaPill}>
+                        <Text style={styles.metaText}>
+                          {item.lesion_total} lésion{item.lesion_total > 1 ? "s" : ""}
+                        </Text>
+                      </View>
+                      {/* Le detail est elague au-dela des douze dernieres analyses :
+                          on le dit plutot que d'ouvrir un ecran vide. */}
+                      {!item.detailed ? (
+                        <View style={styles.metaPill}>
+                          <Text style={styles.metaText}>Résumé seul</Text>
+                        </View>
+                      ) : null}
+                    </View>
                   </View>
-                </View>
-                <Text style={styles.cardScore}>{item.global_score}</Text>
-              </AnimatedPressable>
-            </FadeIn>
-          )}
-          ListEmptyComponent={
-            <FadeIn delay={120}>
-              <View style={styles.emptyWrap}>
-                <Text style={styles.emptyTitle}>{"Pas encore d'analyse"}</Text>
-                <Text style={styles.emptyHint}>
-                  Votre première analyse apparaîtra ici.
-                </Text>
-                <AnimatedPressable testID="history-start-btn" style={styles.emptyBtn} onPress={goScan}>
-                  <Text style={styles.emptyBtnText}>Commencer</Text>
+                  <Text style={styles.cardScore}>{item.global_score}</Text>
                 </AnimatedPressable>
-              </View>
-            </FadeIn>
-          }
-          contentContainerStyle={styles.listContent}
-        />
-      )}
+              </FadeIn>
+            )}
+            ListEmptyComponent={
+              <FadeIn delay={120}>
+                <View style={styles.emptyWrap}>
+                  <Text style={styles.emptyTitle}>{"Pas encore d'analyse"}</Text>
+                  <Text style={styles.emptyHint}>
+                    Votre première analyse apparaîtra ici.
+                  </Text>
+                  <AnimatedPressable testID="history-start-btn" style={styles.emptyBtn} onPress={goScan}>
+                    <Text style={styles.emptyBtnText}>Commencer</Text>
+                  </AnimatedPressable>
+                </View>
+              </FadeIn>
+            }
+            contentContainerStyle={styles.listContent}
+          />
+        )}
+      </Swap>
     </SafeAreaView>
   );
 }

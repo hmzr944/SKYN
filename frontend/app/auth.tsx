@@ -18,10 +18,11 @@ import Animated, {
 } from "react-native-reanimated";
 
 import { ease } from "@/src/animation/ease";
+import { childDelay, stagger } from "@/src/animation/motion";
 import { colors, fonts, spacing, radius, shadow } from "@/src/theme";
 import { AnimatedPressable } from "@/src/components/ui/AnimatedPressable";
 import { FadeIn } from "@/src/components/ui/FadeIn";
-import { SkynMark } from "@/src/components/brand/SkynMark";
+import { SkynMarkStill } from "@/src/components/brand/SkynMark";
 import { useAuth } from "@/src/contexts/AuthContext";
 
 /**
@@ -31,13 +32,20 @@ import { useAuth } from "@/src/contexts/AuthContext";
  * decalage, de sorte que l'oeil suit la construction de gauche a droite au
  * lieu de recevoir un bloc deja fait. C'est le seul endroit de l'app ou le
  * logotype est a cette taille — il vaut la peine d'etre pose.
+ *
+ * Le decalage est court. Cet ecran arrive PENDANT que la marque de l'ouverture
+ * finit son vol : si le mot mettait une seconde a se construire, on verrait
+ * deux constructions successives au lieu d'un seul geste.
  */
 function Letter({ char, index }: { char: string; index: number }) {
   const t = useSharedValue(0);
   const reduced = useReducedMotion();
 
   useEffect(() => {
-    t.value = withDelay(340 + index * 90, withSpring(1, { damping: 15, stiffness: 170, mass: 0.9 }));
+    t.value = withDelay(
+      childDelay(index, stagger.letters, 60),
+      withSpring(1, { damping: 15, stiffness: 170, mass: 0.9 }),
+    );
   }, [t, index]);
 
   const aStyle = useAnimatedStyle(() => ({
@@ -60,8 +68,8 @@ export default function AuthScreen() {
   const rule = useSharedValue(0);
   useEffect(() => {
     rule.value = withDelay(
-      760,
-      withTiming(1, { duration: 460, easing: ease.out }),
+      300,
+      withTiming(1, { duration: 420, easing: ease.out }),
     );
   }, [rule]);
   const ruleStyle = useAnimatedStyle(() => ({
@@ -79,23 +87,25 @@ export default function AuthScreen() {
     <SafeAreaView style={styles.container} edges={["top", "bottom"]}>
       {/* Hero */}
       <View style={styles.hero}>
-        <FadeIn delay={80} distance={18}>
-          <SkynMark size={84} style={{ alignSelf: "center", marginBottom: spacing.l }} />
-        </FadeIn>
+        {/* La marque ne rejoue RIEN ici : elle est deja tracee, deja a sa
+            place. C'est celle de l'ouverture qui vient de se poser exactement
+            sur elle — la redessiner ferait clignoter le meme objet et
+            annoncerait la couture. */}
+        <SkynMarkStill size={84} style={styles.mark} />
         <View style={styles.logoRow}>
           {"SKYN".split("").map((letter, i) => (
             <Letter key={i} char={letter} index={i} />
           ))}
         </View>
         <Animated.View style={[styles.hairline, ruleStyle]} />
-        <FadeIn delay={260}>
+        <FadeIn delay={childDelay(0, stagger.blocks, 240)}>
           <Text style={styles.tagline}>{"L'analyse cutanée éditoriale"}</Text>
         </FadeIn>
       </View>
 
       {/* Actions */}
       <View style={styles.actions}>
-        <FadeIn delay={360}>
+        <FadeIn delay={childDelay(1, stagger.blocks, 240)}>
           <AnimatedPressable
             testID="auth-main-button"
             style={[styles.primaryBtn, starting && styles.primaryBtnDisabled]}
@@ -110,7 +120,7 @@ export default function AuthScreen() {
           </AnimatedPressable>
         </FadeIn>
 
-        <FadeIn delay={410}>
+        <FadeIn delay={childDelay(2, stagger.blocks, 240)}>
           <AnimatedPressable
             testID="auth-guest-button"
             style={styles.guestBtn}
@@ -124,7 +134,7 @@ export default function AuthScreen() {
           </AnimatedPressable>
         </FadeIn>
 
-        <FadeIn delay={440}>
+        <FadeIn delay={childDelay(3, stagger.blocks, 240)}>
           <Text style={styles.gdpr} testID="auth-gdpr">
             En continuant, vous créez votre dossier cutané chiffré. Vos photos
             sont analysées puis immédiatement supprimées.
@@ -143,6 +153,7 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     overflow: "hidden",
   },
+  mark: { alignSelf: "center", marginBottom: spacing.l },
   guestBtn: { alignItems: "center", paddingVertical: spacing.m },
   guestBtnText: {
     fontFamily: fonts.bodyMedium,
