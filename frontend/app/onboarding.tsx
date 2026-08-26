@@ -18,78 +18,112 @@ import Animated, {
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
+  withDelay,
+  withSpring,
   withTiming,
 } from "react-native-reanimated";
 
-import { ease } from "@/src/animation/ease";
-
 import { useRouter } from "expo-router";
 
+import { ease } from "@/src/animation/ease";
+import { childDelay, spring, stagger } from "@/src/animation/motion";
 import { colors, fonts, spacing, radius, shadow } from "@/src/theme";
 import { storage } from "@/src/utils/storage";
 import { useAuth } from "@/src/contexts/AuthContext";
-import { FadeIn } from "@/src/components/ui/FadeIn";
 import { AnimatedPressable } from "@/src/components/ui/AnimatedPressable";
 import { GoogleLogo } from "@/src/components/icons/GoogleLogo";
 import { useProviderAuth } from "@/src/hooks/useProviderAuth";
 import { SkynLockup } from "@/src/components/brand/SkynLockup";
-import {
-  PromiseIllustration,
-  TechIllustration,
-  PrivacyIllustration,
-  CaptureIllustration,
-} from "@/src/components/illustrations/OnboardingIllustrations";
+import { Figure, MatiereEntiere } from "@/src/components/onboarding/Figure";
+import { Progress } from "@/src/components/onboarding/Progress";
+
+/**
+ * L'onboarding, en composition editoriale.
+ *
+ * ────────────────────────────────────────────────────────────────────────
+ * CE QUI CHANGE, ET POURQUOI.
+ *
+ * L'ancienne version centrait tout : surtitre centre, illustration centree,
+ * titre centre, texte centre. Cinq ecrans batis sur le meme axe, avec pour
+ * seule variation le dessin du milieu. C'est une mise en page de diaporama,
+ * pas de magazine — l'oeil n'a nulle part ou entrer.
+ *
+ * Ici le texte est FERRE A GAUCHE et le titre occupe la place d'un titre de
+ * couverture : trois ou quatre lignes, chasse serree, interlignage court. La
+ * figure ronde deborde a droite, traversee d'un filet en orbite. La
+ * progression remonte en haut, en segments, la ou on la lit avant de lire le
+ * reste.
+ *
+ * Une page sur cinq rompt la regle : fond terre, matiere pleine page, titre en
+ * creme empile mot par mot. Une seule — c'est ce qui en fait un evenement. Si
+ * les cinq le faisaient, ce ne serait plus qu'un autre gabarit repete.
+ * ────────────────────────────────────────────────────────────────────────
+ */
 
 const PAGE_COUNT = 5;
 const CONTENT_MAX_W = 480;
 /** Duree du glissement d'une page a l'autre. */
 const GLISSE = 380;
 
-// Chaque slide a sa propre identité : kicker éditorial, accent dominant
-// (corail/lime en alternance, jamais de nouvelle teinte), et un très grand
-// numéro en filigrane qui sert de signature visuelle récurrente mais jamais
-// identique — c'est le fil qui tient l'ensemble sans le rendre répétitif.
-const SLIDES = [
+/**
+ * Une photo dans le disque de la premiere page.
+ *
+ * Depose un fichier dans `assets/onboarding/` et remplace `null` par son
+ * `require(...)`. Sans photo, le disque contient la matiere dessinee : l'app
+ * est complete dans les deux cas, jamais en attente d'un fichier manquant.
+ */
+const PORTRAIT = null; // require("@/assets/onboarding/portrait.jpg")
+
+type Slide = {
+  kicker: string;
+  title: string;
+  helper: string;
+  /** Page pleine : fond terre, matiere entiere, titre empile en creme. */
+  pleine?: boolean;
+  /** Le titre s'empile mot par mot, chaque ligne ponctuee. */
+  lignes?: readonly string[];
+  variante?: number;
+  photo?: boolean;
+};
+
+const SLIDES: readonly Slide[] = [
   {
     kicker: "01 · LE CONSTAT",
-    accent: "coral" as const,
-    cover: true,
     title: "Votre peau,\ndécryptée.",
     helper:
       "SKYN analyse votre peau en quelques secondes et vous révèle ce qu'elle a vraiment à dire.",
+    photo: true,
+    variante: 0,
   },
   {
     kicker: "02 · SUR MESURE",
-    accent: "lime" as const,
-    Illustration: PromiseIllustration,
-    title: "Un diagnostic\nqui vous ressemble",
+    title: "Un diagnostic\nqui vous\nressemble.",
     helper:
       "Calibré sur votre âge, votre environnement et vos priorités pour des recommandations vraiment personnalisées.",
+    variante: 1,
   },
   {
     kicker: "03 · LA TECHNOLOGIE",
-    accent: "coral" as const,
-    Illustration: TechIllustration,
-    title: "Une technologie\nde pointe",
+    pleine: true,
+    lignes: ["Cartographiée.", "Zone", "par zone."],
+    title: "Une technologie de pointe",
     helper:
       "Notre moteur cartographie votre peau zone par zone et détecte les micro-patterns invisibles à l'œil nu.",
   },
   {
     kicker: "04 · CONFIDENTIEL",
-    accent: "lime" as const,
-    Illustration: PrivacyIllustration,
-    title: "Vos données\nvous appartiennent",
+    title: "Vos données\nvous\nappartiennent.",
     helper:
       "Vos photos sont analysées puis immédiatement supprimées. Rien n'est partagé, rien n'est conservé.",
+    variante: 2,
   },
   {
     kicker: "05 · À VOUS DE JOUER",
-    accent: "coral" as const,
-    Illustration: CaptureIllustration,
     // L'onboarding passe AVANT la question du genre : impossible de s'accorder
     // ici. La tournure evite donc l'accord plutot que de choisir au hasard.
     title: "On découvre\nvotre peau ?",
     helper: "Créez votre dossier cutané chiffré pour commencer votre premier bilan.",
+    variante: 3,
   },
 ] as const;
 
@@ -97,8 +131,7 @@ const SLIDES = [
  * Une couche de la page, decalee a sa propre vitesse.
  *
  * `rate` dit a quelle profondeur elle se trouve : positif, elle suit le
- * defilement et parait loin ; negatif, elle le devance et parait proche. A
- * zero, elle est solidaire de la page.
+ * defilement et parait loin ; negatif, elle le devance et parait proche.
  */
 function Parallax({
   scrollX,
@@ -118,7 +151,53 @@ function Parallax({
   const aStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: (scrollX.value - index * width) * rate }],
   }));
-  return <Animated.View style={[style, aStyle]} pointerEvents="none">{children}</Animated.View>;
+  return (
+    <Animated.View style={[style, aStyle]} pointerEvents="box-none">
+      {children}
+    </Animated.View>
+  );
+}
+
+/**
+ * Une ligne de titre qui monte a sa place.
+ *
+ * Le titre ne s'affiche pas, il se compose. Chaque ligne arrive apres la
+ * precedente, et le regard suit la construction au lieu de recevoir un pave
+ * deja fait. Le decalage reste court : au dela, on attend devant un ecran qui
+ * se remplit encore.
+ */
+function Ligne({
+  children,
+  index,
+  actif,
+  style,
+}: {
+  children: React.ReactNode;
+  index: number;
+  actif: boolean;
+  style?: StyleProp<ViewStyle>;
+}) {
+  const t = useSharedValue(0);
+  const reduced = useReducedMotion();
+
+  useEffect(() => {
+    if (!actif) {
+      t.value = 0;
+      return;
+    }
+    if (reduced) {
+      t.value = 1;
+      return;
+    }
+    t.value = withDelay(childDelay(index, stagger.blocks, 90), withSpring(1, spring.gentle));
+  }, [actif, index, reduced, t]);
+
+  const aStyle = useAnimatedStyle(() => ({
+    opacity: t.value,
+    transform: [{ translateY: (1 - t.value) * 22 }],
+  }));
+
+  return <Animated.View style={[style, aStyle]}>{children}</Animated.View>;
 }
 
 export default function OnboardingScreen() {
@@ -135,62 +214,33 @@ export default function OnboardingScreen() {
     await continueAsGuest();
     router.replace("/profile-setup");
   };
+
   const isNarrow = SCREEN_W < 380;
   const isShort = SCREEN_H < 700;
-  const horizontalPadding = isNarrow ? spacing.m : spacing.xl;
-  const illustrationSize = isShort ? 116 : isNarrow ? 136 : 160;
-  const titleSize = isShort || isNarrow ? 30 : 36;
-  const titleLineHeight = isShort || isNarrow ? 35 : 42;
+  const horizontalPadding = isNarrow ? spacing.l : spacing.xl;
 
-  // Largeur reservee de part et d'autre des points, identique a gauche et a
-  // droite : c'est ce qui empeche les points de se decaler quand le bouton
-  // « Suivant » disparait sur le dernier ecran.
-  //
-  // Elle est calculee a partir de la place reellement disponible plutot que
-  // posee au jugé : avec une valeur fixe trop etroite, le bouton debordait de
-  // son emplacement et venait recouvrir les derniers points sur un ecran de
-  // 320 px.
-  const DOTS_W = 4 * 8 + 20 + 4 * 6; // quatre points, un point actif allonge, les ecarts
-  const sideSlotW = Math.max(
-    76,
-    Math.floor((SCREEN_W - horizontalPadding * 2 - DOTS_W - spacing.m) / 2),
-  );
-
-  // Le filigrane chiffre etait fige a 210 px. Sur un ecran de 320 px il
-  // depassait des deux cotes et se retrouvait tranche en plein milieu d'un
-  // glyphe, ce qui ressemblait a un bug d'affichage plutot qu'a un parti pris.
-  const watermarkSize = Math.round(Math.min(SCREEN_W * 0.62, 240));
+  // Le titre est le seul element qui a le droit d'etre grand. Il se cale sur la
+  // largeur, pas sur un palier : entre 320 et 430 px il y a un facteur 1,34, et
+  // deux tailles fixes laissent forcement l'une des deux mal posee.
+  const titleSize = Math.round(Math.min(Math.max(SCREEN_W * 0.098, 30), 42));
+  const titleLead = Math.round(titleSize * 1.08);
+  const figureSize = isShort ? 156 : isNarrow ? 172 : 196;
 
   /**
-   * Position du pager, en points, suivie image par image sur le thread
-   * d'animation.
+   * Position du pager, en points, suivie image par image.
    *
    * ────────────────────────────────────────────────────────────────────
-   * POURQUOI CE N'EST PLUS UN DEFILEMENT.
+   * POURQUOI CE N'EST PAS UN DEFILEMENT.
    *
    * Les pages vivaient dans un ScrollView horizontal a `scrollEnabled={false}`
-   * qu'on deplacait par `scrollTo()`. Sur Chrome et Firefox ca marchait ; sur
-   * Safari et dans les webviews d'iOS, non — et c'est la que la moitie des
-   * gens ouvrent un lien. Deux raisons, chacune suffisante :
+   * qu'on deplacait par `scrollTo()`. Sur Chrome ca marchait ; sur Safari et
+   * dans les webviews d'iOS, non — `overflow: hidden` y interdit le defilement
+   * programme, et `scroll-snap` ramene au point d'ou l'on vient. L'echec etait
+   * muet, la pagination avancait sur un contenu fige, et l'onboarding etant la
+   * porte d'entree, on n'entrait jamais dans l'app.
    *
-   *   - `scrollEnabled={false}` pose `overflow: hidden`, et WebKit refuse le
-   *     defilement PROGRAMME sur une boite masquee ;
-   *   - `pagingEnabled` pose `scroll-snap-type: x mandatory`, qui ramene au
-   *     point d'ancrage le plus proche — celui d'ou l'on vient.
-   *
-   * L'echec etait muet : `scrollRef.current?.scrollTo(...)` avalait tout, et
-   * `setPage()` faisait avancer les points juste apres. On voyait donc la
-   * pagination progresser sur un contenu fige. On ne pouvait plus sortir de
-   * l'onboarding, donc plus entrer dans l'app.
-   *
-   * Une translation ne depend d'aucun de ces deux mecanismes. Elle se comporte
-   * pareil sur iOS, Android, Safari, Chrome et en webview, et elle tourne sur
-   * le thread d'animation au lieu de passer par le defilement natif.
-   *
-   * Elle sert aussi de source aux couches en parallaxe : le filigrane derriere,
-   * l'illustration devant. Une page qui glisse d'un bloc est un changement
-   * d'ecran ; des couches qui glissent a des vitesses differentes donnent une
-   * profondeur, et c'est ce qui fait qu'on sent le deplacement.
+   * Une translation ne depend d'aucun de ces deux mecanismes. Elle sert aussi
+   * de source aux couches en parallaxe.
    * ────────────────────────────────────────────────────────────────────
    */
   const scrollX = useSharedValue(0);
@@ -218,309 +268,297 @@ export default function OnboardingScreen() {
   const finishOnboarding = () => storage.setItem("skyn_onboarding_seen", "1");
 
   const isLast = page === PAGE_COUNT - 1;
+  const sombre = SLIDES[page].pleine === true;
 
   return (
-    <SafeAreaView style={styles.container} edges={["top", "bottom"]}>
-      {/* Header */}
-      <View style={styles.header}>
-        <SkynLockup size={24} still />
-        {!isLast ? (
-          <TouchableOpacity
-            testID="onboarding-skip-btn"
-            onPress={() => {
-              finishOnboarding();
-              goToPage(PAGE_COUNT - 1);
-            }}
-            hitSlop={8}
-          >
-            <Text style={styles.skip}>Passer</Text>
-          </TouchableOpacity>
-        ) : (
-          <View style={{ height: 18 }} />
-        )}
-      </View>
+    <View style={styles.container}>
+      {/* La matiere pleine page vit SOUS les pages, pas dedans : elle doit
+          pouvoir deborder derriere l'en-tete et le pied, la ou une page
+          s'arrete. Elle s'efface quand on quitte l'ecran qui la porte. */}
+      <FondPlein actif={sombre} />
 
-      {/* Pages */}
-      <View style={styles.viewport}>
-        <Animated.View style={[styles.rail, { width: SCREEN_W * PAGE_COUNT }, railStyle]}>
-          {SLIDES.map((slide, i) => {
-          const Illustration = "Illustration" in slide ? slide.Illustration : null;
-          const isCover = "cover" in slide && slide.cover;
-          const haloColor = slide.accent === "lime" ? colors.okSofter : colors.accentSofter;
-          const kickerColor = slide.accent === "lime" ? colors.fg : colors.accent;
-          const active = i === page;
-          return (
-            <ScrollView
-              key={i}
-              style={{ width: SCREEN_W }}
-              contentContainerStyle={[styles.page, { minHeight: "100%" }]}
-              showsVerticalScrollIndicator={false}
-              // Les quatre autres pages restent montees, hors champ. Sans ces
-              // lignes, leurs boutons restent atteignables au clavier et
-              // annonces par le lecteur d'ecran : on peut atterrir sur un
-              // « Continuer avec Google » invisible depuis la page 1.
-              //
-              // Il en faut trois : chacune ne couvre qu'une plateforme.
-              // `accessibilityElementsHidden` est iOS, `importantForAccessibility`
-              // est Android, `aria-hidden` est le web.
-              pointerEvents={active ? "auto" : "none"}
-              accessibilityElementsHidden={!active}
-              importantForAccessibility={active ? "auto" : "no-hide-descendants"}
-              aria-hidden={!active}
+      <SafeAreaView style={styles.safe} edges={["top", "bottom"]}>
+        {/* En-tete : la progression d'abord, la marque ensuite. C'est ce qu'on
+            regarde en premier quand on se demande ou l'on en est. */}
+        <View style={[styles.header, { paddingHorizontal: horizontalPadding }]}>
+          <Progress count={PAGE_COUNT} page={page} onDark={sombre} />
+          {!isLast ? (
+            <TouchableOpacity
+              testID="onboarding-skip-btn"
+              onPress={() => {
+                finishOnboarding();
+                goToPage(PAGE_COUNT - 1);
+              }}
+              hitSlop={12}
+              style={styles.skipBtn}
+              accessibilityRole="button"
+              accessibilityLabel="Passer l'introduction"
             >
-              <View
-                style={[
-                  styles.pageContent,
-                  {
-                    maxWidth: CONTENT_MAX_W,
-                    paddingHorizontal: horizontalPadding,
-                    paddingVertical: isShort ? spacing.s : spacing.m,
-                  },
-                ]}
-              >
-                {/* Filigrane numéroté — signature récurrente, jamais identique */}
-                <Parallax
-                  scrollX={scrollX}
-                  index={i}
-                  width={SCREEN_W}
-                  rate={0.32}
-                  style={[styles.watermarkLayer, isCover && styles.watermarkCover]}
+              <Text style={[styles.skip, sombre && styles.onDarkMuted]}>Passer</Text>
+            </TouchableOpacity>
+          ) : (
+            <View style={styles.skipBtn} />
+          )}
+        </View>
+
+        {/* Pages */}
+        <View style={styles.viewport}>
+          <Animated.View
+            style={[styles.rail, { width: SCREEN_W * PAGE_COUNT }, railStyle]}
+          >
+            {SLIDES.map((slide, i) => {
+              const active = i === page;
+              return (
+                <ScrollView
+                  key={i}
+                  style={{ width: SCREEN_W }}
+                  contentContainerStyle={[styles.page, slide.pleine && styles.pageBasse]}
+                  showsVerticalScrollIndicator={false}
+                  // Les quatre autres pages restent montees, hors champ. Sans
+                  // ces lignes, leurs boutons restent atteignables au clavier
+                  // et annonces par le lecteur d'ecran : on peut atterrir sur
+                  // un « Continuer avec Google » invisible depuis la page 1.
+                  // Il en faut trois, chacune ne couvrant qu'une plateforme.
+                  pointerEvents={active ? "auto" : "none"}
+                  accessibilityElementsHidden={!active}
+                  importantForAccessibility={active ? "auto" : "no-hide-descendants"}
+                  aria-hidden={!active}
                 >
-                  <Text
+                  <View
                     style={[
-                      styles.watermark,
-                      { fontSize: watermarkSize, letterSpacing: -watermarkSize * 0.038 },
-                    ]}
-                  >
-                    {slide.kicker.slice(0, 2)}
-                  </Text>
-                </Parallax>
-
-                <FadeIn distance={10}>
-                  <Text style={[styles.kicker, { color: kickerColor }]}>{slide.kicker}</Text>
-                </FadeIn>
-
-                {Illustration ? (
-                  <FadeIn distance={16} delay={40}>
-                    <View
-                      style={[
-                        styles.illustration,
-                        {
-                          width: illustrationSize,
-                          height: illustrationSize,
-                          marginBottom: isShort ? spacing.s : spacing.m,
-                        },
-                      ]}
-                    >
-                      <View
-                        style={[
-                          styles.illustrationHalo,
-                          {
-                            backgroundColor: haloColor,
-                            width: illustrationSize * 1.3,
-                            height: illustrationSize * 1.3,
-                            borderRadius: (illustrationSize * 1.3) / 2,
-                          },
-                        ]}
-                      />
-                      <Illustration />
-                    </View>
-                  </FadeIn>
-                ) : (
-                  <FadeIn distance={16} delay={40}>
-                    <View
-                      style={[
-                        styles.coverHairlineWrap,
-                        {
-                          height: illustrationSize,
-                          marginBottom: isShort ? spacing.s : spacing.m,
-                        },
-                      ]}
-                    >
-                      <View style={styles.hairline} />
-                    </View>
-                  </FadeIn>
-                )}
-                <FadeIn delay={90} distance={16}>
-                  <Text
-                    style={[
-                      styles.title,
-                      isCover && styles.titleCover,
-                      { fontSize: isCover ? titleSize * 1.15 : titleSize, lineHeight: isCover ? titleLineHeight * 1.15 : titleLineHeight },
-                    ]}
-                  >
-                    {slide.title}
-                  </Text>
-                </FadeIn>
-                <FadeIn delay={150}>
-                  <Text
-                    style={[
-                      styles.helper,
-                      isCover && styles.helperCover,
+                      styles.pageContent,
                       {
-                        fontSize: isShort ? 14 : 15,
-                        lineHeight: isShort ? 20 : 22,
-                        marginTop: isShort ? spacing.s : spacing.m,
+                        maxWidth: CONTENT_MAX_W,
+                        paddingHorizontal: horizontalPadding,
+                        paddingBottom:
+                          i === PAGE_COUNT - 1 ? spacing.xxl : isShort ? spacing.m : spacing.xl,
                       },
                     ]}
                   >
-                    {slide.helper}
-                  </Text>
-                </FadeIn>
-
-                {i === PAGE_COUNT - 1 ? (
-                  <FadeIn delay={200} distance={10}>
-                    <View style={[styles.authBlock, { marginTop: isShort ? spacing.m : spacing.xl }]}>
-                      {error ? (
-                        <View style={styles.errorBadge}>
-                          <Text style={styles.error} testID="onboarding-auth-error">
-                            {error}
+                    {slide.pleine ? (
+                      /* ─── La page pleine ─── */
+                      <View style={styles.pleineBloc}>
+                        <Ligne index={0} actif={active}>
+                          <Text style={[styles.kicker, styles.onDarkKicker]}>
+                            {slide.kicker}
                           </Text>
+                        </Ligne>
+                        <View style={styles.pleineTitre}>
+                          {slide.lignes?.map((mot, k) => (
+                            <Ligne key={mot} index={k + 1} actif={active}>
+                              <Text
+                                style={[
+                                  styles.title,
+                                  styles.onDarkTitle,
+                                  { fontSize: titleSize, lineHeight: titleLead },
+                                ]}
+                              >
+                                {mot}
+                              </Text>
+                            </Ligne>
+                          ))}
                         </View>
-                      ) : null}
+                        <Ligne index={(slide.lignes?.length ?? 0) + 1} actif={active}>
+                          <Text style={[styles.helper, styles.onDarkHelper]}>
+                            {slide.helper}
+                          </Text>
+                        </Ligne>
+                      </View>
+                    ) : (
+                      /* ─── Les pages editoriales ─── */
+                      <>
+                        {/* La figure deborde a droite, et se decale plus vite
+                            que le texte : c'est ce decalage qui donne la
+                            profondeur au moment du changement de page. */}
+                        <Parallax
+                          scrollX={scrollX}
+                          index={i}
+                          width={SCREEN_W}
+                          rate={-0.18}
+                          // Un debord franc mais mesure : la boite fait deja
+                          // 1,26 fois le disque pour loger l'orbite, et un
+                          // tiers du disque en plus la poussait de 67 px hors
+                          // de l'ecran — l'ellipse et la scintille etaient
+                          // tranchees net par le bord droit.
+                          style={[styles.figureLayer, { marginRight: -spacing.m }]}
+                        >
+                          <Figure
+                            size={figureSize}
+                            source={i === 0 ? PORTRAIT : null}
+                            variante={slide.variante ?? 0}
+                            delay={90}
+                          />
+                        </Parallax>
 
-                      <AnimatedPressable
-                        testID="onboarding-google-button"
-                        style={[styles.googleBtn, busy !== null && styles.btnDisabled]}
-                        onPress={() => {
-                          finishOnboarding();
-                          handleGoogle();
-                        }}
-                        disabled={busy !== null}
-                      >
-                        <View style={styles.googleBtnInner}>
-                          {busy === "google" ? (
-                            <ActivityIndicator color={colors.fg} size="small" />
-                          ) : (
-                            <>
-                              <GoogleLogo size={20} />
-                              <Text style={styles.googleBtnText}>Continuer avec Google</Text>
-                            </>
-                          )}
-                        </View>
-                      </AnimatedPressable>
+                        <Ligne index={0} actif={active} style={styles.bloc}>
+                          <Text style={styles.kicker}>{slide.kicker}</Text>
+                        </Ligne>
 
-                      <TouchableOpacity
-                        testID="onboarding-guest-button"
-                        onPress={handleGuest}
-                        style={styles.guestBtn}
-                        hitSlop={8}
-                      >
-                        <Text style={styles.guestText}>Tester sans compte →</Text>
-                      </TouchableOpacity>
+                        <Ligne index={1} actif={active} style={styles.bloc}>
+                          <Text
+                            style={[
+                              styles.title,
+                              { fontSize: titleSize, lineHeight: titleLead },
+                            ]}
+                          >
+                            {slide.title}
+                          </Text>
+                        </Ligne>
 
-                      <Text style={styles.gdpr} testID="onboarding-gdpr">
-                        En continuant, vous créez votre dossier cutané chiffré. Vos photos
-                        sont analysées puis immédiatement supprimées.
-                      </Text>
-                    </View>
-                  </FadeIn>
-                ) : null}
-              </View>
-            </ScrollView>
-          );
-          })}
-        </Animated.View>
-      </View>
+                        <Ligne index={2} actif={active} style={styles.bloc}>
+                          <View style={styles.filet} />
+                          <Text style={styles.helper}>{slide.helper}</Text>
+                        </Ligne>
 
-      {/* Barre de navigation — identique sur les cinq écrans.
-          Auparavant la dernière slide remplaçait cette barre par les seuls
-          points : le bouton « Retour » disparaissait (impossible de revenir en
-          arrière) et les points sautaient de la gauche au centre. Les deux
-          repères de progression bougeaient donc au moment précis où l'on
-          demande à l'utilisateur de s'engager.
+                        {i === PAGE_COUNT - 1 ? (
+                          <Ligne index={3} actif={active} style={styles.bloc}>
+                            <View style={styles.authBlock}>
+                              {error ? (
+                                <View style={styles.errorBadge}>
+                                  <Text style={styles.error} testID="onboarding-auth-error">
+                                    {error}
+                                  </Text>
+                                </View>
+                              ) : null}
 
-          Les trois emplacements gardent une largeur fixe, pour que les points
-          restent exactement au même endroit d'un écran à l'autre. */}
-      <View
-        style={[
-          styles.footer,
-          {
-            paddingHorizontal: horizontalPadding,
-            paddingTop: isShort ? spacing.s : spacing.m,
-            paddingBottom:
-              Platform.OS === "ios"
-                ? isShort
-                  ? spacing.m
-                  : spacing.l
-                : isShort
-                  ? spacing.m
-                  : spacing.xl,
-          },
-        ]}
-      >
-        <View style={[styles.footerSlot, { width: sideSlotW }]}>
-          {page > 0 ? (
-            <TouchableOpacity
-              testID="onboarding-back-btn"
-              onPress={() => goToPage(page - 1)}
-              style={styles.backBtn}
-              activeOpacity={0.6}
-              hitSlop={10}
-            >
-              <Text style={styles.backText} numberOfLines={1}>
-                {isNarrow ? "←" : "← Retour"}
-              </Text>
-            </TouchableOpacity>
-          ) : null}
+                              <AnimatedPressable
+                                testID="onboarding-google-button"
+                                style={[styles.googleBtn, busy !== null && styles.btnDisabled]}
+                                onPress={() => {
+                                  finishOnboarding();
+                                  handleGoogle();
+                                }}
+                                disabled={busy !== null}
+                              >
+                                <View style={styles.googleBtnInner}>
+                                  {busy === "google" ? (
+                                    <ActivityIndicator color={colors.fg} size="small" />
+                                  ) : (
+                                    <>
+                                      <GoogleLogo size={20} />
+                                      <Text style={styles.googleBtnText}>
+                                        Continuer avec Google
+                                      </Text>
+                                    </>
+                                  )}
+                                </View>
+                              </AnimatedPressable>
+
+                              <TouchableOpacity
+                                testID="onboarding-guest-button"
+                                onPress={handleGuest}
+                                style={styles.guestBtn}
+                                hitSlop={8}
+                                accessibilityRole="button"
+                              >
+                                <Text style={styles.guestText}>Tester sans compte →</Text>
+                              </TouchableOpacity>
+
+                              <Text style={styles.gdpr} testID="onboarding-gdpr">
+                                En continuant, vous créez votre dossier cutané chiffré. Vos
+                                photos sont analysées puis immédiatement supprimées.
+                              </Text>
+                            </View>
+                          </Ligne>
+                        ) : null}
+                      </>
+                    )}
+                  </View>
+                </ScrollView>
+              );
+            })}
+          </Animated.View>
         </View>
 
-        <View style={styles.dotsRow}>
-          {Array.from({ length: PAGE_COUNT }).map((_, i) => (
-            <View key={i} style={[styles.dot, page === i && styles.dotActive]} />
-          ))}
-        </View>
+        {/* Pied : deux liens, pas un bouton plein.
+            La pastille corail etait l'element le moins editorial de l'ecran, et
+            la seule chose qui criait sur une page qui, par ailleurs, chuchote.
+            Les deux liens gardent leurs 44 px de hauteur tactile. */}
+        <View
+          style={[
+            styles.footer,
+            {
+              paddingHorizontal: horizontalPadding,
+              paddingBottom: Platform.OS === "ios" ? spacing.s : spacing.m,
+            },
+          ]}
+        >
+          <View style={styles.footerSlot}>
+            {page > 0 ? (
+              <TouchableOpacity
+                testID="onboarding-back-btn"
+                onPress={() => goToPage(page - 1)}
+                style={styles.navBtn}
+                activeOpacity={0.6}
+                hitSlop={10}
+                accessibilityRole="button"
+                accessibilityLabel="Étape précédente"
+              >
+                <Text style={[styles.navText, sombre && styles.onDarkMuted]} numberOfLines={1}>
+                  ← Retour
+                </Text>
+              </TouchableOpacity>
+            ) : (
+              <SkynLockup size={20} still onDark={sombre} />
+            )}
+          </View>
 
-        <View style={[styles.footerSlot, styles.footerSlotEnd, { width: sideSlotW }]}>
-          {/* Sur le dernier écran, l'action principale est la connexion, placée
-              dans le contenu : on laisse l'emplacement vide plutôt que d'offrir
-              deux boutons concurrents. */}
-          {!isLast ? (
-            <AnimatedPressable
-              testID="onboarding-next-btn"
-              onPress={() => goToPage(page + 1)}
-              style={[
-                styles.nextBtn,
-                {
-                  paddingHorizontal: isNarrow ? spacing.s : spacing.xl,
-                  paddingVertical: isShort ? 13 : 16,
-                  maxWidth: sideSlotW,
-                },
-              ]}
-            >
-              <Text style={styles.nextText}>Suivant</Text>
-            </AnimatedPressable>
-          ) : null}
+          <View style={[styles.footerSlot, styles.footerSlotEnd]}>
+            {!isLast ? (
+              <TouchableOpacity
+                testID="onboarding-next-btn"
+                onPress={() => goToPage(page + 1)}
+                style={styles.navBtn}
+                activeOpacity={0.6}
+                hitSlop={10}
+                accessibilityRole="button"
+                accessibilityLabel="Étape suivante"
+              >
+                <Text style={[styles.navNext, sombre && styles.onDarkNext]} numberOfLines={1}>
+                  Suivant →
+                </Text>
+              </TouchableOpacity>
+            ) : null}
+          </View>
         </View>
-      </View>
-    </SafeAreaView>
+      </SafeAreaView>
+    </View>
+  );
+}
+
+/** Le fond terre de la page pleine, qui se leve et se retire. */
+function FondPlein({ actif }: { actif: boolean }) {
+  const t = useSharedValue(0);
+  const reduced = useReducedMotion();
+
+  useEffect(() => {
+    t.value = withTiming(actif ? 1 : 0, {
+      duration: reduced ? 0 : GLISSE,
+      easing: ease.out,
+    });
+  }, [actif, reduced, t]);
+
+  const aStyle = useAnimatedStyle(() => ({ opacity: t.value }));
+
+  return (
+    <Animated.View style={[StyleSheet.absoluteFill, aStyle]} pointerEvents="none">
+      <MatiereEntiere />
+    </Animated.View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg, overflow: "hidden" },
-  blob: { position: "absolute", borderRadius: 999, overflow: "hidden" },
-  blobFill: { flex: 1, borderRadius: 999 },
-  blobA: { width: 280, height: 280, top: -80, right: -90, opacity: 0.3 },
-  blobB: { width: 240, height: 240, bottom: 60, left: -100, opacity: 0.25 },
+  safe: { flex: 1 },
   header: {
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
-    paddingHorizontal: spacing.xl,
-    paddingTop: spacing.s,
-    paddingBottom: spacing.xs,
-    minHeight: 36,
+    gap: spacing.m,
+    paddingTop: spacing.m,
+    paddingBottom: spacing.s,
   },
-  wordmark: {
-    fontFamily: fonts.logo,
-    fontSize: 18,
-    color: colors.fg,
-    letterSpacing: 6,
-  },
+  skipBtn: { minHeight: 44, minWidth: 56, justifyContent: "center", alignItems: "flex-end" },
   skip: {
-    paddingVertical: 14,
-    paddingHorizontal: 12,
     fontFamily: fonts.body,
     fontSize: 13,
     color: colors.fgDim,
@@ -529,77 +567,60 @@ const styles = StyleSheet.create({
   // derriere elle.
   viewport: { flex: 1, overflow: "hidden" },
   rail: { flex: 1, flexDirection: "row" },
-  page: {
-    alignItems: "center",
-    justifyContent: "center",
-  },
+  page: { flexGrow: 1, justifyContent: "center" },
+  // La page pleine pose son titre en bas, la ou le voile est le plus
+  // opaque et ou la reference place le sien.
+  pageBasse: { justifyContent: "flex-end" },
   pageContent: {
     width: "100%",
-    paddingHorizontal: spacing.xl,
-    alignItems: "center",
     alignSelf: "center",
   },
-  watermarkLayer: {
-    position: "absolute",
-    top: -18,
-    alignSelf: "center",
-  },
-  watermark: {
-    fontFamily: fonts.heading,
-    color: colors.fg,
-    opacity: 0.035,
-  },
-  watermarkCover: { top: -6 },
+  // La figure sort du cadre a droite. Un rond entier centre est un logo ; un
+  // rond qui deborde est une image dans une page.
+  figureLayer: { alignSelf: "flex-end", marginBottom: spacing.l },
+  bloc: { width: "100%" },
   kicker: {
     fontFamily: fonts.bodyMedium,
     fontSize: 11,
     letterSpacing: 3,
+    color: colors.accent,
     marginBottom: spacing.m,
-  },
-  illustration: {
-    width: 160,
-    height: 160,
-    marginBottom: spacing.m,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  illustrationHalo: {
-    position: "absolute",
-  },
-  coverHairlineWrap: {
-    height: 8,
-    marginBottom: spacing.m,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  hairline: {
-    width: 64,
-    height: 2,
-    backgroundColor: colors.accent,
-    borderRadius: 1,
   },
   title: {
     fontFamily: fonts.display,
     color: colors.fg,
-    fontSize: 36,
-    lineHeight: 42,
-    letterSpacing: -0.5,
-    textAlign: "center",
+    letterSpacing: -0.8,
+    textAlign: "left",
   },
-  titleCover: {
-    letterSpacing: -1.2,
-  },
-  helperCover: {
-    fontFamily: fonts.bodyMedium,
+  // Un filet court avant le texte courant : il separe le titre du corps sans
+  // ajouter d'espace vide, et il donne au bloc un point de depart visible.
+  filet: {
+    width: 40,
+    height: 2,
+    borderRadius: 1,
+    backgroundColor: colors.accent,
+    marginTop: spacing.l,
+    marginBottom: spacing.m,
   },
   helper: {
     fontFamily: fonts.body,
     color: colors.fgMuted,
     fontSize: 15,
-    marginTop: spacing.m,
-    lineHeight: 22,
-    textAlign: "center",
+    lineHeight: 23,
+    textAlign: "left",
+    maxWidth: 330,
   },
+
+  // ————— page pleine —————
+  pleineBloc: { width: "100%" },
+  pleineTitre: { marginBottom: spacing.l },
+  onDarkTitle: { color: colors.onInverse },
+  onDarkKicker: { color: colors.accent },
+  onDarkHelper: { color: colors.onInverseMuted },
+  onDarkMuted: { color: colors.onInverseMuted },
+  onDarkNext: { color: colors.onInverse },
+
+  // ————— dernier ecran —————
   authBlock: { marginTop: spacing.xl, width: "100%", gap: spacing.m },
   errorBadge: {
     borderWidth: 1,
@@ -638,7 +659,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     letterSpacing: 0.3,
   },
-  guestBtn: { alignSelf: "center", paddingVertical: 14, paddingHorizontal: 16 },
+  guestBtn: { alignSelf: "flex-start", paddingVertical: 12, minHeight: 44, justifyContent: "center" },
   guestText: {
     fontFamily: fonts.bodyMedium,
     color: colors.fg,
@@ -651,54 +672,30 @@ const styles = StyleSheet.create({
     color: colors.fgDim,
     fontSize: 11,
     lineHeight: 17,
-    textAlign: "center",
-    paddingHorizontal: spacing.s,
+    textAlign: "left",
   },
+
+  // ————— pied —————
   footer: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingHorizontal: spacing.xl,
-    paddingBottom: Platform.OS === "ios" ? spacing.l : spacing.xl,
-    paddingTop: spacing.m,
+    paddingTop: spacing.s,
     gap: spacing.s,
   },
-  backBtn: {
-    minHeight: 44,
-    justifyContent: "center", paddingVertical: 12, paddingRight: spacing.m },
-  backText: {
+  footerSlot: { flex: 1, justifyContent: "center" },
+  footerSlotEnd: { alignItems: "flex-end" },
+  navBtn: { minHeight: 44, justifyContent: "center", paddingVertical: 10 },
+  navText: {
     fontFamily: fonts.body,
     color: colors.fgMuted,
     fontSize: 14,
-    letterSpacing: 0.5,
+    letterSpacing: 0.3,
   },
-  // Emplacements lateraux de largeur fixe : les points restent alignes au
-  // meme endroit sur les cinq ecrans, meme quand un cote est vide.
-  footerSlot: { justifyContent: "center" },
-  footerSlotEnd: { alignItems: "flex-end" },
-  dotsRow: { flexDirection: "row", gap: 6 },
-  dot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: colors.borderMid,
-  },
-  dotActive: { backgroundColor: colors.accent, width: 20 },
-  nextBtn: {
-    minHeight: 44,
-    justifyContent: "center",
-    backgroundColor: colors.accent,
-    paddingHorizontal: 32,
-    paddingVertical: 16,
-    borderRadius: radius.pill,
-    alignItems: "center",
-    ...shadow.button,
-  },
-  nextText: {
+  navNext: {
     fontFamily: fonts.headingMedium,
-    color: colors.onAccent,
-    fontSize: 12,
-    letterSpacing: 1.5,
-    textTransform: "uppercase",
+    color: colors.fg,
+    fontSize: 14,
+    letterSpacing: 0.3,
   },
 });
