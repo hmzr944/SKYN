@@ -10,7 +10,7 @@ import Animated, {
   useSharedValue,
   withTiming,
 } from "react-native-reanimated";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AnimatedPressable } from "@/src/components/ui/AnimatedPressable";
 import { ScanRing } from "@/src/components/analysis/ScanRing";
@@ -27,7 +27,7 @@ import {
   type Angle,
   type GuideState,
 } from "@/src/services/faceGuide";
-import { colors, radius, spacing, type } from "@/src/theme";
+import { colors, palette, radius, spacing, type } from "@/src/theme";
 import { FACE_EXTENT, facePathAt } from "@/src/theme/mark";
 import { useOnline } from "@/src/hooks/useOnline";
 import { storage } from "@/src/utils/storage";
@@ -79,6 +79,7 @@ const LOST_MS = 700;
  */
 export default function CameraScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { retake } = useLocalSearchParams<{ retake?: string }>();
   const [permission, requestPermission] = useCameraPermissions();
   const [ready, setReady] = useState(false);
@@ -410,8 +411,22 @@ export default function CameraScreen() {
   }));
 
   return (
-    <SafeAreaView style={styles.container} edges={["top", "bottom"]}>
-      <View style={styles.header}>
+    /* ────────────────────────────────────────────────────────────────────
+       PLEIN ECRAN.
+
+       La camera vivait dans une scene a hauteur fixe, entre un en-tete et un
+       pied poses sur du creme : la moitie basse de l'ecran ne montrait rien, et
+       l'ovale se retrouvait rogne sur le cote quand l'image etait plus large
+       que sa boite.
+
+       Elle occupe maintenant tout. Le voile s'assombrit AUTOUR du visage au
+       lieu de masquer le reste — on garde le contexte (les epaules, la piece)
+       et c'est la fenetre qui s'eclaire. L'en-tete et le pied flottent
+       par-dessus, sur leur propre fond sombre, la ou le texte est lisible quoi
+       qu'il y ait derriere.
+       ──────────────────────────────────────────────────────────────────── */
+    <View style={styles.container}>
+      <View style={[styles.header, { paddingTop: insets.top + spacing.s }]}>
         <AnimatedPressable
           testID="camera-close-btn"
           onPress={() => router.back()}
@@ -429,7 +444,7 @@ export default function CameraScreen() {
       </View>
 
       {!online ? (
-        <Reveal distance={6} style={styles.noticeWrap}>
+        <Reveal distance={6} style={[styles.noticeWrap, { top: insets.top + 62 }]}>
           <View style={styles.notice} testID="camera-offline-notice">
             <Text style={styles.noticeText}>
               {"Pas de connexion. L'analyse a besoin du réseau : le scan " +
@@ -438,7 +453,7 @@ export default function CameraScreen() {
           </View>
         </Reveal>
       ) : retake === "no_face" ? (
-        <Reveal distance={6} style={styles.noticeWrap}>
+        <Reveal distance={6} style={[styles.noticeWrap, { top: insets.top + 62 }]}>
           <View style={styles.notice} testID="camera-retake-notice">
             <Text style={styles.noticeText}>
               {"Aucun visage détecté sur la dernière prise. Suivez le guidage ci-dessous."}
@@ -467,7 +482,16 @@ export default function CameraScreen() {
               </Mask>
             </Defs>
 
-            <Rect width={stage.w} height={stage.h} fill={colors.bg} mask="url(#skyn-window)" />
+            {/* Le voile. Terre a 58 % et non creme plein : on doit continuer
+                a voir ou l'on est, sinon on ne sait plus comment se placer.
+                C'est la fenetre qui s'eclaire, pas le reste qui disparait. */}
+            <Rect
+              width={stage.w}
+              height={stage.h}
+              fill={palette.terre}
+              opacity={0.58}
+              mask="url(#skyn-window)"
+            />
 
             {/* Le trait du contour, sur le bord du trou. */}
             <AnimatedPath
@@ -499,6 +523,7 @@ export default function CameraScreen() {
         ) : null}
       </View>
 
+      <View style={[styles.bas, { paddingBottom: insets.bottom + spacing.m }]}>
       <View style={styles.guidance}>
         <Reveal key={guide} distance={6}>
           <Text
@@ -531,19 +556,40 @@ export default function CameraScreen() {
           <Text style={styles.secondaryText}>Prendre maintenant</Text>
         </AnimatedPressable>
       </View>
-    </SafeAreaView>
+      </View>
+    </View>
   );
 }
 
+/** Ce qui flotte sur l'image porte son propre fond, sinon rien ne se lit. */
+const VOILE_HAUT = "rgba(42,29,24,0.55)";
+const VOILE_BAS = "rgba(42,29,24,0.78)";
+
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.bg },
+  container: { flex: 1, backgroundColor: palette.terre },
+  // L'en-tete et le pied sont POSES SUR l'image, pas au-dessus d'elle : la
+  // scene occupe l'ecran entier et passe dessous.
   header: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 2,
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     paddingHorizontal: spacing.l,
-    paddingTop: spacing.s,
-    paddingBottom: spacing.s,
+    paddingBottom: spacing.m,
+    backgroundColor: VOILE_HAUT,
+  },
+  bas: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 2,
+    paddingTop: spacing.m,
+    backgroundColor: VOILE_BAS,
   },
   closeBtn: {
     width: 44,
@@ -551,12 +597,12 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: colors.surfaceSunken,
+    backgroundColor: "rgba(255,246,240,0.16)",
   },
-  closeText: { color: colors.fg, fontSize: 15 },
-  headerTitle: { ...type.kicker, color: colors.fgDim, fontVariant: ["tabular-nums"] },
+  closeText: { color: colors.onInverse, fontSize: 15 },
+  headerTitle: { ...type.kicker, color: colors.onInverse, fontVariant: ["tabular-nums"] },
 
-  noticeWrap: { paddingHorizontal: spacing.l, paddingBottom: spacing.s },
+  noticeWrap: { position: "absolute", left: 0, right: 0, zIndex: 2, paddingHorizontal: spacing.l },
   notice: {
     borderWidth: 1,
     borderColor: colors.accentLine,
@@ -565,9 +611,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.m,
     borderRadius: radius.md,
   },
-  noticeText: { ...type.bodySmall, color: colors.fg, textAlign: "center" },
+  noticeText: { ...type.bodySmall, color: colors.onInverse, textAlign: "center" },
 
-  stage: { flex: 1, overflow: "hidden" },
+  stage: { ...StyleSheet.absoluteFillObject, overflow: "hidden" },
   placeholder: {
     ...StyleSheet.absoluteFillObject,
     alignItems: "center",
@@ -575,7 +621,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.xl,
     gap: spacing.m,
   },
-  placeholderText: { ...type.bodySmall, color: colors.fgDim, textAlign: "center", maxWidth: 240 },
+  placeholderText: { ...type.bodySmall, color: colors.onInverse, textAlign: "center", maxWidth: 240 },
   permBtn: {
     minHeight: 44,
     justifyContent: "center",
@@ -590,7 +636,7 @@ const styles = StyleSheet.create({
   guidance: { alignItems: "center", paddingHorizontal: spacing.l, paddingTop: spacing.m },
   // Une seule ligne. Il y en avait deux, qui disaient la meme chose : la
   // consigne du moment, et un rappel permanent de tourner la tete.
-  guide: { ...type.subtitle, color: colors.fg, textAlign: "center", minHeight: 26 },
+  guide: { ...type.subtitle, color: colors.onInverse, textAlign: "center", minHeight: 26 },
   guideOk: { color: colors.accent },
 
   controls: {
@@ -609,10 +655,10 @@ const styles = StyleSheet.create({
     paddingVertical: 13,
     paddingHorizontal: spacing.l,
     borderWidth: 1,
-    borderColor: colors.borderMid,
+    borderColor: "rgba(255,246,240,0.42)",
     borderRadius: radius.pill,
     minHeight: 44,
     justifyContent: "center",
   },
-  secondaryText: { ...type.kicker, color: colors.fgMuted },
+  secondaryText: { ...type.kicker, color: colors.onInverse },
 });

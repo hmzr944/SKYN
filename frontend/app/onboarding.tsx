@@ -23,11 +23,13 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 
+import { useCameraPermissions } from "expo-camera";
 import { useRouter } from "expo-router";
 
 import { ease } from "@/src/animation/ease";
 import { childDelay, spring, stagger } from "@/src/animation/motion";
 import { colors, fonts, spacing, radius, shadow } from "@/src/theme";
+import { remindersSupported, requestPermission } from "@/src/services/reminders";
 import { storage } from "@/src/utils/storage";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { AnimatedPressable } from "@/src/components/ui/AnimatedPressable";
@@ -36,6 +38,7 @@ import { useProviderAuth } from "@/src/hooks/useProviderAuth";
 import { SkynLockup } from "@/src/components/brand/SkynLockup";
 import { Figure, MatiereEntiere } from "@/src/components/onboarding/Figure";
 import { Progress } from "@/src/components/onboarding/Progress";
+import { Autorisation, type Etat } from "@/src/components/onboarding/Autorisation";
 
 /**
  * L'onboarding, en composition editoriale.
@@ -84,37 +87,59 @@ type Slide = {
   lignes?: readonly string[];
   variante?: number;
   photo?: boolean;
+  /** Cette page demande une autorisation au systeme. */
+  demande?: "camera" | "rappels";
 };
 
+/**
+ * ────────────────────────────────────────────────────────────────────────
+ * L'ORDRE EST LE SUJET DE CET ECRAN.
+ *
+ * Il y avait quatre pages de discours puis une page de compte, et les
+ * autorisations tombaient plus tard, seules, sur un ecran noir : la camera au
+ * moment d'ouvrir le scan, les notifications jamais. On disait donc quatre
+ * fois pourquoi l'app est bien, et zero fois ce qu'elle allait demander.
+ *
+ * Maintenant : une presentation, la vie privee, puis les deux demandes, puis
+ * le compte. La vie privee vient AVANT les demandes — c'est l'argument qui les
+ * rend acceptables, et le presenter apres ne sert plus a rien.
+ *
+ * Les deux pages de discours en trop ont fusionne dans la premiere. Une
+ * promesse repetee sous trois angles n'est pas trois fois plus convaincante ;
+ * elle repousse juste trois fois le moment ou l'app commence.
+ * ────────────────────────────────────────────────────────────────────────
+ */
 const SLIDES: readonly Slide[] = [
   {
-    kicker: "01 · LE CONSTAT",
+    kicker: "01 · LA PROMESSE",
     title: "Votre peau,\ndécryptée.",
     helper:
-      "SKYN analyse votre peau en quelques secondes et vous révèle ce qu'elle a vraiment à dire.",
+      "Une photo, quelques secondes, et vous savez où en est votre peau : lésions comptées et classées, zone par zone, avec une routine calibrée sur vos priorités.",
     photo: true,
     variante: 0,
   },
   {
-    kicker: "02 · SUR MESURE",
-    title: "Un diagnostic\nqui vous\nressemble.",
+    kicker: "02 · CONFIDENTIEL",
+    pleine: true,
+    lignes: ["Analysées.", "Puis", "effacées."],
+    title: "Vos données vous appartiennent",
     helper:
-      "Calibré sur votre âge, votre environnement et vos priorités pour des recommandations vraiment personnalisées.",
+      "Vos photos partent au moteur le temps du calcul, puis disparaissent. Vos analyses restent sur votre téléphone. Rien n'est revendu, rien n'entraîne quoi que ce soit.",
+  },
+  {
+    kicker: "03 · L'APPAREIL PHOTO",
+    title: "Il nous faut\nvotre visage.",
+    helper:
+      "C'est la seule chose que SKYN regarde. Vous cadrez, l'app suit vos traits en direct et déclenche quand la pose est bonne.",
+    demande: "camera",
     variante: 1,
   },
   {
-    kicker: "03 · LA TECHNOLOGIE",
-    pleine: true,
-    lignes: ["Cartographiée.", "Zone", "par zone."],
-    title: "Une technologie de pointe",
+    kicker: "04 · LES RAPPELS",
+    title: "On vous fait\nsigne ?",
     helper:
-      "Notre moteur cartographie votre peau zone par zone et détecte les micro-patterns invisibles à l'œil nu.",
-  },
-  {
-    kicker: "04 · CONFIDENTIEL",
-    title: "Vos données\nvous\nappartiennent.",
-    helper:
-      "Vos photos sont analysées puis immédiatement supprimées. Rien n'est partagé, rien n'est conservé.",
+      "Deux rappels par jour, matin et soir. Une routine tenue trois semaines vaut mieux qu'une routine parfaite tenue trois jours.",
+    demande: "rappels",
     variante: 2,
   },
   {
@@ -214,6 +239,21 @@ export default function OnboardingScreen() {
     await continueAsGuest();
     router.replace("/profile-setup");
   };
+
+  /* ————— les deux autorisations —————
+     La camera passe par le crochet d'expo-camera, qui connait deja l'etat au
+     montage : si elle a ete accordee ailleurs, la page l'affiche accordee sans
+     rien redemander. Les rappels n'ont pas d'equivalent, d'ou l'etat local. */
+  const [permCam, demanderCam] = useCameraPermissions();
+  const [etatRappels, setEtatRappels] = useState<Etat>(
+    remindersSupported ? "attente" : "impossible",
+  );
+
+  const etatCamera: Etat = permCam?.granted
+    ? "accorde"
+    : permCam && !permCam.granted && permCam.status !== "undetermined"
+      ? "refuse"
+      : "attente";
 
   const isNarrow = SCREEN_W < 380;
   const isShort = SCREEN_H < 700;
@@ -409,6 +449,37 @@ export default function OnboardingScreen() {
                           <View style={styles.filet} />
                           <Text style={styles.helper}>{slide.helper}</Text>
                         </Ligne>
+
+                        {slide.demande ? (
+                          <Ligne index={3} actif={active} style={styles.bloc}>
+                            {slide.demande === "camera" ? (
+                              <Autorisation
+                                testID="onboarding-perm-camera"
+                                etat={etatCamera}
+                                libelle="Autoriser l'appareil photo"
+                                motAccorde="L'appareil photo est autorisé. Vous pourrez lancer un scan tout de suite."
+                                motRefuse="Refusé pour l'instant. On vous le redemandera au moment du scan, et vous pouvez revenir dessus dans les réglages du téléphone."
+                                motImpossible="L'appareil photo n'est pas accessible ici."
+                                onDemander={async () => {
+                                  await demanderCam();
+                                }}
+                              />
+                            ) : (
+                              <Autorisation
+                                testID="onboarding-perm-rappels"
+                                etat={etatRappels}
+                                libelle="Activer les rappels"
+                                motAccorde="Rappels activés. Vous choisirez les horaires dans les réglages."
+                                motRefuse="Sans notification, pas de rappel. Vous pourrez les activer plus tard dans les réglages."
+                                motImpossible="Les rappels demandent des notifications programmées, que le navigateur ne sait pas faire. Ils s'activeront dans l'application installée."
+                                onDemander={async () => {
+                                  const ok = await requestPermission();
+                                  setEtatRappels(ok ? "accorde" : "refuse");
+                                }}
+                              />
+                            )}
+                          </Ligne>
+                        ) : null}
 
                         {i === PAGE_COUNT - 1 ? (
                           <Ligne index={3} actif={active} style={styles.bloc}>
