@@ -15,7 +15,7 @@ import Svg, { Polyline, Circle, Defs, LinearGradient as SvgLinearGradient, Stop,
 import { colors, fonts, spacing, radius, shadow } from "@/src/theme";
 import { syncPendingReports } from "@/src/services/api";
 import { listScans, type ScanSummary } from "@/src/services/scanStore";
-import { CONCERN_LABEL, SKIN_TYPE_LABEL } from "@/src/types/analysis";
+import { CONCERN_LABEL, SEVERITY_LABEL, SKIN_TYPE_LABEL } from "@/src/types/analysis";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { FadeIn } from "@/src/components/ui/FadeIn";
 import { Swap } from "@/src/components/ui/Swap";
@@ -284,7 +284,7 @@ export default function DashboardScreen() {
               >
                 <View style={styles.pill}>
                   <View style={styles.pillDot} />
-                  <Text style={styles.pillLabel}>{last.severity_label}</Text>
+                  <Text style={styles.pillLabel}>{SEVERITY_LABEL[last.severity_level]}</Text>
                 </View>
                 <View style={styles.pill}>
                   <View style={styles.pillDot} />

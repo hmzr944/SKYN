@@ -11,6 +11,7 @@ import { FadeIn } from "@/src/components/ui/FadeIn";
 import { Swap } from "@/src/components/ui/Swap";
 import { AnimatedPressable } from "@/src/components/ui/AnimatedPressable";
 import { ProgressTimeline } from "@/src/components/analysis/ProgressTimeline";
+import { SEVERITY_LABEL } from "@/src/types/analysis";
 import { Segmented } from "@/src/components/ui/Segmented";
 
 const FILTERS = [
@@ -110,7 +111,7 @@ export default function HistoryScreen() {
                     </Text>
                     <View style={styles.metaRow}>
                       <View style={styles.metaPill}>
-                        <Text style={styles.metaText}>{item.severity_label}</Text>
+                        <Text style={styles.metaText}>{SEVERITY_LABEL[item.severity_level]}</Text>
                       </View>
                       <View style={styles.metaPill}>
                         <Text style={styles.metaText}>

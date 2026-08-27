@@ -162,6 +162,17 @@ def _summary(fp: SkinFingerprint, ph: Phenotype, lr: LesionReport,
     return " ".join(bits)
 
 
+def _zone_burden(density: float, infl: int) -> float:
+    """Charge d'une zone, sur 0..1.
+
+    Isolee pour que le score d'une seule prise et celui d'une fusion
+    multi-angles passent par le MEME calcul : deux formules qui divergent,
+    meme legerement, feraient dependre la carte affichee du nombre de photos
+    envoyees plutot que de l'etat de la peau.
+    """
+    return min(1.0, density / 3.0) * 0.6 + min(1.0, infl / 6.0) * 0.4
+
+
 def _zone_scores(fp: SkinFingerprint, lr: LesionReport, fm: FaceMap) -> Dict[str, int]:
     """Note 0-100 par zone, pour la cartographie affichee dans l'application."""
     out: Dict[str, int] = {}
@@ -171,8 +182,31 @@ def _zone_scores(fp: SkinFingerprint, lr: LesionReport, fm: FaceMap) -> Dict[str
         d = lr.density.get(name, 0.0)
         per = lr.per_zone.get(name, {})
         infl = per.get("papule", 0) + per.get("pustule", 0)
-        burden = min(1.0, d / 3.0) * 0.6 + min(1.0, infl / 6.0) * 0.4
-        out[name] = int(round(100 * (1.0 - burden)))
+        out[name] = int(round(100 * (1.0 - _zone_burden(d, infl))))
+    return out
+
+
+def _zone_scores_from_merged(per_zone: Dict[str, dict]) -> Dict[str, int]:
+    """La meme note, a partir d'un `per_zone` deja fusionne entre plusieurs angles.
+
+    `analyze_multi` fusionne les comptages par zone de chaque prise, mais
+    renvoyait jusqu'ici le `zone_scores` de la SEULE vue de face — celle prise
+    comme reference. Sur un scan reel a trois angles, la vue de face n'avait
+    reussi a cartographier qu'une zone (le front) ; la carte affichee etait
+    donc vide partout ailleurs, et sa legende presentait cette zone unique
+    comme « la plus chargee » alors qu'elle etait simplement la seule mesuree.
+
+    Le `per_zone` fusionne porte deja `density_cm2` et les comptages par type
+    pour chaque zone vue par au moins une des trois prises — y compris les
+    tempes et la machoire, que les profils exposent et que la vue de face
+    aplatit. Il suffit d'y repasser la meme formule.
+    """
+    out: Dict[str, int] = {}
+    for name, data in per_zone.items():
+        d = data.get("density_cm2", 0.0)
+        lesions = data.get("lesions") or {}
+        infl = lesions.get("papule", 0) + lesions.get("pustule", 0)
+        out[name] = int(round(100 * (1.0 - _zone_burden(d, infl))))
     return out
 
 
@@ -289,6 +323,7 @@ def analyze_multi(images: List[str], profile: Optional[dict] = None) -> FaceAnal
             total_counts[t] = total_counts.get(t, 0) + n
 
     base.per_zone = merged_zone
+    base.zone_scores = _zone_scores_from_merged(merged_zone)
     base.lesion_counts = total_counts or base.lesion_counts
     base.summary += f" Analyse consolidée sur {len(usable)} prises de vue."
     base.confidence = min(0.95, base.confidence + 0.06 * (len(usable) - 1))

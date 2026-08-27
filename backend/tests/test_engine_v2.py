@@ -451,3 +451,58 @@ class TestPipeline:
         out = analyze_face(blank, {})
         assert out.ok is False
         assert out.summary
+
+    def test_multi_angle_zone_scores_match_merged_per_zone(self, result):
+        """Verrouille une regression reperee sur un scan reel a trois angles :
+        la carte affichee n'avait qu'une seule zone notee (le front, vu par la
+        vue de face), et sa legende presentait cette zone unique comme « la
+        plus chargee » — alors que `per_zone`, lui, portait bien les tempes et
+        la machoire vues par les profils. `analyze_multi` fusionnait les
+        comptages sans jamais recalculer `zone_scores` a partir du resultat.
+
+        Les trois prises sont la meme image : ca ne teste pas la fusion des
+        VALEURS (le fixture n'a qu'un visage), seulement que `zone_scores`
+        redevient un calcul du `per_zone` fusionne — donc que ses cles suivent
+        celles de `per_zone`, quel que soit le nombre de prises. Avant le
+        correctif, `zone_scores` restait celui de la seule premiere prise :
+        sur des prises reellement differentes, ses cles se seraient limitees a
+        ce que la vue de face avait, a elle seule, reussi a cartographier.
+        """
+        from skyn_engine.v2.pipeline import analyze_multi
+        b64 = base64.b64encode(open(FIXTURE, "rb").read()).decode()
+        out = analyze_multi([b64, b64, b64], {"age_range": "<25", "priority": "Imperfections"})
+        assert out.ok is True
+        assert set(out.zone_scores.keys()) == set(out.per_zone.keys())
+        assert "Analyse consolidée sur 3 prises de vue." in out.summary
+
+
+class TestZoneScoresMerge:
+    """`_zone_scores_from_merged` doit couvrir l'union des zones vues par
+    n'importe laquelle des prises fusionnees, pas seulement celles de la vue
+    de face — c'est precisement ce que la version precedente ne faisait pas."""
+
+    def test_covers_zones_seen_only_in_profile_views(self):
+        from skyn_engine.v2.pipeline import _zone_scores_from_merged
+
+        # Le front n'est "vu" que par la vue de face ; les tempes ne le sont
+        # que par les profils gauche et droit — exactement la situation d'un
+        # vrai scan a trois angles.
+        merged = {
+            "front": {"lesions": {}, "density_cm2": 0.0},
+            "tempe_g": {"lesions": {"papule": 2}, "density_cm2": 1.5},
+            "tempe_d": {"lesions": {}, "density_cm2": 0.4},
+        }
+        scores = _zone_scores_from_merged(merged)
+
+        assert set(scores.keys()) == {"front", "tempe_g", "tempe_d"}
+        # Front nette : aucune lesion, densite nulle.
+        assert scores["front"] == 100
+        # Tempe gauche chargee : deux papules et une densite notable doivent
+        # la faire passer sous le seuil d'affichage cote client (charge > 20 %,
+        # soit une note sous 80).
+        assert scores["tempe_g"] < 80
+
+    def test_empty_zone_is_perfectly_clean(self):
+        from skyn_engine.v2.pipeline import _zone_scores_from_merged
+        scores = _zone_scores_from_merged({"menton": {"lesions": {}, "density_cm2": 0.0}})
+        assert scores["menton"] == 100

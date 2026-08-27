@@ -13,6 +13,7 @@ import Animated, {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AnimatedPressable } from "@/src/components/ui/AnimatedPressable";
+import { Criteres, type CriteresEtat } from "@/src/components/analysis/Criteres";
 import { ScanRing } from "@/src/components/analysis/ScanRing";
 import { Reveal } from "@/src/components/ui/Reveal";
 import { track } from "@/src/services/analytics";
@@ -39,6 +40,45 @@ const cleanB64 = (b?: string | null) =>
   b ? (b.startsWith("data:") ? b.split(",")[1] ?? "" : b) : "";
 
 /**
+ * Lumiere suffisante ou non, mesuree sur l'image reelle plutot que devinee.
+ *
+ * On redimensionne l'image a 24x24 avant de lire ses pixels : la luminance
+ * moyenne d'une scene ne demande pas sa resolution native, et lire un canvas
+ * a taille reelle 9 fois par seconde couterait cher pour rien. Le canvas est
+ * cree une seule fois et reutilise — pas un par mesure.
+ *
+ * Renvoie `null` si la mesure echoue (canvas indisponible, image pas encore
+ * prete) : dans ce cas l'appelant garde l'etat precedent plutot que de
+ * conclure a tort que la lumiere manque.
+ */
+function mesureLumiere(
+  video: HTMLVideoElement,
+  canvasRef: { current: HTMLCanvasElement | null },
+): boolean | null {
+  try {
+    if (!canvasRef.current) {
+      canvasRef.current = document.createElement("canvas");
+      canvasRef.current.width = 24;
+      canvasRef.current.height = 24;
+    }
+    const ctx = canvasRef.current.getContext("2d", { willReadFrequently: true });
+    if (!ctx) return null;
+    ctx.drawImage(video, 0, 0, 24, 24);
+    const { data } = ctx.getImageData(0, 0, 24, 24);
+    let sum = 0;
+    // Luma ITU-R BT.601 : plus proche de la perception humaine qu'une simple
+    // moyenne des trois canaux, qui surponderait le bleu.
+    for (let i = 0; i < data.length; i += 4) {
+      sum += 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+    }
+    const moyenne = sum / (data.length / 4);
+    return moyenne >= LUMIERE_MIN;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Ce qui separe la boite du detecteur du contour de la marque.
  *
  * BlazeFace rend une boite serree : elle s'arrete aux sourcils en haut et sous
@@ -56,6 +96,21 @@ const SMOOTH = 0.45;
 
 /** Sans visage pendant ce delai, le cadre revient au centre. */
 const LOST_MS = 700;
+
+/**
+ * Seuil de luminance moyenne (0-255) sous lequel la lumiere est jugee
+ * insuffisante.
+ *
+ * Mesure, pas devine : un vrai visage filme en interieur, lumiere de piece
+ * correcte, moyenne entre 52 et 112 selon l'eclairage. Une meme image
+ * assombrie a 50 % tombe a 56, a 30 % a 33. Le seuil se place entre les deux,
+ * pour ne signaler que ce qui degraderait vraiment l'analyse — pas une piece
+ * simplement tamisee.
+ */
+const LUMIERE_MIN = 40;
+
+/** Cadence de la mesure de lumiere : elle n'a pas besoin d'etre a 9 im/s. */
+const LUMIERE_MS = 450;
 
 /**
  * Le scan, en une seule session continue.
@@ -87,6 +142,18 @@ export default function CameraScreen() {
 
   const [guide, setGuide] = useState<GuideState>("loading");
   const [covered, setCovered] = useState<Angle[]>([]);
+  // La checklist en direct : visage trouve, bien cadre, lumiere suffisante.
+  // Elle vit a part du texte de guidage, parce qu'elle peut diverger de lui —
+  // un visage detecte mais mal cadre affichait "Ne bougez plus" alors que la
+  // prise n'allait jamais partir tant que le cadrage restait mauvais.
+  const [criteres, setCriteres] = useState<CriteresEtat>({
+    detecte: false,
+    cadre: false,
+    lumiere: null,
+  });
+  const criteresRef = useRef(criteres);
+  const lumCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const lastLumRef = useRef(0);
   const coveredRef = useRef<Angle[]>([]);
   const capturesRef = useRef<string[]>([]);
   const holdSinceRef = useRef<number | null>(null);
@@ -319,6 +386,34 @@ export default function CameraScreen() {
               const state = evaluate(d, coveredRef.current);
               setGuide(state);
 
+              // La checklist se met a jour independamment du texte de
+              // guidage : elle doit continuer a dire "pas cadre" meme quand
+              // le texte, lui, dit deja "Ne bougez plus".
+              const detecte = !!d;
+              const cadre = !!d && framingOk(d);
+              if (
+                criteresRef.current.detecte !== detecte ||
+                criteresRef.current.cadre !== cadre
+              ) {
+                const next = { ...criteresRef.current, detecte, cadre };
+                criteresRef.current = next;
+                setCriteres(next);
+              }
+
+              // La lumiere se mesure a part, moins souvent : lire les pixels
+              // d'un canvas coute plus cher qu'une detection, et son etat
+              // change lentement — inutile de la recalculer 9 fois par
+              // seconde.
+              if (now - lastLumRef.current > LUMIERE_MS) {
+                lastLumRef.current = now;
+                const suffisante = mesureLumiere(v, lumCanvasRef);
+                if (suffisante !== null && criteresRef.current.lumiere !== suffisante) {
+                  const next = { ...criteresRef.current, lumiere: suffisante };
+                  criteresRef.current = next;
+                  setCriteres(next);
+                }
+              }
+
               // L'angle doit tenir un court instant avant d'etre echantillonne :
               // une image prise en plein mouvement serait floue.
               if (d) {
@@ -534,6 +629,14 @@ export default function CameraScreen() {
           </Text>
         </Reveal>
       </View>
+
+      {/* La checklist n'existe que la ou le guidage en direct existe : sur le
+          web, aujourd'hui. Le suivi en direct (visage, cadrage, lumiere)
+          repose sur MediaPipe charge en WASM dans une page, et n'a pas
+          d'equivalent natif pour l'instant — sur un iPhone reel, l'app retombe
+          deja sur "Prendre maintenant" sans guidage, avec ou sans cette
+          checklist. */}
+      {Platform.OS === "web" ? <Criteres etat={criteres} /> : null}
 
       <View style={styles.controls}>
         <AnimatedPressable
