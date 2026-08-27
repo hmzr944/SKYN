@@ -423,7 +423,7 @@ export default function OnboardingScreen() {
 
                               <AnimatedPressable
                                 testID="onboarding-google-button"
-                                style={[styles.googleBtn, busy !== null && styles.btnDisabled]}
+                                style={styles.googleBtn}
                                 onPress={() => {
                                   finishOnboarding();
                                   handleGoogle();
@@ -637,7 +637,6 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
     textAlign: "center",
   },
-  btnDisabled: { opacity: 0.6 },
   googleBtn: {
     backgroundColor: colors.surface,
     borderWidth: 1,

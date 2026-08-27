@@ -384,7 +384,7 @@ export default function ProfileSetupScreen() {
             if (page < LAST_QUESTION) goToPage(page + 1);
             else finish();
           }}
-          style={[styles.nextBtn, (!canNext() || saving) && styles.nextBtnDisabled]}
+          style={styles.nextBtn}
         >
           {saving ? (
             <ActivityIndicator color={colors.onAccent} size="small" />
@@ -566,7 +566,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     ...shadow.button,
   },
-  nextBtnDisabled: { opacity: 0.35, shadowOpacity: 0 },
   nextText: {
     fontFamily: fonts.headingMedium,
     color: colors.onAccent,

@@ -1,6 +1,13 @@
 import * as Haptics from "expo-haptics";
 import { ReactNode } from "react";
-import { Insets, LayoutChangeEvent, Platform, StyleProp, ViewStyle } from "react-native";
+import {
+  Insets,
+  LayoutChangeEvent,
+  Platform,
+  StyleProp,
+  StyleSheet,
+  ViewStyle,
+} from "react-native";
 import { Pressable } from "react-native-gesture-handler";
 import Animated, {
   useAnimatedStyle,
@@ -70,7 +77,24 @@ function tap(kind: NonNullable<Props["haptic"]>) {
  * lecteur d'ecran annonçait du texte la ou il y avait un bouton, et rien du
  * tout sur les boutons a icone. Le role par defaut se declare donc ici, une
  * fois, plutot qu'a chaque appel.
+ *
+ * ────────────────────────────────────────────────────────────────────────
+ * L'ETAT DESACTIVE SE VOIT, MAINTENANT.
+ *
+ * `disabled` ne faisait qu'ignorer l'appui. Le bouton gardait son opacite
+ * pleine, son curseur en main sur le web, et son aspect de bouton : on
+ * appuyait, il ne se passait rien, et rien n'expliquait pourquoi. C'est ce
+ * qu'on lisait comme « l'app ne repond pas ».
+ *
+ * L'attenuation se pose donc ici, une fois, au lieu d'etre recopiee a chaque
+ * appel — la ou elle etait recopiee, chaque ecran avait choisi sa propre
+ * valeur, et deux boutons desactives cote a cote n'avaient pas la meme.
+ * ────────────────────────────────────────────────────────────────────────
  */
+
+/** Ce qu'on voit d'un controle hors service. */
+const ETEINT = 0.42;
+
 export function AnimatedPressable({
   children,
   onPress,
@@ -105,6 +129,11 @@ export function AnimatedPressable({
       accessibilityLabel={accessibilityLabel}
       accessibilityHint={accessibilityHint}
       accessibilityState={{ disabled: !!disabled, ...accessibilityState }}
+      // `accessibilityState` ne descend pas jusqu'aux attributs ARIA sur le
+      // web : mesure faite, `aria-disabled` restait vide et un lecteur d'ecran
+      // annoncait un bouton ordinaire la ou il n'y avait plus d'action. Pose a
+      // la main, en plus de la prop native.
+      aria-disabled={!!disabled || accessibilityState?.disabled}
       onPressIn={() => {
         if (haptic) tap(haptic);
         scale.value = withTiming(scaleTo, { duration: motion.instant });
@@ -113,7 +142,20 @@ export function AnimatedPressable({
         scale.value = withSpring(1, motion.springPress);
       }}
     >
-      <Animated.View style={[style, aStyle]}>{children}</Animated.View>
+      <Animated.View style={[style, aStyle, disabled && styles.eteint]}>{children}</Animated.View>
     </Pressable>
   );
 }
+
+const styles = StyleSheet.create({
+  eteint: {
+    opacity: ETEINT,
+    // Sur le web, le curseur est la moitie de l'information : une main au
+    // dessus d'un bouton mort promet une action qui n'arrivera pas.
+    //
+    // React Native ne connait que « auto » et « pointer » ; « not-allowed » est
+    // un curseur du web, que react-native-web transmet tel quel. La conversion
+    // est donc explicite plutot que subie.
+    ...(Platform.OS === "web" ? ({ cursor: "not-allowed" } as unknown as ViewStyle) : null),
+  },
+});

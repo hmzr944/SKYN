@@ -146,6 +146,17 @@ export default function SettingsScreen() {
         {/* ————— Rappels ————— */}
         <Reveal delay={40}>
           <Text style={styles.section}>Rappels</Text>
+          {/* La raison se lit AVANT les controles.
+              Elle etait sous la carte : on appuyait d'abord sur deux
+              interrupteurs qui ne bougeaient pas, et on lisait l'explication
+              seulement apres — quand on l'a lue. */}
+          {!remindersSupported ? (
+            <Text style={styles.note} testID="settings-reminders-note">
+              Les rappels demandent des notifications programmées, que le
+              navigateur ne sait pas faire. Ils s&apos;activeront dans
+              l&apos;application installée.
+            </Text>
+          ) : null}
           <View style={styles.card}>
             <ReminderRow
               label="Le matin"
@@ -171,12 +182,6 @@ export default function SettingsScreen() {
               }}
             />
           </View>
-          {!remindersSupported ? (
-            <Text style={styles.note}>
-              Les rappels ne fonctionnent pas dans un navigateur. Ils s&apos;activeront
-              dans l&apos;application installée.
-            </Text>
-          ) : null}
         </Reveal>
 
         {/* ————— Données ————— */}
@@ -458,8 +463,11 @@ function ReminderRow({
   onToggle: (v: boolean) => void;
   onBump: () => void;
 }) {
+  // Hors service, la rangee ENTIERE s'eteint : libelle compris. Un intitule a
+  // pleine opacite au-dessus d'un interrupteur mort se lit comme un reglage
+  // disponible, et c'est l'appui suivant qui apprend le contraire.
   return (
-    <View style={styles.row}>
+    <View style={[styles.row, !remindersSupported && styles.rowEteinte]}>
       <View style={{ flex: 1 }}>
         <Text style={styles.rowLabel}>{label}</Text>
         <Text style={styles.rowHint}>{hint}</Text>
@@ -469,6 +477,7 @@ function ReminderRow({
         disabled={!on}
         scaleTo={0.94}
         onPress={onBump}
+        accessibilityLabel={`Décaler l'heure, actuellement ${time}`}
       >
         <Text style={[styles.timeText, on && styles.timeTextOn]}>{time}</Text>
       </AnimatedPressable>
@@ -478,6 +487,7 @@ function ReminderRow({
         onValueChange={onToggle}
         trackColor={{ false: colors.fgFaint, true: colors.accent }}
         thumbColor={colors.bg}
+        accessibilityLabel={`Rappel ${label.toLowerCase()}`}
       />
     </View>
   );
@@ -520,6 +530,9 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     minHeight: 56,
   },
+  // Meme valeur que celle d'AnimatedPressable : deux controles hors service
+  // cote a cote doivent s'eteindre pareil.
+  rowEteinte: { opacity: 0.42 },
   rowLabel: { ...type.label, color: colors.fg },
   rowHint: { ...type.bodySmall, color: colors.fgDim, marginTop: 2 },
   foldClip: { overflow: "hidden" },

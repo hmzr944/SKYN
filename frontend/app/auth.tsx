@@ -108,7 +108,7 @@ export default function AuthScreen() {
         <FadeIn delay={childDelay(1, stagger.blocks, 240)}>
           <AnimatedPressable
             testID="auth-main-button"
-            style={[styles.primaryBtn, starting && styles.primaryBtnDisabled]}
+            style={styles.primaryBtn}
             onPress={startOnboarding}
             disabled={starting}
           >
@@ -200,7 +200,6 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill,
     ...shadow.button,
   },
-  primaryBtnDisabled: { opacity: 0.6 },
   primaryBtnText: {
     fontFamily: fonts.headingMedium,
     color: colors.onAccent,
