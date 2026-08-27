@@ -396,6 +396,68 @@ async def skyn_engine_analyze_v2(payload: AnalyzeV2Request,
     return out.to_dict()
 
 
+class AnalyzeGuidedRequest(BaseModel):
+    images_base64: List[str]
+    min_vues_utiles: int = 5
+    cible_vues: int = 7
+    max_vues: int = 9
+
+
+@api_router.post("/analyze/guided")
+async def skyn_engine_analyze_guided(payload: AnalyzeGuidedRequest,
+                                     authorization: Optional[str] = Header(None)):
+    """SKYN Engine — scan multi-vue guide (v0, prototype, pas encore relie
+    a l'app mobile).
+
+    Prend une sequence de frames (jusqu'a `max_vues` utilisables), applique
+    a chaque vue la detection/classification de production INCHANGEE, puis
+    suit/nettoie/confirme les observations a travers les vues — voir
+    `skyn_engine.v2.multiview`, ou chaque mecanisme (tracking, nettoyage
+    par observation, purete de piste, vote-gate, arret adaptatif) a ete
+    valide separement dans backend/tools/. S'arrete des que la mesure est
+    jugee suffisamment stable (au plus tot a `cible_vues`, au plus tard a
+    `max_vues`) plutot que de toujours consommer toutes les frames
+    fournies.
+
+    N'affecte pas /analyze/v2 — endpoint additif pour un prototype de
+    capture guidee.
+    """
+    user = await get_current_user(authorization)
+
+    images = list(payload.images_base64 or [])
+    if not images:
+        raise HTTPException(status_code=400, detail="At least one image required")
+    if any(len(i) > MAX_IMAGE_B64_LEN for i in images):
+        raise HTTPException(status_code=413, detail="Image too large")
+    if len(images) > 24:
+        raise HTTPException(status_code=400, detail="Too many frames")
+    if not (1 <= payload.min_vues_utiles <= payload.cible_vues <= payload.max_vues <= 24):
+        raise HTTPException(status_code=400, detail="Invalid scan configuration")
+
+    from skyn_engine.v2.multiview import orchestrer_scan, ScanConfig
+
+    config = ScanConfig(min_vues_utiles=payload.min_vues_utiles,
+                        cible_vues=payload.cible_vues, max_vues=payload.max_vues)
+
+    def _run():
+        return orchestrer_scan(images, config)
+
+    try:
+        # Meme raison que /analyze/v2 : pipeline bloquant/CPU-bound, a ne
+        # jamais executer directement dans la coroutine.
+        out = await run_in_threadpool(_run)
+    except Exception as e:
+        logger.exception(f"SKYN Engine guided scan failure: {e}")
+        raise HTTPException(status_code=500, detail="Analysis failed")
+
+    return {
+        "lesions": out.lesions_confirmees,
+        "frames_received": out.n_vues_recues,
+        "usable_views": out.n_vues_utilisables,
+        "stop_reason": out.raison_arret,
+    }
+
+
 @api_router.post("/recommendations", response_model=RecommendationsResponse)
 async def gpt4o_recommendations(payload: RecommendationsRequest, authorization: Optional[str] = Header(None)):
     """Hybrid: numeric scores stay deterministic (frontend mock). Only the 3 final
