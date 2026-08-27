@@ -134,6 +134,76 @@ def classify(red, dark, yellow, *, core_l=-5.0, core_s=100.0, skin_s=60.0,
                      r_px, px_per_mm, src)
 
 
+class TestBlobSplitting:
+    """Deux ou trois lesions rondes qui se touchent forment, une fois
+    binarisees, une seule composante allongee que les filtres de forme
+    (aire, circularite) rejettent en bloc. Diagnostic P0 sur le banc de
+    reference : 6 des 8 lesions non retrouvees etaient dans ce cas exact.
+    `_split_touching` les separe par ligne de partage des eaux avant que les
+    filtres ne s'appliquent."""
+
+    def test_two_touching_discs_split_into_two(self):
+        """Verrouille la correction de la convention des marqueurs de
+        `cv2.watershed`. Premiere version : tout pixel de premier plan qui
+        n'etait pas lui-meme un germe recevait un marqueur DEJA attribue (1)
+        au lieu du marqueur "inconnu" (0) que watershed doit remplir — plus
+        rien a inonder, les fragments rendus faisaient 1 pixel chacun. Sur ce
+        cas fixe (deux disques de rayon 9 qui se touchent), la version
+        buguee rendait deux fragments d'aire 1 ; corrigee, elle rend deux
+        moities d'aire proche de celle d'un disque isole (~254 px).
+        """
+        import cv2
+        import numpy as np
+        from skyn_engine.v2.lesions import _split_touching
+
+        comp = np.zeros((60, 60), dtype=np.uint8)
+        cv2.circle(comp, (20, 30), 9, 1, -1)
+        cv2.circle(comp, (35, 30), 9, 1, -1)
+
+        frags = _split_touching(comp, r_min_px=1.66)
+
+        assert len(frags) == 2
+        for f in frags:
+            # Une moitie de la paire fusionnee, pas un pixel isole ni le
+            # bloc entier repris tel quel.
+            assert 120 < f.sum() < 350
+
+    def test_single_disc_is_not_split(self):
+        """Une lesion isolee, sans voisine, ne doit produire aucun fragment
+        — `_blob_candidates` la garde alors telle quelle."""
+        import cv2
+        import numpy as np
+        from skyn_engine.v2.lesions import _split_touching
+
+        comp = np.zeros((40, 40), dtype=np.uint8)
+        cv2.circle(comp, (20, 20), 9, 1, -1)
+
+        assert _split_touching(comp, r_min_px=1.66) == []
+
+    def test_merged_pair_survives_candidate_filtering(self):
+        """Le test d'integration correspondant : deux disques fusionnes,
+        passes par `_blob_candidates` en entier (seuil, filtres de forme,
+        separation), doivent rendre deux candidats — pas zero.
+        """
+        import cv2
+        import numpy as np
+        from skyn_engine.v2 import calibration as C
+        from skyn_engine.v2.lesions import _blob_candidates
+
+        excess = np.zeros((80, 80), dtype=np.float32)
+        mask = np.zeros((80, 80), dtype=np.uint8)
+        cv2.circle(mask, (40, 40), 35, 255, -1)
+        for cx in (33, 48):
+            cv2.circle(excess, (cx, 40), 9, 20.0, -1)
+        # Un peu de bruit de fond realiste, sinon le seuil robuste degenere.
+        rng = np.random.default_rng(0)
+        excess += rng.normal(0, 0.5, excess.shape).astype(np.float32) * (mask > 0)
+
+        a_min, a_max = 8, 400
+        cands = _blob_candidates(excess, mask, C.RED_BLOB_K, a_min, a_max)
+        assert len(cands) == 2
+
+
 class TestClassification:
     def test_papule_rouge_et_sombre_est_retenue(self):
         """Le cas qui disparaissait : franchement rouge ET franchement sombre.
@@ -452,6 +522,50 @@ class TestPipeline:
         assert out.ok is False
         assert out.summary
 
+    @pytest.mark.xfail(
+        strict=True,
+        reason=(
+            "Regression connue, non corrigee : la recompression JPEG seule "
+            "(sans le moindre changement de peau) fait bouger le score de 4 "
+            "points (77 -> 81) et le compte de lesions de 5 -> 4. Cause "
+            "tracee : MediaPipe deplace les reperes de 1-2 px sous le bruit de "
+            "recompression, ce qui deplace la boite du visage et les seuils "
+            "robustes qui en dependent juste assez pour faire basculer un ou "
+            "deux candidats pres de leur frontiere. Marque `xfail` plutot que "
+            "supprime : corriger cela est un chantier P1/P3 a part entiere "
+            "(lissage compression-invariant, hysteresis sur les seuils), pas "
+            "un ajustement de seuil ponctuel — et le laisser echouer en rouge "
+            "aurait masque le reste de la suite plutot que documenter le "
+            "probleme.",
+        ),
+    )
+    def test_stable_under_jpeg_recompression(self):
+        """Verrouille — pour le jour ou elle sera corrigee — une regression de
+        reproductibilite reperee lors de l'audit P0 : la MEME photo, encodee
+        deux fois differemment, ne doit pas produire un compte de lesions ni
+        un score notablement differents. Voir la raison du xfail ci-dessus
+        pour les chiffres mesures et la piste retenue.
+        """
+        import cv2
+        from skyn_engine.v2.pipeline import analyze_face
+
+        original = base64.b64encode(open(FIXTURE, "rb").read()).decode()
+        img = cv2.imread(FIXTURE)
+        ok, buf = cv2.imencode(".jpg", img, [int(cv2.IMWRITE_JPEG_QUALITY), 95])
+        assert ok
+        recompresse = base64.b64encode(buf.tobytes()).decode()
+
+        a = analyze_face(original)
+        b = analyze_face(recompresse)
+        assert a.ok and b.ok
+        assert abs(a.global_score - b.global_score) <= 3, (
+            f"score instable a la recompression : {a.global_score} vs {b.global_score}"
+        )
+        assert abs(len(a.lesions) - len(b.lesions)) <= 1, (
+            f"compte de lesions instable a la recompression : "
+            f"{len(a.lesions)} vs {len(b.lesions)}"
+        )
+
     def test_multi_angle_zone_scores_match_merged_per_zone(self, result):
         """Verrouille une regression reperee sur un scan reel a trois angles :
         la carte affichee n'avait qu'une seule zone notee (le front, vu par la
@@ -506,3 +620,54 @@ class TestZoneScoresMerge:
         from skyn_engine.v2.pipeline import _zone_scores_from_merged
         scores = _zone_scores_from_merged({"menton": {"lesions": {}, "density_cm2": 0.0}})
         assert scores["menton"] == 100
+
+
+@pytest.mark.skipif(not cv_available, reason="OpenCV/MediaPipe absents")
+@pytest.mark.skipif(not os.path.exists(FIXTURE), reason="fixture absente")
+class TestSynthBenchValidity:
+    """Le banc synthetique doit lui-meme etre digne de confiance.
+
+    Trouvaille de l'audit P0 : 3 des 8 lesions "manquees" sur le banc de
+    reference (30 lesions, seed 7) n'etaient pas des echecs de detection —
+    elles etaient plantees a l'interieur d'une region que le moteur exclut
+    deliberement de toute analyse (sourcils, narines), confirme par une
+    distance NEGATIVE au polygone d'exclusion le plus proche. Le rappel
+    mesure grimpait de 63 a 70 % en corrigeant uniquement la POSE des
+    lesions, sans toucher au moteur.
+
+    Ce test empeche que le meme defaut ne revienne dans `plant()` : aucune
+    lesion posee ne doit tomber sur un pixel que `build_face_map` exclut du
+    masque peau.
+    """
+
+    def test_planted_lesions_never_land_on_excluded_skin(self):
+        import cv2
+
+        # `synth_lesions.py` s'importe lui-meme comme `backend.tools....` (il
+        # insere la RACINE du depot dans son propre sys.path) alors que ce
+        # fichier de tests s'importe depuis `backend/` directement. Les deux
+        # conventions coexistent : il faut la racine en plus pour resoudre
+        # le prefixe `backend.`.
+        REPO_ROOT = os.path.dirname(BACKEND)
+        if REPO_ROOT not in sys.path:
+            sys.path.insert(0, REPO_ROOT)
+        from backend.tools.synth_lesions import _landmarks, plant
+        from skyn_engine.v2.zones import build_face_map
+
+        img = cv2.imread(FIXTURE)
+        pts = _landmarks(img)
+        assert pts is not None
+
+        for zone in ("front", "nez", "joue_g", "joue_d", "menton"):
+            marked, planted = plant(img, pts, zone, 6, seed=7)
+            ok, buf = cv2.imencode(".jpg", marked, [int(cv2.IMWRITE_JPEG_QUALITY), 95])
+            assert ok
+            b64 = base64.b64encode(buf.tobytes()).decode()
+            fm = build_face_map(b64)
+            assert fm.detected
+
+            for p in planted:
+                assert fm.skin_mask[p.y, p.x] > 0, (
+                    f"lesion posee en zone {zone} a ({p.x},{p.y}) tombe hors "
+                    f"du masque peau — verite terrain invalide"
+                )

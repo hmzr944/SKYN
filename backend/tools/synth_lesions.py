@@ -86,10 +86,49 @@ def plant(
     Les positions sont tirees a l'interieur du polygone de la zone, avec une
     marge : une lesion collee au bord serait attribuable a la zone voisine, et
     on ne saurait pas si une erreur vient du moteur ou de notre mise en place.
+
+    ────────────────────────────────────────────────────────────────────────
+    LE MASQUE DE POSE EST CELUI DU MOTEUR, PAS UNE COPIE.
+
+    La premiere version tirait les positions dans le polygone de zone SEUL,
+    sans savoir que le moteur exclut sourcils, cils, levres et narines de
+    toute analyse (`zones.EXCLUDE_LANDMARKS`) — le polygone `front` deborde
+    legerement sur les sourcils, `nez` touche les narines. Une lesion posee la
+    n'est pas manquee, elle est POSEE SUR UN PIXEL QUE LE MOTEUR N'ANALYSE
+    JAMAIS.
+
+    Diagnostic mesure sur le banc de reference (30 lesions, zones
+    joue_g/joue_d/front/menton/nez, seed 7) : 3 des 8 lesions non retrouvees
+    tombaient exactement la — confirme par une distance NEGATIVE au polygone
+    d'exclusion le plus proche. Ce n'etait pas un echec de detection : une
+    verite terrain invalide.
+
+    Une premiere correction re-implementait a la main la meme geometrie que
+    `zones.build_face_map` (ovale, exclusions dilatees, erosion finale). Elle
+    a echoue une fois sur un point du FRONT loin de tout sourcil : l'ovale du
+    visage lui-meme est erode d'un cran final (`face_w/32`, `zones.py`) que la
+    copie ne reproduisait pas, et deux implementations paralleles de la meme
+    regle finissent par diverger.
+
+    Ici, `mask` est directement le `skin_mask` du moteur — appele une fois sur
+    l'image AVANT plantation — jamais une reconstruction. Une marge
+    supplementaire l'erode encore un peu : `plant()` situe les positions sur
+    les reperes de cette image d'origine, mais `evaluate()` (comme la
+    production) reencode ensuite en JPEG avant de faire relire l'image par
+    MediaPipe, et un reencodage seul, sans le moindre changement de peau,
+    deplace les reperes de jusqu'a 3 px (mesure : max 3,05 px, p95 1,37 px sur
+    ce fixture, a qualite 95) — donc le masque peau lui-meme, un peu. Sans
+    cette marge, un point valide selon les reperes d'origine peut retomber
+    hors peau une fois les reperes recalcules apres compression : la meme
+    instabilite que `test_stable_under_jpeg_recompression` documente cote
+    moteur, vue ici cote banc.
+    ────────────────────────────────────────────────────────────────────────
     """
     idx = ZONE_LANDMARKS.get(zone)
     if not idx:
         raise SystemExit(f"zone inconnue : {zone}")
+
+    from backend.skyn_engine.v2.zones import build_face_map as _bfm
 
     poly = pts[idx].astype(np.int32)
     mask = np.zeros(img.shape[:2], np.uint8)
@@ -98,9 +137,17 @@ def plant(
     face_w = float(np.ptp(pts[:, 0]))
     mask = cv2.erode(mask, np.ones((max(3, int(face_w / 40)),) * 2, np.uint8))
 
+    fm_ref = _bfm(_b64(img))
+    marge_recompression = 4  # au-dela des 3,05 px de derive mesures
+    skin_erode = cv2.erode(
+        fm_ref.skin_mask,
+        np.ones((marge_recompression * 2 + 1,) * 2, np.uint8),
+    )
+    mask = cv2.bitwise_and(mask, skin_erode)
+
     ys, xs = np.nonzero(mask)
     if len(xs) < 50:
-        raise SystemExit(f"zone trop petite apres marge : {zone}")
+        raise SystemExit(f"zone trop petite apres marge et exclusions : {zone}")
 
     rng = np.random.default_rng(seed)
     planted: List[Planted] = []

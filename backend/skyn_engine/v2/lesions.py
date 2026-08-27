@@ -29,7 +29,7 @@ puisse le remplacer sans toucher au reste du moteur.
 from __future__ import annotations
 
 from dataclasses import dataclass, asdict
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import cv2
 import numpy as np
@@ -125,11 +125,112 @@ def _zone_of(fm: FaceMap, cx: int, cy: int) -> str:
     return "autre"
 
 
+def _shape_stats(comp: np.ndarray) -> Optional[Tuple[int, int, int, float, float]]:
+    """Aire, largeur, hauteur, remplissage et circularite d'un masque binaire
+    d'une seule composante. `None` si le contour est degenere."""
+    ys, xs = np.nonzero(comp)
+    if ys.size == 0:
+        return None
+    area = int(ys.size)
+    bw = int(xs.max() - xs.min() + 1)
+    bh = int(ys.max() - ys.min() + 1)
+    fill = area / float(max(1, bw * bh))
+    cnts, _ = cv2.findContours(comp.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+    if not cnts:
+        return None
+    perim = cv2.arcLength(cnts[0], True)
+    if perim <= 0:
+        return None
+    circularity = 4.0 * np.pi * area / (perim * perim)
+    return area, bw, bh, fill, circularity
+
+
+def _passes_shape(area: int, bw: int, bh: int, fill: float, circularity: float,
+                  a_min: int, a_max: int) -> bool:
+    """Le meme jeu de criteres pour un candidat isole ou pour un fragment issu
+    d'une separation — c'est ce qui garantit qu'un fragment n'est retenu que
+    s'il ressemble VRAIMENT a une lesion, pas seulement parce qu'il est plus
+    petit que le bloc dont il vient."""
+    if area < a_min or area > a_max:
+        return False
+    if max(bw, bh) > 3.2 * max(1, min(bw, bh)):
+        return False
+    if fill < 0.32:
+        return False
+    if circularity < 0.55:
+        return False
+    return True
+
+
+def _split_touching(comp: np.ndarray, r_min_px: float) -> List[np.ndarray]:
+    """Separe une composante en lesions individuelles quand elle en contient
+    plusieurs collees, par ligne de partage des eaux.
+
+    ────────────────────────────────────────────────────────────────────────
+    POURQUOI CETTE ETAPE MANQUAIT.
+
+    Deux ou trois lesions rondes qui se touchent forment, une fois binarisees,
+    UNE SEULE composante connexe — allongee, avec une aire qui peut depasser
+    le plafond d'une lesion seule. Les filtres de forme existants (aire,
+    circularite) rejettent alors le tout, perdant plusieurs lesions a la fois
+    a cause d'une seule. Diagnostic mesure sur le banc de reference : 6 des 8
+    lesions non retrouvees etaient dans ce cas — chacune partageait sa
+    composante avec une ou deux voisines plantees a proximite.
+
+    La transformee de distance d'une composante formee de disques qui se
+    touchent presente un maximum local PAR DISQUE — c'est la signature meme
+    d'un amas de taches rondes, la ou une structure lineaire (poil, pli,
+    ombre) n'en presente qu'un, faible et continu le long de sa longueur. Le
+    seuil sur la hauteur du maximum (`r_min_px * 0.6`) ecarte ces structures :
+    une ombre fine n'atteint jamais une distance au bord comparable au rayon
+    minimal d'une lesion plausible.
+
+    Chaque fragment issu du partage repasse ensuite par EXACTEMENT les memes
+    criteres de forme qu'un candidat isole (`_passes_shape`) : rien n'est
+    retenu ici pour la seule raison qu'il est plus petit que le bloc d'origine.
+    ────────────────────────────────────────────────────────────────────────
+    """
+    dist = cv2.distanceTransform(comp, cv2.DIST_L2, 5)
+    seuil_pic = max(1.5, r_min_px * 0.6)
+    local_max = (dist == cv2.dilate(dist, np.ones((5, 5), np.uint8))) & (dist > seuil_pic)
+    n_seeds, seed_labels = cv2.connectedComponents(local_max.astype(np.uint8))
+    # 1 seul foyer (0 = fond) : rien a separer, c'est une lesion unique.
+    if n_seeds <= 2:
+        return []
+
+    # Convention de `cv2.watershed` : 0 = INCONNU, a remplir par le partage ;
+    # tout le reste doit deja porter un marqueur distinct. Y compris le fond,
+    # qui a droit a SON PROPRE marqueur (1) plutot qu'a 0 — sans quoi le fond
+    # se ferait lui aussi inonder comme s'il restait a determiner.
+    #
+    # La premiere version mettait `seed_labels + 1` PARTOUT (fond du calcul de
+    # `connectedComponents` compris) puis ne remettait a 0 que le vrai fond de
+    # `comp` : chaque pixel du premier plan qui n'etait pas lui-meme un germe
+    # heritait donc du marqueur "1", DEJA attribue, au lieu de rester "a
+    # determiner". Le partage n'avait alors plus rien a inonder, et les
+    # fragments rendus faisaient 1 pixel — la separation ne separait rien.
+    markers = np.zeros(comp.shape, dtype=np.int32)
+    markers[comp == 0] = 1
+    markers[seed_labels > 0] = seed_labels[seed_labels > 0] + 1
+    color = cv2.cvtColor(comp * 255, cv2.COLOR_GRAY2BGR)
+    cv2.watershed(color, markers)
+
+    fragments = []
+    for lbl in range(2, n_seeds + 1):
+        frag = (markers == lbl).astype(np.uint8)
+        if frag.sum() > 0:
+            fragments.append(frag)
+    return fragments
+
+
 def _blob_candidates(excess: np.ndarray, mask: np.ndarray, k: float,
                      a_min: int, a_max: int) -> List[Tuple[int, int, float, int]]:
     """Composantes connexes au-dessus d'un seuil robuste.
 
     Retourne (cx, cy, aire, label) pour chaque candidat de taille plausible.
+    Le label distingue les candidats entre eux mais ne correspond plus
+    directement a une etiquette de `connectedComponents` : un candidat issu
+    d'une separation recoit un label negatif, unique dans l'appel.
     """
     sel = excess[mask > 0]
     if sel.size < 50:
@@ -139,37 +240,45 @@ def _blob_candidates(excess: np.ndarray, mask: np.ndarray, k: float,
     binary = cv2.morphologyEx(binary, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
 
     n, labels, stats, cent = cv2.connectedComponentsWithStats(binary, connectivity=8)
+    r_min_px = float(np.sqrt(max(a_min, 1) / np.pi))
     out = []
+    prochain_label_fragment = -1
     for i in range(1, n):
         area = int(stats[i, cv2.CC_STAT_AREA])
-        if area < a_min or area > a_max:
-            continue
         bw = int(stats[i, cv2.CC_STAT_WIDTH])
         bh = int(stats[i, cv2.CC_STAT_HEIGHT])
-        # Rejette les structures allongees : un poil, un pli, une ombre de
-        # narine sont lineaires ; une lesion est globalement ronde.
-        if max(bw, bh) > 3.2 * max(1, min(bw, bh)):
-            continue
-        fill = area / float(max(1, bw * bh))
-        if fill < 0.32:
-            continue
-        # Circularite 4*pi*A/P^2 : vaut 1 pour un disque parfait et s'effondre
-        # pour une forme sinueuse. Les ombres residuelles (pli, cerne, aile du
-        # nez) sont allongees et irregulieres ; une lesion est compacte.
         comp = (labels[
             stats[i, cv2.CC_STAT_TOP]:stats[i, cv2.CC_STAT_TOP] + bh,
             stats[i, cv2.CC_STAT_LEFT]:stats[i, cv2.CC_STAT_LEFT] + bw
         ] == i).astype(np.uint8)
-        cnts, _ = cv2.findContours(comp, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
-        if not cnts:
+        shape = _shape_stats(comp)
+        if shape is None:
             continue
-        perim = cv2.arcLength(cnts[0], True)
-        if perim <= 0:
+        s_area, s_bw, s_bh, fill, circularity = shape
+        if _passes_shape(s_area, s_bw, s_bh, fill, circularity, a_min, a_max):
+            out.append((int(cent[i][0]), int(cent[i][1]), float(area), i))
             continue
-        circularity = 4.0 * np.pi * area / (perim * perim)
-        if circularity < 0.55:
+
+        # Rejete tel quel : peut-etre plusieurs lesions collees. On ne tente
+        # la separation que si le bloc est assez grand pour en contenir
+        # plusieurs — l'essayer sur un fragment deja minuscule ne ferait que
+        # chercher du bruit dans du bruit.
+        if area < a_min * 1.6:
             continue
-        out.append((int(cent[i][0]), int(cent[i][1]), float(area), i))
+        for frag in _split_touching(comp, r_min_px):
+            fshape = _shape_stats(frag)
+            if fshape is None:
+                continue
+            f_area, f_bw, f_bh, f_fill, f_circ = fshape
+            if not _passes_shape(f_area, f_bw, f_bh, f_fill, f_circ, a_min, a_max):
+                continue
+            ys, xs = np.nonzero(frag)
+            top = int(stats[i, cv2.CC_STAT_TOP])
+            left = int(stats[i, cv2.CC_STAT_LEFT])
+            fcx = int(round(float(xs.mean()))) + left
+            fcy = int(round(float(ys.mean()))) + top
+            out.append((fcx, fcy, float(f_area), prochain_label_fragment))
+            prochain_label_fragment -= 1
     return out
 
 
