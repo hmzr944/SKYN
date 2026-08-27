@@ -1,0 +1,20 @@
+# Garde le contexte d'image petit et rapide a envoyer — rien ici n'est requis
+# pour faire tourner le serveur ou construire l'app web.
+.git
+.github
+.claude
+.agents
+.pytest_cache
+node_modules
+frontend/node_modules
+frontend/dist
+frontend/.expo
+backend/tests
+backend/**/__pycache__
+**/__pycache__
+**/*.pyc
+**/.venv
+**/*.log
+test_reports
+memory
+skills-lock.json

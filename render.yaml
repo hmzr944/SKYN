@@ -1,0 +1,43 @@
+# Deploiement SKYN sur Render — Blueprint (Infrastructure as Code).
+#
+# Reprend la meme configuration que deploy_modal.py : mode invite active
+# (demo sans compte Supabase), memes origines CORS. MONGO_URL et
+# EMERGENT_LLM_KEY restent volontairement absents, exactement comme sur
+# Modal actuellement — la base tourne en memoire (mongomock, les donnees ne
+# survivent pas a un redemarrage) et les recommandations retombent sur le
+# texte deterministe plutot que d'appeler un LLM. A changer explicitement
+# le jour ou une vraie base MongoDB (Atlas) est branchee.
+#
+# ATTENTION MEMOIRE — Modal reservait 2 Go a ce service ("MediaPipe charge
+# son maillage facial en memoire", commentaire dans deploy_modal.py). Le
+# plan gratuit de Render tourne generalement sur 512 Mo. Ce n'est PAS
+# verifie ici (aucun deploiement Render n'a ete effectue depuis cet
+# environnement) : a surveiller au premier vrai trafic — un crash memoire
+# se lirait dans les logs Render comme un redemarrage inattendu du service.
+# Si ca arrive, il faudra soit passer a un plan superieur (plus de RAM),
+# soit alleger le pipeline au demarrage.
+#
+# Mise en service (a faire une fois, depuis le dashboard Render — cette
+# etape ne peut pas etre scriptee sans les identifiants du compte) :
+#   1. render.com -> New + -> Blueprint
+#   2. Connecter le depot GitHub hmzr944/SKYN, branche a deployer
+#   3. Render detecte ce fichier automatiquement et propose le service
+#      ci-dessous ; valider la creation
+#   4. Premiere build : plusieurs minutes (build de l'app web + image Docker)
+#   5. L'URL fournie par Render (https://skyn-xxxx.onrender.com) est celle a
+#      utiliser cote app (EXPO_PUBLIC_BACKEND_URL) et pour tout appel direct
+
+services:
+  - type: web
+    name: skyn
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    plan: free
+    healthCheckPath: /api/
+    envVars:
+      - key: SKYN_ALLOW_GUEST
+        value: "1"
+      - key: CORS_ORIGINS
+        value: "https://hmzr944.github.io,http://localhost:8081,http://localhost:19006"
+    autoDeployTrigger: commit

@@ -100,3 +100,7 @@ memory/test_credentials.md
 # Mobile development
 android-sdk/project.zip
 frontend/dist/
+
+# Build de l'app web copie ici localement pour verifier server.py (WEB_DIR) —
+# jamais commite, reconstruit par chaque deploiement (Dockerfile, deploy_modal.py).
+backend/webapp/
