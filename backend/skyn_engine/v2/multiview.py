@@ -27,7 +27,7 @@ appel a `orchestrer_scan()`, qui gere elle-meme l'arret adaptatif
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import List, Optional
 
 import cv2
@@ -48,6 +48,19 @@ SHARE_VOTE_MIN = 0.8
 FACTEUR_MAD = 1.4826  # meme constante que _robust_thr(), appliquee ici a l'echelle d'un track
 
 
+# Statuts simples pour le frontend, derives des raisons d'arret internes —
+# un renommage, pas un nouveau mecanisme. CAPTURE_TOO_SIMILAR et
+# CAPTURE_LOW_QUALITY ne sont PAS encore implementes : aucune verification
+# de diversite de pose entre vues n'existe cote serveur (voir la note sur
+# `vues_diagnostics` plus bas). Documente ici comme un manque connu, pas
+# cache derriere un renommage qui laisserait croire que c'est deja gere.
+STATUT_PAR_RAISON = {
+    "cible_atteinte_stable": "TARGET_REACHED",
+    "max_atteint": "MAX_REACHED",
+    "frames_epuisees": "NEED_MORE_VIEWS",
+}
+
+
 @dataclass
 class ScanConfig:
     min_vues_utiles: int = 5
@@ -61,6 +74,16 @@ class ScanResult:
     n_vues_recues: int
     n_vues_utilisables: int
     raison_arret: str
+    # Pose (yaw_proxy, roll_deg) de chaque vue UTILISABLE, dans l'ordre —
+    # deja calculee par `Quality`, exposee ici SANS aucune nouvelle
+    # detection. Objectif : rendre observable si les vues acceptees sont
+    # reellement des poses differentes ou des quasi-doublons — le risque
+    # signale avant l'integration. Rien ne filtre encore la-dessus.
+    vues_diagnostics: List[dict] = field(default_factory=list)
+
+    @property
+    def statut(self) -> str:
+        return STATUT_PAR_RAISON.get(self.raison_arret, self.raison_arret)
 
 
 def _candidats_par_vue(fm: FaceMap) -> List[dict]:
@@ -286,6 +309,7 @@ def orchestrer_scan(images_b64: List[str], config: Optional[ScanConfig] = None) 
     epuisement des images fournies."""
     config = config or ScanConfig()
     vues_utilisables: List[List[dict]] = []
+    diagnostics: List[dict] = []
     confirmees_precedentes: Optional[List[dict]] = None
 
     for i, image_b64 in enumerate(images_b64):
@@ -293,17 +317,22 @@ def orchestrer_scan(images_b64: List[str], config: Optional[ScanConfig] = None) 
         if not fm.detected or not fm.quality.usable:
             continue
         vues_utilisables.append(_candidats_par_vue(fm))
+        # Pose deja calculee par le controle qualite du moteur — exposee
+        # SANS aucune nouvelle detection, pour rendre observable si les
+        # vues acceptees sont des poses reellement differentes (voir
+        # STATUT_PAR_RAISON : aucun filtre n'agit encore la-dessus).
+        diagnostics.append({"yaw_proxy": fm.quality.yaw_proxy, "roll_deg": fm.quality.roll_deg})
         n = len(vues_utilisables)
 
         if n >= config.max_vues:
-            return ScanResult(_confirmer(vues_utilisables), i + 1, n, "max_atteint")
+            return ScanResult(_confirmer(vues_utilisables), i + 1, n, "max_atteint", diagnostics)
 
         if n >= config.min_vues_utiles:
             confirmees = _confirmer(vues_utilisables)
             if (n >= config.cible_vues and confirmees_precedentes is not None
                     and _memes_positions(confirmees, confirmees_precedentes)):
-                return ScanResult(confirmees, i + 1, n, "cible_atteinte_stable")
+                return ScanResult(confirmees, i + 1, n, "cible_atteinte_stable", diagnostics)
             confirmees_precedentes = confirmees
 
     confirmees = _confirmer(vues_utilisables) if vues_utilisables else []
-    return ScanResult(confirmees, len(images_b64), len(vues_utilisables), "frames_epuisees")
+    return ScanResult(confirmees, len(images_b64), len(vues_utilisables), "frames_epuisees", diagnostics)

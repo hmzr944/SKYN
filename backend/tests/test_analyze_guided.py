@@ -70,6 +70,10 @@ class TestAnalyzeGuided:
         assert body["usable_views"] <= 9
         assert body["usable_views"] >= 5
         assert body["stop_reason"] in ("cible_atteinte_stable", "max_atteint", "frames_epuisees")
+        assert body["status"] in ("TARGET_REACHED", "MAX_REACHED", "NEED_MORE_VIEWS")
+        assert len(body["view_diagnostics"]) == body["usable_views"]
+        for diag in body["view_diagnostics"]:
+            assert "yaw_proxy" in diag and "roll_deg" in diag
         assert isinstance(body["lesions"], list)
         for lesion in body["lesions"]:
             assert 0.0 <= lesion["x"] <= 1.0

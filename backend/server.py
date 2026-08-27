@@ -455,6 +455,18 @@ async def skyn_engine_analyze_guided(payload: AnalyzeGuidedRequest,
         "frames_received": out.n_vues_recues,
         "usable_views": out.n_vues_utilisables,
         "stop_reason": out.raison_arret,
+        # Statut simplifie pour piloter le frontend (TARGET_REACHED /
+        # MAX_REACHED / NEED_MORE_VIEWS). CAPTURE_TOO_SIMILAR et
+        # CAPTURE_LOW_QUALITY n'existent pas encore cote serveur — aucune
+        # verification de diversite de pose entre vues n'est faite pour
+        # l'instant, voir `view_diagnostics` ci-dessous et le commentaire
+        # dans skyn_engine.v2.multiview.
+        "status": out.statut,
+        # Pose (yaw_proxy, roll_deg) de chaque vue retenue, dans l'ordre —
+        # deja calculee par le moteur, exposee pour verifier que les vues
+        # utilisables sont des poses reellement differentes plutot que des
+        # quasi-doublons. Rien ne filtre encore la-dessus.
+        "view_diagnostics": out.vues_diagnostics,
     }
 
 
