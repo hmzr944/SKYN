@@ -21,6 +21,19 @@ nouvelle capture reelle. La section 2 (photo reelle) reste limitee a
 `capture_001.jpg`, la seule photo du pilote sans le facteur appareil
 confondu identifie precedemment.
 
+CORRECTION APPLIQUEE (par rapport a la premiere execution de ce fichier) :
+le premier passage ne fournissait que `config.max_vues` frames brutes par
+session, sans marge de rattrapage — un rejet qualite faisait tomber les
+vues REELLEMENT utilisables sous le N nominal (N=3 -> ~2,0 ; N=7 -> ~5,0 ;
+N=9 -> ~7,2 mesures), faussant la comparaison en faveur de l'adaptatif
+(qui, lui, disposait d'un budget de tentatives plus large). Chaque session
+fournit maintenant un buffer de `PLAFOND_TENTATIVES` frames brutes,
+largement superieur a tout N teste, pour que CHAQUE variante — fixe ou
+adaptative — puisse reellement rattraper les rejets jusqu'a son propre
+nombre de vues utilisables cible. `frames gen.moy` (tentatives brutes
+consommees) est desormais rapporte a cote de `vues util.moy` (vues
+reellement utilisables) pour ne plus perdre cette distinction.
+
 METRIQUES : recall / recall_detectable(/7) / precision / doublons /
 faux-evenements / %stable / %transitoire / CPU / nombre de vues
 REELLEMENT utilisees (utile precisement pour juger l'adaptatif). "Score"
@@ -64,11 +77,15 @@ IMAGE_REELLE = DOSSIER_PILOTE / "capture_001.jpg"
 
 R_SESSIONS = 6
 RAYON_REGROUPEMENT_INTER_SESSION = 0.08
+# Plafond de securite pour le rattrapage (evite toute boucle infinie si le
+# taux de rejet qualite etait anormalement eleve) — genereux par rapport au
+# taux de rejet deja mesure (20-33%), voir le biais corrige ci-dessous.
+PLAFOND_TENTATIVES = 24
 
 VARIANTES = [
-    ("N=3 fixe (actuel)", ScanConfig(min_vues_utiles=3, cible_vues=3, max_vues=3)),
-    ("N=7 fixe", ScanConfig(min_vues_utiles=7, cible_vues=7, max_vues=7)),
-    ("N=9 fixe", ScanConfig(min_vues_utiles=9, cible_vues=9, max_vues=9)),
+    ("FIXE-3", ScanConfig(min_vues_utiles=3, cible_vues=3, max_vues=3)),
+    ("FIXE-7", ScanConfig(min_vues_utiles=7, cible_vues=7, max_vues=7)),
+    ("FIXE-9", ScanConfig(min_vues_utiles=9, cible_vues=9, max_vues=9)),
     ("ADAPTATIF (min5/cible7/max9)", ScanConfig(min_vues_utiles=5, cible_vues=7, max_vues=9)),
 ]
 
@@ -101,14 +118,24 @@ def _reproductibilite(sessions_confirmees: List[List[dict]], rayon: float) -> di
 
 
 def _sessions_pour(img, config: ScanConfig, seed_base_par_n: int, r_sessions: int):
-    """Genere R sessions ; le nombre de vues fournies suit toujours
-    `config.max_vues` (assez pour laisser l'adaptatif s'arreter plus tot,
-    ou pour forcer exactement N pour les variantes fixes)."""
+    """BIAIS CORRIGE : fournit un buffer de PLAFOND_TENTATIVES frames brutes
+    (pas juste `config.max_vues`), pour que chaque variante puisse vraiment
+    RATTRAPER les rejets qualite jusqu'a atteindre son nombre de vues
+    utilisables cible — pas un budget de tentatives brutes plafonne a N, qui
+    defavorisait artificiellement les variantes fixes face a l'adaptatif."""
     sessions_resultats = []
+    epuisements_inattendus = 0
     for s in range(r_sessions):
-        images = _vues_de_session(img, config.max_vues, seed=seed_base_par_n + 13 * s)
+        images = _vues_de_session(img, PLAFOND_TENTATIVES, seed=seed_base_par_n + 13 * s)
         frames = [FrameMeta(image_b64=im) for im in images]
-        sessions_resultats.append(orchestrer_scan(frames, config))
+        resultat = orchestrer_scan(frames, config)
+        if resultat.raison_arret == "frames_epuisees" and resultat.n_vues_utilisables < config.min_vues_utiles:
+            epuisements_inattendus += 1
+        sessions_resultats.append(resultat)
+    if epuisements_inattendus:
+        print(f"  [ATTENTION] {epuisements_inattendus}/{r_sessions} sessions n'ont pas atteint "
+              f"min_vues_utiles={config.min_vues_utiles} meme avec {PLAFOND_TENTATIVES} tentatives "
+              f"brutes — plafond de securite a revoir a la hausse.")
     return sessions_resultats
 
 
@@ -133,7 +160,7 @@ def run() -> None:
 
     print(f"{'variante':<30} {'recall':>7} {'rec.det(/7)':>12} {'precision':>10} {'doublons':>9} "
           f"{'faux-evt':>9} {'persist.':>9} {'%stable':>8} {'%transit':>9} {'vues util.moy':>14} "
-          f"{'CPU tot':>9}")
+          f"{'frames gen.moy':>15} {'CPU tot':>9}")
     for i_variante, (nom, config) in enumerate(VARIANTES):
         t0 = time.time()
         resultats = _sessions_pour(marque, config, seed_base_par_n=7000 + 100 * i_variante, r_sessions=R_SESSIONS)
@@ -148,11 +175,12 @@ def run() -> None:
                    for i in range(R_SESSIONS - 1)]
         repro = _reproductibilite(sessions_confirmees, RAYON_REGROUPEMENT_INTER_SESSION)
         vues_util = [r.n_vues_utilisables for r in resultats]
+        frames_gen = [r.n_vues_recues for r in resultats]
         r_m = moy(recalls)
         print(f"{nom:<30} {r_m:>7.2f} {min(1.0, r_m*len(verite_xy)/7):>12.2f} {moy(precisions):>10.2f} "
               f"{moy(doublons_l):>9.2f} {moy(faux_evt):>9.2f} {repro['persistance_moyenne']:>9.2f} "
               f"{repro['part_stable']:>8.1%} {repro['part_transitoire']:>9.1%} {moy(vues_util):>14.1f} "
-              f"{cpu:>8.0f}s")
+              f"{moy(frames_gen):>15.1f} {cpu:>8.0f}s")
 
     print("\n" + "=" * 100)
     print("2. PHOTO REELLE (capture_001.jpg — reproductibilite seule, pas de verite terrain)")
@@ -162,7 +190,7 @@ def run() -> None:
     else:
         img_reel = _charger_oriente(IMAGE_REELLE)
         print(f"{'variante':<30} {'persist.':>9} {'%stable':>8} {'%transit':>9} "
-              f"{'vues util.moy':>14} {'CPU tot':>9}")
+              f"{'vues util.moy':>14} {'frames gen.moy':>15} {'CPU tot':>9}")
         for i_variante, (nom, config) in enumerate(VARIANTES):
             t0 = time.time()
             resultats = _sessions_pour(img_reel, config, seed_base_par_n=8000 + 100 * i_variante, r_sessions=R_SESSIONS)
@@ -170,8 +198,10 @@ def run() -> None:
             sessions_confirmees = [r.lesions_confirmees for r in resultats]
             repro = _reproductibilite(sessions_confirmees, RAYON_REGROUPEMENT_INTER_SESSION)
             vues_util = [r.n_vues_utilisables for r in resultats]
+            frames_gen = [r.n_vues_recues for r in resultats]
             print(f"{nom:<30} {repro['persistance_moyenne']:>9.2f} {repro['part_stable']:>8.1%} "
-                  f"{repro['part_transitoire']:>9.1%} {moy(vues_util):>14.1f} {cpu:>8.0f}s")
+                  f"{repro['part_transitoire']:>9.1%} {moy(vues_util):>14.1f} {moy(frames_gen):>15.1f} "
+                  f"{cpu:>8.0f}s")
 
     print("\n'Score' et 'temps utilisateur' non mesures — hors de la portee de ce pipeline offline "
           "(voir l'entete du fichier). Aucun changement de detecteur/tracking/nettoyage/purete/"
