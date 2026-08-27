@@ -1,4 +1,4 @@
-"""Real-Skin Pilot — Session A vs Session B.
+"""Real-Skin Pilot — Session A vs Session B (ou toute paire de sessions).
 
 ────────────────────────────────────────────────────────────────────────
 CE QUE CE SCRIPT ATTEND, ET POURQUOI IL NE TOURNE PAS ENCORE.
@@ -40,8 +40,17 @@ mesure ici) et niveau PRODUIT (ce qui serait annonce a l'utilisateur,
 potentiellement plus tolerant) — ce script ne construit QUE le niveau
 moteur ; la couche produit est explicitement hors perimetre pour l'instant.
 
-Usage (une fois capture_002.jpg fourni) :
-    python3 backend/tools/real_skin_pilot_session_ab.py
+EXIF : chaque image est auto-orientee (PIL `exif_transpose`) avant analyse.
+Verifie sur Session A/B precedentes : ca ne change quasiment rien au
+resultat (0,05 % de score), mais c'est l'entree "correcte" a comparer —
+le moteur de production, lui, N'A AUCUNE correction EXIF (verifie dans
+le code), donc une vraie photo tournee y arriverait telle quelle. Ce
+script imprime quand une correction a ete appliquee, pour que ce ne soit
+jamais une variable cachee.
+
+Usage :
+    python3 backend/tools/real_skin_pilot_session_ab.py [image_A] [image_B]
+    (par defaut : capture_001.jpg vs capture_002.jpg)
 """
 from __future__ import annotations
 
@@ -50,6 +59,8 @@ from pathlib import Path
 from typing import List
 
 import cv2
+import numpy as np
+from PIL import Image, ImageOps
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
@@ -67,6 +78,15 @@ from backend.tools.stability_bench import _b64  # noqa: E402
 DOSSIER = Path("/home/user/real_skin_pilot/subject_001")
 IMAGE_A = DOSSIER / "capture_001.jpg"
 IMAGE_B = DOSSIER / "capture_002.jpg"
+
+
+def _charger_oriente(chemin: Path):
+    pil = Image.open(chemin)
+    orientation_brute = pil.getexif().get(274, 1)
+    corrige = ImageOps.exif_transpose(pil)
+    if orientation_brute != 1:
+        print(f"  [{chemin.name}] EXIF orientation={orientation_brute} -> auto-orientee avant analyse")
+    return cv2.cvtColor(np.array(corrige.convert("RGB")), cv2.COLOR_RGB2BGR)
 
 # Rayon d'appariement plus genereux que les 0,05 utilises pour de simples
 # perturbations d'une meme image : deux captures REELLEMENT independantes
@@ -135,19 +155,20 @@ def _multivue_confirmees(img, n_vues: int) -> List[dict]:
 
 
 def run() -> None:
-    if not IMAGE_A.exists():
-        raise SystemExit(f"Session A manquante : {IMAGE_A}")
-    if not IMAGE_B.exists():
+    image_a = Path(sys.argv[1]) if len(sys.argv) > 1 else IMAGE_A
+    image_b = Path(sys.argv[2]) if len(sys.argv) > 2 else IMAGE_B
+    if not image_a.exists():
+        raise SystemExit(f"Session A manquante : {image_a}")
+    if not image_b.exists():
         raise SystemExit(
-            f"Session B pas encore fournie : {IMAGE_B}\n"
+            f"Session B pas encore fournie : {image_b}\n"
             f"Ce script attend une DEUXIEME capture reelle, volontairement "
             f"differente (lumiere/moment/expression), du meme sujet. Rien "
             f"a analyser tant qu'elle n'est pas placee la."
         )
-    img_a = cv2.imread(str(IMAGE_A))
-    img_b = cv2.imread(str(IMAGE_B))
-    if img_a is None or img_b is None:
-        raise SystemExit("une des deux images est illisible")
+    print(f"Session A = {image_a.name}   Session B = {image_b.name}")
+    img_a = _charger_oriente(image_a)
+    img_b = _charger_oriente(image_b)
 
     a = _rapport(img_a)
     b = _rapport(img_b)
