@@ -1,6 +1,7 @@
 import { storage } from "@/src/utils/storage";
 import { supabase } from "@/src/services/supabase";
 import type { FaceAnalysis } from "@/src/types/analysis";
+import type { GuidedScanResponse } from "@/src/types/guidedScan";
 
 // Vide par defaut : en deploiement mono-hote, l'API et l'app web sont servies
 // par la meme origine, et les appels partent en relatif sur /api. Sans ce
@@ -72,6 +73,25 @@ export const api = {
     request<FaceAnalysis>("/api/analyze/v2", {
       method: "POST",
       body: JSON.stringify({ image_base64, extra_images: extraImages }),
+    }),
+  /**
+   * Scan multi-vue guide (v0, experimental) : jusqu'a `maxVues` images,
+   * arret adaptatif cote serveur des que la mesure est jugee stable (au
+   * plus tot a `cibleVues`). Endpoint distinct de /analyze/v2, qui reste
+   * inchange.
+   */
+  analyzeGuided: (
+    imagesBase64: string[],
+    config: { minVuesUtiles?: number; cibleVues?: number; maxVues?: number } = {},
+  ) =>
+    request<GuidedScanResponse>("/api/analyze/guided", {
+      method: "POST",
+      body: JSON.stringify({
+        images_base64: imagesBase64,
+        min_vues_utiles: config.minVuesUtiles ?? 5,
+        cible_vues: config.cibleVues ?? 7,
+        max_vues: config.maxVues ?? 9,
+      }),
     }),
 };
 

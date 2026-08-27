@@ -148,6 +148,15 @@ export default function DashboardScreen() {
     router.push("/camera");
   };
 
+  // Entree experimentale vers le scan multi-vue guide (v0), en parallele du
+  // scan 3 angles ci-dessus qui reste le parcours par defaut. Volontairement
+  // discrete : c'est un mode beta, pas une alternative mise en avant tant
+  // qu'il n'a pas ete verifie sur de vrais scans.
+  const goGuidedScan = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    router.push("/camera-guided");
+  };
+
   // La position de defilement pilote la barre compacte. Elle vit sur le thread
   // d'animation : la barre suit le doigt image par image, sans passer par React.
   const scrollY = useSharedValue(0);
@@ -348,6 +357,17 @@ export default function DashboardScreen() {
             </AnimatedPressable>
           </FadeIn>
         ) : null}
+
+        <FadeIn delay={340}>
+          <AnimatedPressable
+            testID="dashboard-guided-scan-link"
+            style={styles.guidedLink}
+            haptic={false}
+            onPress={goGuidedScan}
+          >
+            <Text style={styles.guidedLinkText}>Essayer le scan guidé (bêta)</Text>
+          </AnimatedPressable>
+        </FadeIn>
       </Animated.ScrollView>
     </SafeAreaView>
   );
@@ -616,5 +636,15 @@ const styles = StyleSheet.create({
     fontSize: 12,
     letterSpacing: 2,
     textTransform: "uppercase",
+  },
+  guidedLink: {
+    alignItems: "center",
+    paddingVertical: spacing.m,
+  },
+  guidedLinkText: {
+    fontFamily: fonts.body,
+    fontSize: 13,
+    color: colors.fgDim,
+    textDecorationLine: "underline",
   },
 });

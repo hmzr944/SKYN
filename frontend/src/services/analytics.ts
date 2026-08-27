@@ -30,7 +30,14 @@ export type EventName =
   // Ouvertures, pour mesurer le retour
   | "app_opened"
   | "scan_started"
-  | "scan_completed";
+  | "scan_completed"
+  // Scan guide (experimental, parallele au scan 3 angles) — le premier vrai
+  // dataset d'usage du protocole multi-vue : combien de vues proposees,
+  // combien retenues, combien de temps ca prend reellement. Rien ne part de
+  // l'appareil, meme regle que le reste de ce journal.
+  | "guided_scan_started"
+  | "guided_scan_completed"
+  | "guided_scan_failed";
 
 export interface Event {
   name: EventName;
