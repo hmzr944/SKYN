@@ -17,7 +17,13 @@
 # ── Etape 1 : build de l'application web (Expo -> export statique) ──
 FROM node:22-slim AS frontend-build
 WORKDIR /app/frontend
+# scripts/ doit venir AVANT `npm ci`, pas apres : le hook `preinstall` du
+# package.json execute `./scripts/check-pkg.js`, et sans ce fichier deja en
+# place npm echoue en "not found" (code 127) avant meme de toucher au
+# lockfile. Repere en reproduisant l'echec exact hors Docker (voir le
+# commit qui a corrige ce Dockerfile pour le detail).
 COPY frontend/package.json frontend/package-lock.json* ./
+COPY frontend/scripts ./scripts
 RUN npm ci
 COPY frontend/ ./
 RUN npx expo export --platform web
