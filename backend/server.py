@@ -16,6 +16,8 @@ from datetime import datetime, timezone
 import httpx
 from jose import jwt as jose_jwt
 
+import skin_memory
+
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
@@ -470,6 +472,70 @@ async def skyn_engine_analyze_guided(payload: AnalyzeGuidedRequest,
     }
 
 
+@api_router.post("/scans")
+async def ingest_scan(payload: skin_memory.ScanIngestRequest,
+                       authorization: Optional[str] = Header(None)):
+    """Persiste un scan deja calcule par /analyze/v2 ou /analyze/guided dans
+    la memoire longitudinale (chantier 4) : rattache a la Phase active, ou
+    en cree une nouvelle (baseline) s'il n'y en a aucune. Ne relance jamais
+    le moteur — le client envoie la sortie qu'il a deja recue."""
+    user = await get_current_user(authorization)
+    try:
+        scan = await skin_memory.ingest_scan(db, user.user_id, payload.source, payload.analysis)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return scan.model_dump()
+
+
+@api_router.get("/periods/active")
+async def get_active_period(authorization: Optional[str] = Header(None)):
+    """La Phase en cours : son etat (baseline/tracking/understanding), ses
+    scans, sa routine et les changements deja mesurables avec confiance
+    suffisante. `null` si l'utilisateur n'a encore fait aucun scan."""
+    user = await get_current_user(authorization)
+    view = await skin_memory.get_active_period_view(db, user.user_id)
+    return view
+
+
+@api_router.get("/periods")
+async def get_periods(authorization: Optional[str] = Header(None)):
+    """Historique des Phases (cloturees et active), les plus recentes
+    d'abord — sert a regrouper l'historique par Phase plutot qu'a plat."""
+    user = await get_current_user(authorization)
+    return await skin_memory.list_periods(db, user.user_id)
+
+
+@api_router.post("/routine-events")
+async def create_routine_event(payload: skin_memory.RoutineEventRequest,
+                                authorization: Optional[str] = Header(None)):
+    """Journalise un changement de routine. Un type structurant
+    (step_added/step_removed/step_changed) cloture la Phase active et en
+    ouvre une nouvelle : voir skin_memory.log_routine_event. A appeler
+    AVANT tout /product-events accompagnant le meme changement, pour que
+    l'evenement produit se rattache a la Phase fraichement ouverte."""
+    user = await get_current_user(authorization)
+    try:
+        event = await skin_memory.log_routine_event(db, user.user_id, payload.type, payload.diff)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return event.model_dump()
+
+
+@api_router.post("/product-events")
+async def create_product_event(payload: skin_memory.ProductEventRequest,
+                                authorization: Optional[str] = Header(None)):
+    """Horodate l'introduction ou l'arret d'un produit — passif, aucune
+    saisie recurrente demandee a l'utilisateur au-dela de ce seul evenement."""
+    user = await get_current_user(authorization)
+    try:
+        event = await skin_memory.log_product_event(
+            db, user.user_id, payload.type, payload.product_id, payload.moment
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return event.model_dump()
+
+
 @api_router.post("/recommendations", response_model=RecommendationsResponse)
 async def gpt4o_recommendations(payload: RecommendationsRequest, authorization: Optional[str] = Header(None)):
     """Hybrid: numeric scores stay deterministic (frontend mock). Only the 3 final
@@ -626,6 +692,11 @@ async def startup_indexes():
         await db.users.create_index("user_id", unique=True)
         await db.reports.create_index([("user_id", 1), ("created_at", -1)])
         await db.profiles.create_index("user_id", unique=True)
+        # Memoire persistante (chantier 4) — voir skin_memory.py.
+        await db.scans.create_index([("user_id", 1), ("period_id", 1), ("created_at", 1)])
+        await db.periods.create_index([("user_id", 1), ("ends_at", 1), ("starts_at", -1)])
+        await db.routine_events.create_index([("period_id", 1), ("at", 1)])
+        await db.product_events.create_index([("period_id", 1), ("at", 1)])
         logger.info("MongoDB indexes ensured.")
     except Exception as e:
         logger.warning(f"Index creation warning: {e}")

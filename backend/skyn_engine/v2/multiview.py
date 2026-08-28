@@ -281,6 +281,12 @@ def _confirmer(vues_candidats: List[List[dict]]) -> List[dict]:
             "y": sum(o["y"] for o in obs) / k,
             "type": classe,
             "n_observations": k,
+            # Deja calcules ci-dessus pour la porte de purete — exposes ici
+            # tels quels (aucun nouveau calcul, aucun seuil touche) pour que
+            # la couche produit (skin_memory.py) puisse en deriver une
+            # confiance de mesure, au lieu de les jeter comme avant.
+            "coherence_photo": dims["coherence_photo"],
+            "evidence": dims["evidence"],
         })
     return confirmees
 
