@@ -148,13 +148,14 @@ export default function DashboardScreen() {
     router.push("/camera");
   };
 
-  // Entree experimentale vers le scan multi-vue guide (v0), en parallele du
-  // scan 3 angles ci-dessus qui reste le parcours par defaut. Volontairement
-  // discrete : c'est un mode beta, pas une alternative mise en avant tant
-  // qu'il n'a pas ete verifie sur de vrais scans.
-  const goGuidedScan = () => {
+  // Entree experimentale vers la memoire persistante (chantier 5) : carte
+  // de peau -> scan guide -> What Changed?, en parallele du scan 3 angles
+  // ci-dessus qui reste le parcours par defaut. Volontairement discrete :
+  // c'est un mode beta, pas une alternative mise en avant tant qu'il n'a
+  // pas ete verifie sur de vrais scans.
+  const goSkinMap = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    router.push("/camera-guided");
+    router.push("/skin-map");
   };
 
   // La position de defilement pilote la barre compacte. Elle vit sur le thread
@@ -363,9 +364,9 @@ export default function DashboardScreen() {
             testID="dashboard-guided-scan-link"
             style={styles.guidedLink}
             haptic={false}
-            onPress={goGuidedScan}
+            onPress={goSkinMap}
           >
-            <Text style={styles.guidedLinkText}>Essayer le scan guidé (bêta)</Text>
+            <Text style={styles.guidedLinkText}>Découvrir votre carte de peau (bêta)</Text>
           </AnimatedPressable>
         </FadeIn>
       </Animated.ScrollView>

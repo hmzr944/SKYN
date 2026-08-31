@@ -2,6 +2,15 @@ import { storage } from "@/src/utils/storage";
 import { supabase } from "@/src/services/supabase";
 import type { FaceAnalysis } from "@/src/types/analysis";
 import type { GuidedScanResponse } from "@/src/types/guidedScan";
+import type {
+  ActivePeriodView,
+  MemoryScan,
+  Period,
+  ProductEvent,
+  RoutineEvent,
+  RoutineEventType,
+  ScanSource,
+} from "@/src/types/skinMemory";
 
 // Vide par defaut : en deploiement mono-hote, l'API et l'app web sont servies
 // par la meme origine, et les appels partent en relatif sur /api. Sans ce
@@ -92,6 +101,32 @@ export const api = {
         cible_vues: config.cibleVues ?? 7,
         max_vues: config.maxVues ?? 9,
       }),
+    }),
+
+  /**
+   * Memoire persistante (chantier 4) : rattache un scan deja calcule
+   * (sortie de analyzeV2/analyzeGuided) a la Phase active de l'utilisateur,
+   * ou en ouvre une nouvelle (baseline) s'il n'y en a aucune. Ne relance
+   * jamais le moteur.
+   */
+  ingestScan: (source: ScanSource, analysis: Record<string, unknown>) =>
+    request<MemoryScan>("/api/scans", {
+      method: "POST",
+      body: JSON.stringify({ source, analysis }),
+    }),
+  /** La Phase en cours, ou `null` si aucun scan n'a encore ete ingere. */
+  getActivePeriod: () => request<ActivePeriodView | null>("/api/periods/active"),
+  /** Historique des Phases, la plus recente (active ou non) en tete. */
+  listPeriods: () => request<Period[]>("/api/periods"),
+  logRoutineEvent: (type: RoutineEventType, diff: Record<string, string[]> = {}) =>
+    request<RoutineEvent>("/api/routine-events", {
+      method: "POST",
+      body: JSON.stringify({ type, diff }),
+    }),
+  logProductEvent: (type: "introduced" | "stopped", productId: string, moment: "am" | "pm") =>
+    request<ProductEvent>("/api/product-events", {
+      method: "POST",
+      body: JSON.stringify({ type, product_id: productId, moment }),
     }),
 };
 

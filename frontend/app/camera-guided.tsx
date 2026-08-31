@@ -2,14 +2,18 @@ import { CameraView, useCameraPermissions } from "expo-camera";
 import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Platform, StyleSheet, Text, View } from "react-native";
+import { Dimensions, Platform, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import Svg, { Path } from "react-native-svg";
+import { useSharedValue, withTiming } from "react-native-reanimated";
 
 import { AnimatedPressable } from "@/src/components/ui/AnimatedPressable";
 import { Reveal } from "@/src/components/ui/Reveal";
+import { ScanRing } from "@/src/components/analysis/ScanRing";
 import { track } from "@/src/services/analytics";
 import { framingOk, readDetection } from "@/src/services/faceGuide";
 import { colors, palette, radius, spacing, type } from "@/src/theme";
+import { facePathAt } from "@/src/theme/mark";
 import { useOnline } from "@/src/hooks/useOnline";
 import { storage } from "@/src/utils/storage";
 
@@ -32,6 +36,8 @@ import { storage } from "@/src/utils/storage";
  * pour verifier ensuite, sur de vrais scans, si les vues envoyees etaient
  * effectivement variees.
  */
+
+const { width: WIN_W, height: WIN_H } = Dimensions.get("window");
 
 const cleanB64 = (b?: string | null) =>
   b ? (b.startsWith("data:") ? b.split(",")[1] ?? "" : b) : "";
@@ -192,6 +198,22 @@ export default function CameraGuidedScreen() {
 
   const canFinishEarly = count >= MIN_FRAMES;
 
+  /* ————— la carte se construit en direct, pas un simple compteur —————
+     Reprend le meme mecanisme que la couronne "façon Face ID" de camera.tsx
+     (voir src/components/analysis/ScanRing.tsx) : ici la position est fixe
+     (ce scan ne suit pas le visage image par image, contrairement au 3
+     angles), mais la progression avance a chaque vue captee. */
+  const centerX = useSharedValue(WIN_W / 2);
+  const centerY = useSharedValue(WIN_H / 2 - 20);
+  const ringRadius = useSharedValue(Math.min(WIN_W, WIN_H) * 0.24);
+  const ringProgress = useSharedValue(0);
+  const ovalScale = Math.min(WIN_W, WIN_H) * 0.0092;
+  const ovalPath = facePathAt(WIN_W / 2, WIN_H / 2 - 20, ovalScale);
+
+  useEffect(() => {
+    ringProgress.value = withTiming(count / MAX_FRAMES, { duration: 320 });
+  }, [count, ringProgress]);
+
   return (
     <View style={styles.container}>
       <View style={[styles.header, { paddingTop: insets.top + spacing.s }]}>
@@ -204,8 +226,8 @@ export default function CameraGuidedScreen() {
         >
           <Text style={styles.closeText}>✕</Text>
         </AnimatedPressable>
-        <Text style={styles.headerTitle}>
-          {count} / {MAX_FRAMES} vues · bêta
+        <Text style={styles.headerTitle} accessibilityLabel={`${count} sur ${MAX_FRAMES} vues capturées`}>
+          bêta
         </Text>
         <View style={{ width: 36 }} />
       </View>
@@ -222,12 +244,18 @@ export default function CameraGuidedScreen() {
 
       <View style={styles.stage}>
         {canUseCamera ? (
-          <CameraView
-            ref={cameraRef}
-            style={StyleSheet.absoluteFill}
-            facing="front"
-            onCameraReady={() => setReady(true)}
-          />
+          <>
+            <CameraView
+              ref={cameraRef}
+              style={StyleSheet.absoluteFill}
+              facing="front"
+              onCameraReady={() => setReady(true)}
+            />
+            <Svg width={WIN_W} height={WIN_H} style={StyleSheet.absoluteFill} pointerEvents="none">
+              <Path d={ovalPath} fill="none" stroke={colors.accent} strokeWidth={1.6} opacity={0.7} />
+              <ScanRing cx={centerX} cy={centerY} radius={ringRadius} progress={ringProgress} />
+            </Svg>
+          </>
         ) : (
           <View style={styles.placeholder} pointerEvents="box-none">
             <Text style={styles.placeholderText}>
@@ -249,6 +277,9 @@ export default function CameraGuidedScreen() {
           <Reveal key={guideText} distance={6}>
             <Text style={styles.guide}>{guideText}</Text>
           </Reveal>
+          <Text style={styles.progressCaption}>
+            {count} / {MAX_FRAMES}
+          </Text>
         </View>
 
         <View style={styles.controls}>
@@ -350,6 +381,12 @@ const styles = StyleSheet.create({
 
   guidance: { alignItems: "center", paddingHorizontal: spacing.l, paddingTop: spacing.m },
   guide: { ...type.subtitle, color: colors.onInverse, textAlign: "center", minHeight: 26 },
+  progressCaption: {
+    ...type.bodySmall,
+    color: colors.onInverseMuted,
+    marginTop: spacing.xs,
+    fontVariant: ["tabular-nums"],
+  },
 
   controls: {
     flexDirection: "row",

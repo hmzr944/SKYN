@@ -1,6 +1,6 @@
 import { useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { AnimatedPressable } from "@/src/components/ui/AnimatedPressable";
@@ -9,20 +9,18 @@ import { SkynLockup } from "@/src/components/brand/SkynLockup";
 import { api } from "@/src/services/api";
 import { track } from "@/src/services/analytics";
 import { colors, radius, spacing, type } from "@/src/theme";
-import type { GuidedScanResponse } from "@/src/types/guidedScan";
 import { storage } from "@/src/utils/storage";
 
 /**
- * Resultat du scan guide (v0, EXPERIMENTAL) — ecran distinct de
+ * Etape de traitement du scan guide (EXPERIMENTAL) — ecran distinct de
  * scan-result.tsx, qui reste le seul ecran de resultat du scan 3 angles.
  *
- * Volontairement minimal : pas de score global (ce pipeline n'en calcule
- * pas — voir skyn_engine.v2.multiview, aucun `analyze_face`/`concerns.py`
- * n'entre dans ce chemin), pas de routine, pas de sauvegarde d'historique.
- * L'objectif de cette version n'est pas de remplacer scan-result.tsx, c'est
- * de verifier que le protocole de capture guide produit un resultat
- * exploitable — voir `guided_scan_completed` dans le journal local pour le
- * dataset d'usage complet.
+ * Depuis le chantier 5 (memoire persistante), un succes ne s'affiche plus
+ * ici : le scan est ingere dans la Phase active via POST /api/scans, puis
+ * l'ecran redirige vers /what-changed, qui lit la Phase a jour plutot
+ * qu'un resultat brut passe en memoire. Cet ecran ne gere donc plus que le
+ * chargement et l'echec — voir `guided_scan_completed` dans le journal
+ * local pour le dataset d'usage complet.
  */
 
 function humanError(e: unknown): string {
@@ -33,17 +31,10 @@ function humanError(e: unknown): string {
   return raw.trim() || "L'analyse n'a pas abouti.";
 }
 
-const STATUS_LABEL: Record<string, string> = {
-  TARGET_REACHED: "Mesure stable atteinte",
-  MAX_REACHED: "Nombre de vues maximum atteint",
-  NEED_MORE_VIEWS: "Trop peu de vues exploitables",
-};
-
 const moyenne = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0);
 
 export default function AnalysisGuidedScreen() {
   const router = useRouter();
-  const [result, setResult] = useState<GuidedScanResponse | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
   const framesProposedRef = useRef(0);
 
@@ -79,8 +70,6 @@ export default function AnalysisGuidedScreen() {
           return;
         }
 
-        setResult(data);
-
         const yaws = data.view_diagnostics.map((v) => v.yaw_proxy);
         await track("guided_scan_completed", {
           frames_proposed: framesProposedRef.current,
@@ -96,6 +85,12 @@ export default function AnalysisGuidedScreen() {
           yaw_max: yaws.length ? Math.max(...yaws) : 0,
           yaw_avg: moyenne(yaws),
         });
+
+        // Chantier 5 : rattache ce scan a la Phase active (ou en cree une
+        // baseline) avant de montrer quoi que ce soit — What Changed? lit
+        // la Phase a jour, pas cette reponse brute.
+        await api.ingestScan("guided", data as unknown as Record<string, unknown>);
+        if (!cancelled) router.replace("/what-changed");
       } catch (e) {
         if (cancelled) return;
         setFailure(humanError(e));
@@ -114,6 +109,7 @@ export default function AnalysisGuidedScreen() {
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   if (failure) {
@@ -140,69 +136,15 @@ export default function AnalysisGuidedScreen() {
     );
   }
 
-  if (!result) {
-    return (
-      <SafeAreaView style={styles.container} edges={["top", "bottom"]}>
-        <View style={styles.header}>
-          <SkynLockup size={26} still />
-        </View>
-        <View style={styles.loadingWrap}>
-          <ActivityIndicator color={colors.accent} />
-          <Text style={styles.loadingText}>Analyse multi-vue en cours…</Text>
-        </View>
-      </SafeAreaView>
-    );
-  }
-
   return (
     <SafeAreaView style={styles.container} edges={["top", "bottom"]}>
       <View style={styles.header}>
         <SkynLockup size={26} still />
-        <Text style={styles.betaTag}>bêta</Text>
       </View>
-      <ScrollView contentContainerStyle={styles.scroll}>
-        <Reveal distance={10}>
-          <Text style={styles.title}>Scan guidé — résultat</Text>
-          <Text style={styles.statusLine}>
-            {STATUS_LABEL[result.status] || result.status} · {result.usable_views} vues
-            exploitables sur {result.frames_received} proposées
-          </Text>
-        </Reveal>
-
-        <Reveal distance={10} delay={60} style={styles.card}>
-          <Text style={styles.cardTitle}>
-            {result.lesions.length} observation{result.lesions.length > 1 ? "s" : ""} confirmée
-            {result.lesions.length > 1 ? "s" : ""}
-          </Text>
-          {result.lesions.length === 0 ? (
-            <Text style={styles.cardNote}>
-              Aucune observation confirmée avec suffisamment de constance sur cette série.
-            </Text>
-          ) : (
-            result.lesions.map((l, i) => (
-              <View key={i} style={styles.lesionRow}>
-                <Text style={styles.lesionType}>{l.type}</Text>
-                <Text style={styles.lesionMeta}>
-                  {l.n_observations} obs. · pos. ({l.x.toFixed(2)}, {l.y.toFixed(2)})
-                </Text>
-              </View>
-            ))
-          )}
-        </Reveal>
-
-        <Text style={styles.disclaimer}>
-          {"Version expérimentale : pas de score global ni de routine associée pour l'instant — " +
-            "cet écran vérifie la qualité du protocole de capture, pas encore le suivi complet."}
-        </Text>
-
-        <AnimatedPressable
-          style={styles.failCta}
-          haptic="medium"
-          onPress={() => router.replace("/(tabs)/dashboard")}
-        >
-          <Text style={styles.failCtaText}>{"Retour à l'accueil"}</Text>
-        </AnimatedPressable>
-      </ScrollView>
+      <View style={styles.loadingWrap}>
+        <ActivityIndicator color={colors.accent} />
+        <Text style={styles.loadingText}>Mise à jour de votre carte…</Text>
+      </View>
     </SafeAreaView>
   );
 }
@@ -216,32 +158,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.l,
     paddingTop: spacing.m,
   },
-  betaTag: { ...type.kicker, color: colors.fgDim },
-  scroll: { padding: spacing.l, gap: spacing.l, paddingBottom: spacing.xxl },
-  title: { ...type.title, color: colors.fg },
-  statusLine: { ...type.bodySmall, color: colors.fgMuted, marginTop: spacing.xs },
-
-  card: {
-    borderWidth: 1,
-    borderColor: colors.accentLine,
-    borderRadius: radius.md,
-    padding: spacing.l,
-    gap: spacing.s,
-  },
-  cardTitle: { ...type.subtitle, color: colors.fg },
-  cardNote: { ...type.bodySmall, color: colors.fgMuted },
-  lesionRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    paddingVertical: spacing.xs,
-    borderTopWidth: 1,
-    borderTopColor: colors.fgFaint,
-  },
-  lesionType: { ...type.body, color: colors.fg, textTransform: "capitalize" },
-  lesionMeta: { ...type.bodySmall, color: colors.fgDim, fontVariant: ["tabular-nums"] },
-
-  disclaimer: { ...type.bodySmall, color: colors.fgDim },
-
   loadingWrap: { flex: 1, alignItems: "center", justifyContent: "center", gap: spacing.m },
   loadingText: { ...type.body, color: colors.fgMuted },
 

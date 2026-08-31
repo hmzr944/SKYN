@@ -13,6 +13,7 @@ import { colors, fonts, spacing } from "@/src/theme";
 import { FACE_EXTENT, facePathAt } from "@/src/theme/mark";
 import type { Lesion, ZoneKey } from "@/src/types/analysis";
 import { ZONE_LABEL } from "@/src/types/analysis";
+import type { Confidence } from "@/src/types/skinMemory";
 
 /**
  * Cartographie faciale : chaque zone est teintee par sa note, et les lesions
@@ -134,9 +135,38 @@ interface Props {
   onSelectZone?: (zone: ZoneKey | null) => void;
   showLesions?: boolean;
   size?: number;
+  /**
+   * Confiance de mesure par zone (Personal Skin Map, chantier 5) — quand
+   * fournie, une zone "low" se dessine en pointillé au lieu d'être teintée :
+   * "pas encore assez mesurée", jamais "mauvais état". N'affecte aucun appel
+   * existant qui ne passe pas cette prop.
+   */
+  zoneConfidence?: Partial<Record<ZoneKey, Confidence>>;
 }
 
 const AnimatedEllipse = Animated.createAnimatedComponent(Ellipse);
+
+/** Zone pas encore assez mesurée : un contour qui se trace, jamais un remplissage. */
+function ZoneOutline({ shape, delay }: { shape: ZoneShape; delay: number }) {
+  const t = useSharedValue(0);
+  useEffect(() => {
+    t.value = withDelay(delay, withTiming(1, { duration: 460, easing: ease.out }));
+  }, [t, delay]);
+  const props = useAnimatedProps(() => ({ opacity: 0.5 * t.value }));
+  return (
+    <AnimatedEllipse
+      cx={shape.cx}
+      cy={shape.cy}
+      rx={shape.rx}
+      ry={shape.ry}
+      fill="none"
+      stroke={colors.fgDim}
+      strokeWidth={1}
+      strokeDasharray="2 3"
+      animatedProps={props}
+    />
+  );
+}
 
 /**
  * Une zone qui s'allume.
@@ -186,6 +216,7 @@ export function FaceZoneMap({
   onSelectZone,
   showLesions = true,
   size = 260,
+  zoneConfidence,
 }: Props) {
   const height = size * (VB_H / VB_W);
 
@@ -216,6 +247,9 @@ export function FaceZoneMap({
         <G clipPath="url(#faceClip)">
           {entries.map(({ key, shape, score }, i) => {
             const measured = typeof score === "number";
+            if (measured && zoneConfidence?.[key] === "low") {
+              return <ZoneOutline key={key} shape={shape} delay={i * 55} />;
+            }
             const isSel = selected === key;
             // L'opacite suit la charge de la zone, pas seulement sa teinte. Une
             // zone saine doit s'effacer dans le fond : peindre en vert vif ce
