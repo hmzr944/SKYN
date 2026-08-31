@@ -70,7 +70,8 @@ from tools.cheek_candidate_diagnostic import build_face_map, _b64_from_bgr, _cha
 # Sujets déjà connus de cette session — chemins hors dépôt, jamais commités.
 SUJETS_CONNUS: Dict[str, List[Path]] = {
     "001": [Path(f"/home/user/real_skin_pilot/subject_001/capture_{i}.jpg")
-            for i in ("001", "002", "003", "004", "005", "006", "007", "008")],
+            for i in ("001", "002", "003", "004", "005", "006", "007", "008",
+                       "009", "010", "011", "012")],
     "002_fixture_depot": [BACKEND / "tests" / "fixtures_face.jpg"],
 }
 
