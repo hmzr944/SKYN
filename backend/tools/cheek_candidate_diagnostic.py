@@ -138,6 +138,24 @@ class Candidat:
         self.dark = float(champs.l_exc[y0:y1, x0:x1][patch_m].mean())
         self.yellow = float(champs.b_exc[y0:y1, x0:x1][patch_m].mean())
 
+        # Diagnostic supplementaire (chantier multi-eclairage) : le patch est
+        # coupe en sa moitie la plus claire / la plus sombre selon SA PROPRE
+        # distribution de l_exc (pas une direction de lumiere supposee), et le
+        # rouge est mesure separement dans chacune. Objectif : verifier si la
+        # moyenne pleine-patch de `red` dilue un signal qui, lui, franchirait
+        # RED_IF_DARK dans la moitie eclairee — jamais utilise par
+        # _classify(), purement observationnel.
+        patch_l_exc = champs.l_exc[y0:y1, x0:x1][patch_m]
+        patch_a_exc = champs.a_exc[y0:y1, x0:x1][patch_m]
+        if patch_l_exc.size >= 4:
+            med = float(np.median(patch_l_exc))
+            moitie_claire = patch_a_exc[patch_l_exc > med]
+            moitie_sombre = patch_a_exc[patch_l_exc <= med]
+            self.red_moitie_claire = float(moitie_claire.mean()) if moitie_claire.size else None
+            self.red_moitie_sombre = float(moitie_sombre.mean()) if moitie_sombre.size else None
+        else:
+            self.red_moitie_claire = self.red_moitie_sombre = None
+
         cr = max(1, int(r_px * 0.5))
         cy0, cy1 = max(0, cy - cr), min(h, cy + cr + 1)
         cx0, cx1 = max(0, cx - cr), min(w, cx + cr + 1)
@@ -253,8 +271,10 @@ def _candidats(champs: Champs, zones_filtre: Optional[Tuple[str, ...]] = None) -
 
 def _fmt(c: Candidat, label: str) -> str:
     verdict = c.type or "None"
+    rc = f"{c.red_moitie_claire:.2f}" if c.red_moitie_claire is not None else "-"
+    rs = f"{c.red_moitie_sombre:.2f}" if c.red_moitie_sombre is not None else "-"
     return (f"{label:<10} zone={c.zone:<10} src={c.src:<6} d_mm={c.d_mm:>4.1f} "
-            f"red={c.red:>6.2f} dark={c.dark:>6.2f} yellow={c.yellow:>6.2f} "
+            f"red={c.red:>6.2f} (clair={rc}/sombre={rs}) dark={c.dark:>6.2f} yellow={c.yellow:>6.2f} "
             f"core_l={c.core_l:>6.2f} core_s={c.core_s:>6.1f} skin_s={c.skin_s:>5.1f} "
             f"-> {verdict:<12} conf={c.confidence}")
 
