@@ -261,6 +261,46 @@ class TestSkinChanges:
         assert view["changes"] == []
 
 
+class TestGuidedScanChanges:
+    """Le scan multi-vue guide (source="guided") n'a ni concerns ni
+    zone_scores (voir _extract_scan_fields) — sans comparer lesion_counts,
+    une Phase construite uniquement a partir de scans guides n'aurait
+    jamais rien a montrer sur What Changed?."""
+
+    def _guided(self, lesion_types):
+        return {
+            "status": "TARGET_REACHED",
+            "usable_views": 7,
+            "lesions": [{"type": t} for t in lesion_types],
+        }
+
+    def test_lesion_count_drop_is_detected(self):
+        db = _fresh_db()
+        _run(sm.ingest_scan(db, "u1", "guided", self._guided(["papule", "papule", "comedon"])))
+        _run(sm.ingest_scan(db, "u1", "guided", self._guided(["comedon"])))
+        view = _run(sm.get_active_period_view(db, "u1"))
+        papule = next(c for c in view["changes"] if c["metric"] == "papule")
+        assert papule["kind"] == "lesion_type"
+        assert papule["direction"] == "down"
+
+    def test_unchanged_count_is_stable(self):
+        db = _fresh_db()
+        _run(sm.ingest_scan(db, "u1", "guided", self._guided(["comedon"])))
+        _run(sm.ingest_scan(db, "u1", "guided", self._guided(["comedon"])))
+        view = _run(sm.get_active_period_view(db, "u1"))
+        comedon = next(c for c in view["changes"] if c["metric"] == "comedon")
+        assert comedon["direction"] == "stable"
+
+    def test_guided_scans_get_medium_or_high_capture_quality(self):
+        db = _fresh_db()
+        scan = _run(sm.ingest_scan(db, "u1", "guided", self._guided(["comedon"])))
+        assert scan.capture_quality == "high"
+        assert scan.source == "guided"
+        assert scan.concerns == {}
+        assert scan.zone_scores == {}
+        assert scan.lesion_counts == {"comedon": 1}
+
+
 class TestListPeriods:
     def test_lists_active_and_closed_periods_most_recent_first(self):
         db = _fresh_db()

@@ -297,14 +297,14 @@ def _span_days(scans: List[dict]) -> float:
     return (last - first).total_seconds() / 86400.0
 
 
-def _confidence_for_series(values: List[float], scans: List[dict]) -> str:
+def _confidence_for_series(values: List[float], scans: List[dict], epsilon: float) -> str:
     if len(values) < 2:
         return "low"
     quality_ok = all(s.get("capture_quality") != "low" for s in scans)
     signs = []
     for a, b in zip(values, values[1:]):
         delta = b - a
-        if abs(delta) >= CONCERN_EPSILON:
+        if abs(delta) >= epsilon:
             signs.append(1 if delta > 0 else -1)
     consistent = len(set(signs)) <= 1
     if len(values) >= UNDERSTANDING_MIN_SCANS and quality_ok and consistent and (
@@ -316,10 +316,30 @@ def _confidence_for_series(values: List[float], scans: List[dict]) -> str:
     return "low"
 
 
-def _direction(delta: float) -> str:
-    if abs(delta) < CONCERN_EPSILON:
+def _direction(delta: float, epsilon: float) -> str:
+    if abs(delta) < epsilon:
         return "stable"
     return "up" if delta > 0 else "down"
+
+
+# (kind, field storing the metric, epsilon below which a delta reads as
+# "stable", sparse). lesion_counts est un compte entier (0..N) : le scan
+# multi-vue guide (source="guided") ne produit ni concerns ni zone_scores
+# (voir _extract_scan_fields) — sans ce troisieme champ, une Phase
+# construite uniquement a partir de scans guides n'aurait jamais rien a
+# montrer sur What Changed?, meme apres plusieurs vraies observations.
+#
+# `sparse` distingue deux semantiques d'absence : un concern/zone absent
+# d'un scan signifie "non mesure cette fois" (on ne devine pas — on saute) ;
+# un type de lesion absent de `lesion_counts` signifie "zero occurrence"
+# (une valeur reelle, pas un trou) — le traiter comme un simple "non
+# mesure" ferait disparaitre le cas le plus important : un type de lesion
+# qui s'efface completement entre deux scans.
+_METRIC_FIELDS = (
+    ("concern", "concerns", CONCERN_EPSILON, False),
+    ("zone", "zone_scores", CONCERN_EPSILON, False),
+    ("lesion_type", "lesion_counts", 0.5, True),
+)
 
 
 def _skin_changes(
@@ -332,18 +352,24 @@ def _skin_changes(
     introduced = [pe["product_id"] for pe in product_events if pe["type"] == "introduced"]
 
     items: List[SkinChangeItem] = []
-    for kind, field_name in (("concern", "concerns"), ("zone", "zone_scores")):
-        keys = set(baseline.get(field_name) or {}) & set(latest.get(field_name) or {})
+    for kind, field_name, epsilon, sparse in _METRIC_FIELDS:
+        if sparse:
+            # Union : un type absent d'un scan vaut 0, pas "non mesure".
+            keys = set(baseline.get(field_name) or {}) | set(latest.get(field_name) or {})
+        else:
+            keys = set(baseline.get(field_name) or {}) & set(latest.get(field_name) or {})
         for key in sorted(keys):
             values = []
             for s in scans:
                 v = (s.get(field_name) or {}).get(key)
+                if v is None and sparse:
+                    v = 0
                 if v is not None:
                     values.append(float(v))
             if len(values) < 2:
                 continue
             delta = values[-1] - values[0]
-            confidence = _confidence_for_series(values, scans)
+            confidence = _confidence_for_series(values, scans, epsilon)
             attribution = introduced if confidence in ("medium", "high") and introduced else None
             items.append(
                 SkinChangeItem(
@@ -351,7 +377,7 @@ def _skin_changes(
                     kind=kind,
                     baseline_value=values[0],
                     latest_value=values[-1],
-                    direction=_direction(delta),
+                    direction=_direction(delta, epsilon),
                     confidence=confidence,
                     attribution=attribution,
                 )
@@ -391,6 +417,17 @@ async def get_active_period_view(db, user_id: str) -> Optional[dict]:
 
 
 async def list_periods(db, user_id: str, limit: int = 50) -> List[dict]:
-    return await db.periods.find(
-        {"user_id": user_id}, {"_id": 0}
-    ).sort("starts_at", -1).limit(limit).to_list(length=limit)
+    periods = await db.periods.find({"user_id": user_id}, {"_id": 0}).to_list(length=1000)
+    # Tri en Python plutot que via le curseur : deux Periods peuvent partager
+    # le meme starts_at a la microseconde pres (rollover immediat apres un
+    # scan), et la seule chose garantie est qu'il existe au plus UNE Period
+    # active — elle doit toujours arriver en tete, jamais dependre d'un
+    # ordre de tri instable sur une egalite de timestamp.
+    def _ts(p: dict) -> float:
+        v = p["starts_at"]
+        if isinstance(v, str):
+            v = datetime.fromisoformat(v)
+        return v.timestamp()
+
+    periods.sort(key=lambda p: (p["ends_at"] is not None, -_ts(p)))
+    return periods[:limit]
