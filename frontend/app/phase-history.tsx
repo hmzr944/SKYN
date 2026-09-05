@@ -1,11 +1,15 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, FlatList, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
+import Svg, { Line } from "react-native-svg";
+import Animated, { useAnimatedProps, useSharedValue, withDelay, withTiming } from "react-native-reanimated";
 
 import { AnimatedPressable } from "@/src/components/ui/AnimatedPressable";
 import { Reveal, Stagger } from "@/src/components/ui/Reveal";
 import { SkynLockup } from "@/src/components/brand/SkynLockup";
+import { PhaseHalo } from "@/src/components/skinMemory/PhaseHalo";
+import { ease } from "@/src/animation/ease";
 import { api } from "@/src/services/api";
 import { colors, fonts, radius, spacing, type } from "@/src/theme";
 import type { Period } from "@/src/types/skinMemory";
@@ -30,11 +34,32 @@ function chapterName(p: Period, index: number, total: number): string {
   return `Phase ${total - index}`;
 }
 
-function ProgressLine({ single }: { single: boolean }) {
+const AnimatedLine = Animated.createAnimatedComponent(Line);
+const LINE_LEN = 260; // longueur arbitraire, assez grande pour ne jamais etre limitante
+
+/** Le trait se trace, il n'apparaît pas d'un bloc — même grammaire que le
+ * S de la marque et les contours de FaceZoneMap. Une Phase, c'est une
+ * période qui s'écrit, pas une barre de progression. */
+function ProgressLine({ single, delay }: { single: boolean; delay: number }) {
+  const t = useSharedValue(0);
+  useEffect(() => {
+    t.value = withDelay(delay, withTiming(1, { duration: 700, easing: ease.out }));
+  }, [t, delay]);
+  const props = useAnimatedProps(() => ({
+    strokeDashoffset: LINE_LEN * (1 - t.value),
+  }));
   return (
     <View style={styles.progressRow}>
       <View style={styles.progressDot} />
-      <View style={styles.progressBar} />
+      <Svg width="100%" height={2} style={styles.progressSvg}>
+        <AnimatedLine
+          x1="0" y1="1" x2="100%" y2="1"
+          stroke={colors.borderMid}
+          strokeWidth={1}
+          strokeDasharray={LINE_LEN}
+          animatedProps={props}
+        />
+      </Svg>
       <View style={[styles.progressDot, single && styles.progressDotFaint]} />
     </View>
   );
@@ -89,11 +114,20 @@ export default function PhaseHistoryScreen() {
             const card = (
               <View style={[styles.card, active && styles.cardActive]}>
                 <View style={styles.cardHead}>
-                  <Text style={styles.chapter}>{chapterName(item, index, periods.length)}</Text>
-                  {active ? <View style={styles.activeTag}><Text style={styles.activeTagText}>En cours</Text></View> : null}
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.chapter}>{chapterName(item, index, periods.length)}</Text>
+                    <Text style={styles.range}>{rangeLabel(item)}</Text>
+                  </View>
+                  {active ? (
+                    <View style={styles.activeTag}><Text style={styles.activeTagText}>En cours</Text></View>
+                  ) : (
+                    // Halo purement identitaire ici : aucune Phase close n'expose
+                    // encore son propre Skin Change (voir l'en-tête de fichier) —
+                    // toujours "calm", jamais une tonalité devinée sans donnée.
+                    <PhaseHalo size={30} tone="calm" />
+                  )}
                 </View>
-                <Text style={styles.range}>{rangeLabel(item)}</Text>
-                <ProgressLine single={single} />
+                <ProgressLine single={single} delay={120 + index * 40} />
                 <Text style={styles.count}>{single ? "1 mesure" : "Plusieurs mesures"}</Text>
               </View>
             );
@@ -153,6 +187,6 @@ const styles = StyleSheet.create({
   progressRow: { flexDirection: "row", alignItems: "center", marginTop: spacing.m, marginBottom: spacing.xs },
   progressDot: { width: 7, height: 7, borderRadius: 3.5, backgroundColor: colors.fg },
   progressDotFaint: { backgroundColor: colors.fgFaint },
-  progressBar: { flex: 1, height: 1, backgroundColor: colors.borderMid, marginHorizontal: 6 },
+  progressSvg: { flex: 1, marginHorizontal: 6 },
   count: { ...type.bodySmall, color: colors.fgDim },
 });

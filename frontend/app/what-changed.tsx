@@ -6,6 +6,7 @@ import { useFocusEffect, useRouter } from "expo-router";
 import { AnimatedPressable } from "@/src/components/ui/AnimatedPressable";
 import { Reveal, Stagger } from "@/src/components/ui/Reveal";
 import { SkynLockup } from "@/src/components/brand/SkynLockup";
+import { FaceZoneMap } from "@/src/components/analysis/FaceZoneMap";
 import { PhaseHalo } from "@/src/components/skinMemory/PhaseHalo";
 import { SkinChangePill, InsufficientPill } from "@/src/components/skinMemory/SkinChangePill";
 import { api } from "@/src/services/api";
@@ -85,22 +86,51 @@ export default function WhatChangedScreen() {
           <Text style={styles.title}>What Changed?</Text>
         </Reveal>
 
-        <Reveal delay={80} style={styles.haloRow}>
-          <PhaseHalo size={72} tone={worstTone} />
-        </Reveal>
-
         {view.state === "baseline" ? (
-          <Reveal delay={140}>
-            <InsufficientPill label="Première mesure — rien à comparer encore" />
-            <Text style={styles.note}>
-              Revenez après votre prochain scan pour voir ce qui a changé.
-            </Text>
-          </Reveal>
+          <>
+            <Reveal delay={80} style={styles.haloRow}>
+              <PhaseHalo size={72} tone={worstTone} />
+            </Reveal>
+            <Reveal delay={140}>
+              <InsufficientPill label="Première mesure — rien à comparer encore" />
+              <Text style={styles.note}>
+                Revenez après votre prochain scan pour voir ce qui a changé.
+              </Text>
+            </Reveal>
+          </>
         ) : view.changes.length === 0 ? (
-          <Reveal delay={140}>
-            <InsufficientPill />
-          </Reveal>
+          <>
+            <Reveal delay={80} style={styles.haloRow}>
+              <PhaseHalo size={72} tone={worstTone} />
+            </Reveal>
+            <Reveal delay={140}>
+              <InsufficientPill />
+            </Reveal>
+          </>
         ) : (
+          <>
+            {/* Le coeur de l'ecran : la carte se resout depuis la baseline
+                de la Phase vers la derniere mesure — le changement EST le
+                visuel, pas une liste a cote d'une forme statique. */}
+            <Reveal delay={80} style={styles.mapRow}>
+              <View style={styles.mapSlot}>
+                <FaceZoneMap
+                  zoneScores={view.scans[view.scans.length - 1].zone_scores}
+                  previousZoneScores={view.scans[0].zone_scores}
+                  size={200}
+                />
+                <View style={styles.haloSlot}>
+                  <PhaseHalo size={48} tone={worstTone} />
+                </View>
+              </View>
+            </Reveal>
+            <Reveal delay={160}>
+              <Text style={styles.mapCaption}>Avant → maintenant, sur cette Phase</Text>
+            </Reveal>
+          </>
+        )}
+
+        {view.state !== "baseline" && view.changes.length > 0 && (
           <Stagger style={styles.list} delay={140} distance={14}>
             {view.changes.map((c) => {
               const note = attributionSentence(c, productLabel);
@@ -149,6 +179,15 @@ const styles = StyleSheet.create({
   kicker: { ...type.kicker, color: colors.fgDim },
   title: { ...type.title, color: colors.fg, marginTop: 6 },
   haloRow: { alignItems: "flex-start", marginVertical: spacing.s },
+  mapRow: { alignItems: "center", marginTop: spacing.s },
+  mapSlot: { position: "relative" },
+  haloSlot: { position: "absolute", top: 0, right: -6 },
+  mapCaption: {
+    ...type.bodySmall,
+    color: colors.fgDim,
+    textAlign: "center",
+    marginTop: -spacing.s,
+  },
   note: { ...type.bodySmall, color: colors.fgMuted, marginTop: spacing.s },
   list: { gap: spacing.m },
   row: { gap: 6 },

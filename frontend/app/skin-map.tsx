@@ -91,6 +91,15 @@ export default function SkinMapScreen() {
             <View style={styles.mapSlot}>
               <FaceZoneMap
                 zoneScores={view.scans[view.scans.length - 1]?.zone_scores ?? {}}
+                // La carte se resout depuis l'avant-derniere mesure : le
+                // dashboard montre la peau qui vient de se stabiliser dans
+                // son etat actuel, pas tout le chemin depuis la baseline
+                // (ca, c'est le role de What Changed?).
+                previousZoneScores={
+                  view.scans.length >= 2
+                    ? view.scans[view.scans.length - 2].zone_scores
+                    : undefined
+                }
                 zoneConfidence={zoneConfidenceMap(view.changes)}
                 size={220}
               />

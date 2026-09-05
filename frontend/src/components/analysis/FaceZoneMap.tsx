@@ -2,6 +2,7 @@ import { useEffect, useMemo } from "react";
 import { View, Text, StyleSheet, Pressable } from "react-native";
 import Svg, { Path, Ellipse, G, Circle, Defs, ClipPath } from "react-native-svg";
 import Animated, {
+  interpolateColor,
   useAnimatedProps,
   useSharedValue,
   withDelay,
@@ -47,8 +48,12 @@ const VB_H = 260;
  * façon partout : le decoupage retombait alors sur le carre d'origine, et la
  * carte se vidait entierement de son contenu.
  */
-const MARK_SCALE = 4.83;
-const FACE_PATH = facePathAt(100, 133, MARK_SCALE);
+export const MARK_SCALE = 4.83;
+/** Centre du contour dans le viewBox 200x260 — ZONE_SHAPES est defini en
+ * offsets depuis ce point, a reprendre avec MARK_SCALE pour replacer les
+ * zones sur un contour trace a une autre echelle/position (camera-guided.tsx). */
+export const FACE_CENTER = { cx: 100, cy: 133 };
+const FACE_PATH = facePathAt(FACE_CENTER.cx, FACE_CENTER.cy, MARK_SCALE);
 
 /** Encombrement du contour une fois pose : sert a placer les lesions. */
 const FACE_BOX = {
@@ -58,10 +63,10 @@ const FACE_BOX = {
   h: FACE_EXTENT.h * MARK_SCALE,
 };
 
-type ZoneShape = { cx: number; cy: number; rx: number; ry: number; rot?: number };
+export type ZoneShape = { cx: number; cy: number; rx: number; ry: number; rot?: number };
 
 // Position anatomique approximative de chaque zone sur le schema.
-const ZONE_SHAPES: Record<ZoneKey, ZoneShape> = {
+export const ZONE_SHAPES: Record<ZoneKey, ZoneShape> = {
   front: { cx: 100, cy: 60, rx: 46, ry: 21 },
   glabelle: { cx: 100, cy: 87, rx: 11, ry: 9 },
   tempe_g: { cx: 46, cy: 76, rx: 15, ry: 19 },
@@ -142,6 +147,26 @@ interface Props {
    * existant qui ne passe pas cette prop.
    */
   zoneConfidence?: Partial<Record<ZoneKey, Confidence>>;
+  /**
+   * Score de la mesure PRÉCÉDENTE (baseline de la Phase, ou scan d'avant) —
+   * quand fourni, chaque zone se résout depuis cet état vers `zoneScores`
+   * au lieu d'apparaître directement : la carte montre l'évolution, pas
+   * seulement le résultat. Optionnel, n'affecte aucun appel existant.
+   */
+  previousZoneScores?: Partial<Record<ZoneKey, number>>;
+}
+
+/** Même formule de visibilité que le rendu principal — utilisée deux fois
+ * (état courant, état précédent) donc isolée pour ne jamais diverger. */
+function opaciteDeZone(score: number | undefined, isSel: boolean): { visible: boolean; opacity: number } {
+  const measured = typeof score === "number";
+  const burden = measured ? 1 - (score as number) / 100 : 0;
+  const SEUIL = 0.2;
+  const visible = measured && (burden > SEUIL || isSel);
+  const opacity = visible
+    ? Math.min(0.9, ((burden - SEUIL) / (1 - SEUIL)) * 0.85 + (isSel ? 0.22 : 0.06))
+    : 0;
+  return { visible, opacity };
 }
 
 const AnimatedEllipse = Animated.createAnimatedComponent(Ellipse);
@@ -169,11 +194,17 @@ function ZoneOutline({ shape, delay }: { shape: ZoneShape; delay: number }) {
 }
 
 /**
- * Une zone qui s'allume.
+ * Une zone qui s'allume — ou qui EVOLUE.
  *
- * L'opacite est portee par une valeur animee plutot que posee directement :
- * la carte se revele zone par zone, ce qui donne a lire un releve en train de
- * se construire au lieu d'une image deja faite.
+ * Sans etat precedent : l'opacite part de 0, la carte se revele zone par
+ * zone, ce qui donne a lire un releve en train de se construire au lieu
+ * d'une image deja faite.
+ *
+ * Avec un etat precedent (`fromFill`/`fromOpacity`, Skin Map/What Changed) :
+ * la zone part de ce qu'elle etait a la mesure precedente et se resout vers
+ * l'etat actuel — la carte montre l'evolution elle-meme, pas seulement son
+ * resultat. Duree plus longue (900ms) : c'est un changement qu'on regarde,
+ * pas une apparition qu'on attend.
  */
 function ZoneEllipse({
   shape,
@@ -181,19 +212,33 @@ function ZoneEllipse({
   opacity,
   selected,
   delay,
+  fromFill,
+  fromOpacity,
 }: {
   shape: ZoneShape;
   fill: string;
   opacity: number;
   selected: boolean;
   delay: number;
+  fromFill?: string;
+  fromOpacity?: number;
 }) {
+  const estUneEvolution = fromFill !== undefined;
   const t = useSharedValue(0);
   useEffect(() => {
-    t.value = withDelay(delay, withTiming(1, { duration: 460, easing: ease.out }));
-  }, [t, delay]);
+    t.value = withDelay(
+      delay,
+      withTiming(1, { duration: estUneEvolution ? 900 : 460, easing: ease.out }),
+    );
+  }, [t, delay, estUneEvolution]);
 
-  const props = useAnimatedProps(() => ({ opacity: opacity * t.value }));
+  const depart = fromOpacity ?? 0;
+  const props = useAnimatedProps(() => ({
+    opacity: depart + (opacity - depart) * t.value,
+    fill: estUneEvolution
+      ? interpolateColor(t.value, [0, 1], [fromFill as string, fill])
+      : fill,
+  }));
 
   return (
     <AnimatedEllipse
@@ -201,7 +246,6 @@ function ZoneEllipse({
       cy={shape.cy}
       rx={shape.rx}
       ry={shape.ry}
-      fill={fill}
       stroke={selected ? colors.fg : "transparent"}
       strokeWidth={selected ? 1.6 : 0}
       animatedProps={props}
@@ -217,6 +261,7 @@ export function FaceZoneMap({
   showLesions = true,
   size = 260,
   zoneConfidence,
+  previousZoneScores,
 }: Props) {
   const height = size * (VB_H / VB_W);
 
@@ -255,27 +300,31 @@ export function FaceZoneMap({
             // zone saine doit s'effacer dans le fond : peindre en vert vif ce
             // qui va bien attire l'oeil au mauvais endroit. Ce qui demande de
             // l'attention est ce qui doit ressortir.
-            const burden = measured ? 1 - (score as number) / 100 : 0;
-            // En dessous de ce seuil, la zone n'est PAS peinte du tout.
-            // Auparavant toute zone mesuree recevait un fond, meme nette :
-            // treize taches grises dont douze ne signalaient rien, et l'oeil
-            // ne savait plus ou regarder. Une carte de charge ne montre que
-            // ce qui est charge.
-            const SEUIL = 0.2;
-            const visible = measured && (burden > SEUIL || isSel);
-            const opacity = visible
-              ? Math.min(0.9, ((burden - SEUIL) / (1 - SEUIL)) * 0.85 + (isSel ? 0.22 : 0.06))
-              : 0;
+            const { opacity } = opaciteDeZone(score, isSel);
+            // Peu importe la teinte exacte quand la zone n'est pas mesuree :
+            // son opacite est deja 0. Une vraie couleur (pas "transparent")
+            // est necessaire pour rester une valeur valide pour interpolateColor.
+            const fill = measured ? scoreColor(score as number) : colors.fg;
+            let fromFill: string | undefined;
+            let fromOpacity: number | undefined;
+            if (previousZoneScores) {
+              const prevScore = previousZoneScores[key];
+              const prev = opaciteDeZone(prevScore, isSel);
+              fromOpacity = prev.opacity;
+              fromFill = typeof prevScore === "number" ? scoreColor(prevScore) : fill;
+            }
             return (
               <ZoneEllipse
                 key={key}
                 shape={shape}
-                fill={measured ? scoreColor(score as number) : "transparent"}
+                fill={fill}
                 opacity={opacity}
                 selected={isSel}
                 // Les zones s'allument l'une apres l'autre : une carte qui
                 // apparait d'un bloc ressemble a une image, pas a un releve.
                 delay={i * 55}
+                fromFill={fromFill}
+                fromOpacity={fromOpacity}
               />
             );
           })}

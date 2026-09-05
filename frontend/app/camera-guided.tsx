@@ -1,19 +1,26 @@
 import { CameraView, useCameraPermissions } from "expo-camera";
 import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Dimensions, Platform, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import Svg, { Path } from "react-native-svg";
-import { useSharedValue, withTiming } from "react-native-reanimated";
+import Svg, { Ellipse, Path } from "react-native-svg";
+import Animated, {
+  useAnimatedProps,
+  useSharedValue,
+  withTiming,
+} from "react-native-reanimated";
 
 import { AnimatedPressable } from "@/src/components/ui/AnimatedPressable";
 import { Reveal } from "@/src/components/ui/Reveal";
 import { ScanRing } from "@/src/components/analysis/ScanRing";
+import { FACE_CENTER, MARK_SCALE, ZONE_SHAPES } from "@/src/components/analysis/FaceZoneMap";
+import { ease } from "@/src/animation/ease";
 import { track } from "@/src/services/analytics";
 import { framingOk, readDetection } from "@/src/services/faceGuide";
 import { colors, palette, radius, spacing, type } from "@/src/theme";
 import { facePathAt } from "@/src/theme/mark";
+import type { ZoneKey } from "@/src/types/analysis";
 import { useOnline } from "@/src/hooks/useOnline";
 import { storage } from "@/src/utils/storage";
 
@@ -65,6 +72,35 @@ const GUIDE_SEQUENCE = [
   "Encore un peu",
   "Presque terminé",
 ];
+
+/** Ordre de révélation des zones pendant la capture — suit le même geste
+ * que GUIDE_SEQUENCE (centre, puis gauche, puis droite), pour que la carte
+ * qui se construit corresponde à ce qu'on demande de faire. Ce n'est PAS
+ * une détection reelle par zone (aucune n'existe pendant la capture) —
+ * uniquement une couverture : "cette zone du visage a été montrée",
+ * jamais "un bouton a été vu ici". Voir l'avertissement en tête de fichier
+ * sur ce que cet écran ne vérifie pas encore. */
+const ZONE_REVEAL_ORDER: ZoneKey[] = [
+  "front", "nez", "glabelle",
+  "tempe_g", "joue_g", "machoire_g",
+  "tempe_d", "joue_d", "machoire_d",
+  "sous_yeux_g", "sous_yeux_d", "peri_oral", "menton",
+];
+
+const AnimatedEllipse = Animated.createAnimatedComponent(Ellipse);
+
+/** Une zone qui se couvre — se dessine, ne surgit pas d'un bloc (même
+ * grammaire que ZoneEllipse dans FaceZoneMap.tsx). */
+function CoverageZone({ cx, cy, rx, ry }: { cx: number; cy: number; rx: number; ry: number }) {
+  const t = useSharedValue(0);
+  useEffect(() => {
+    t.value = withTiming(1, { duration: 700, easing: ease.out });
+  }, [t]);
+  const props = useAnimatedProps(() => ({ opacity: 0.22 * t.value }));
+  return (
+    <AnimatedEllipse cx={cx} cy={cy} rx={rx} ry={ry} fill={colors.accent} animatedProps={props} />
+  );
+}
 
 export default function CameraGuidedScreen() {
   const router = useRouter();
@@ -210,6 +246,31 @@ export default function CameraGuidedScreen() {
   const ovalScale = Math.min(WIN_W, WIN_H) * 0.0092;
   const ovalPath = facePathAt(WIN_W / 2, WIN_H / 2 - 20, ovalScale);
 
+  // Meme geometrie que ZONE_SHAPES (FaceZoneMap.tsx), remise a l'echelle de
+  // CET ovale-ci : ZONE_SHAPES est defini en offsets depuis FACE_CENTER a
+  // l'echelle MARK_SCALE, donc le ratio ovalScale/MARK_SCALE les replace au
+  // bon endroit ici sans dupliquer la geometrie.
+  const zoneScreenShapes = useMemo(() => {
+    const ratio = ovalScale / MARK_SCALE;
+    const centerXpx = WIN_W / 2;
+    const centerYpx = WIN_H / 2 - 20;
+    const out: Record<string, { cx: number; cy: number; rx: number; ry: number }> = {};
+    for (const key of ZONE_REVEAL_ORDER) {
+      const s = ZONE_SHAPES[key];
+      out[key] = {
+        cx: centerXpx + (s.cx - FACE_CENTER.cx) * ratio,
+        cy: centerYpx + (s.cy - FACE_CENTER.cy) * ratio,
+        rx: s.rx * ratio,
+        ry: s.ry * ratio,
+      };
+    }
+    return out;
+  }, [ovalScale]);
+
+  const zonesActives = ZONE_REVEAL_ORDER.slice(
+    0, Math.round((count / MAX_FRAMES) * ZONE_REVEAL_ORDER.length),
+  );
+
   useEffect(() => {
     ringProgress.value = withTiming(count / MAX_FRAMES, { duration: 320 });
   }, [count, ringProgress]);
@@ -252,6 +313,9 @@ export default function CameraGuidedScreen() {
               onCameraReady={() => setReady(true)}
             />
             <Svg width={WIN_W} height={WIN_H} style={StyleSheet.absoluteFill} pointerEvents="none">
+              {zonesActives.map((key) => (
+                <CoverageZone key={key} {...zoneScreenShapes[key]} />
+              ))}
               <Path d={ovalPath} fill="none" stroke={colors.accent} strokeWidth={1.6} opacity={0.7} />
               <ScanRing cx={centerX} cy={centerY} radius={ringRadius} progress={ringProgress} />
             </Svg>
