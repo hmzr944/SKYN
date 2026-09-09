@@ -94,6 +94,39 @@ class TestAnalyzeGuided:
         assert r.status_code == 200
         assert "global_score" in r.json()
 
+    def test_zone_scores_present_and_bounded(self, client, auth_headers):
+        """Le trou documente dans skin_memory.py (zone_scores toujours vide
+        pour source == "guided") est comble : l'endpoint doit maintenant
+        exposer une note par zone reellement couverte, dans les bornes
+        attendues, sur un jeu de zones connu."""
+        ZONES_CONNUES = {
+            "front", "glabelle", "tempe_g", "tempe_d", "nez", "joue_g", "joue_d",
+            "sous_yeux_g", "sous_yeux_d", "peri_oral", "menton", "machoire_g", "machoire_d",
+        }
+        images = [_b64(FIXTURE)] * 7
+        payload = {"images_base64": images, "min_vues_utiles": 5, "cible_vues": 7, "max_vues": 9}
+        r = client.post("/api/analyze/guided", json=payload, headers=auth_headers)
+        assert r.status_code == 200
+        body = r.json()
+        assert "zone_scores" in body
+        assert body["zone_scores"], "au moins une zone doit etre couverte sur une vue frontale nette"
+        for zone, score in body["zone_scores"].items():
+            assert zone in ZONES_CONNUES
+            assert 0 <= score <= 100
+
+    def test_zone_scores_deterministic_across_repeated_calls(self, client, auth_headers):
+        """Meme sequence de vues envoyee deux fois -> meme zone_scores. Le
+        module est une fonction pure sur des lesions deja confirmees ; rien
+        en amont (detection par vue, tracking, vote-gate) n'introduit de
+        hasard, donc l'identite doit tenir bout en bout, pas seulement au
+        niveau du module isole (voir test_zone_scoring.py)."""
+        images = [_b64(FIXTURE)] * 7
+        payload = {"images_base64": images, "min_vues_utiles": 5, "cible_vues": 7, "max_vues": 9}
+        r1 = client.post("/api/analyze/guided", json=payload, headers=auth_headers)
+        r2 = client.post("/api/analyze/guided", json=payload, headers=auth_headers)
+        assert r1.status_code == r2.status_code == 200
+        assert r1.json()["zone_scores"] == r2.json()["zone_scores"]
+
 
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))

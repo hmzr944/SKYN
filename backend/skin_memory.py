@@ -154,9 +154,11 @@ def _extract_scan_fields(source: str, analysis: Dict[str, Any]) -> Dict[str, Any
             "lesion_counts": analysis.get("lesion_counts") or {},
             "lesions": analysis.get("lesions") or [],
         }
-    # source == "guided" — pas de per_zone/concerns cote moteur multi-vue
-    # aujourd'hui (voir server.py, endpoint /api/analyze/guided) : seules les
-    # lesions confirmees et leurs comptes par type sont disponibles.
+    # source == "guided" — pas de concerns cote moteur multi-vue aujourd'hui
+    # (vocabulaire different du flux v2, voir concerns.py). zone_scores,
+    # lui, est fourni par /api/analyze/guided depuis skyn_engine.v2.zone_scoring
+    # -- calcule sur les lesions confirmees ci-dessous, jamais sur une zone
+    # non couverte par le scan (voir ce module pour la garantie).
     lesions = analysis.get("lesions") or []
     counts: Dict[str, int] = {}
     for lesion in lesions:
@@ -165,7 +167,7 @@ def _extract_scan_fields(source: str, analysis: Dict[str, Any]) -> Dict[str, Any
     return {
         "global_score": None,
         "concerns": {},
-        "zone_scores": {},
+        "zone_scores": analysis.get("zone_scores") or {},
         "lesion_counts": counts,
         "lesions": lesions,
     }
@@ -323,18 +325,20 @@ def _direction(delta: float, epsilon: float) -> str:
 
 
 # (kind, field storing the metric, epsilon below which a delta reads as
-# "stable", sparse). lesion_counts est un compte entier (0..N) : le scan
-# multi-vue guide (source="guided") ne produit ni concerns ni zone_scores
-# (voir _extract_scan_fields) — sans ce troisieme champ, une Phase
+# "stable", sparse). lesion_counts est un compte entier (0..N), disponible
+# pour les deux sources. concerns, lui, reste vide pour le scan multi-vue
+# guide (source == "guided") : vocabulaire different du flux v2, voir
+# concerns.py — sans lesion_counts comme troisieme champ, une Phase
 # construite uniquement a partir de scans guides n'aurait jamais rien a
 # montrer sur What Changed?, meme apres plusieurs vraies observations.
 #
 # `sparse` distingue deux semantiques d'absence : un concern/zone absent
-# d'un scan signifie "non mesure cette fois" (on ne devine pas — on saute) ;
-# un type de lesion absent de `lesion_counts` signifie "zero occurrence"
-# (une valeur reelle, pas un trou) — le traiter comme un simple "non
-# mesure" ferait disparaitre le cas le plus important : un type de lesion
-# qui s'efface completement entre deux scans.
+# d'un scan signifie "non mesure cette fois" (on ne devine pas — on saute,
+# voir zone_scoring.py pour "zone" specifiquement) ; un type de lesion
+# absent de `lesion_counts` signifie "zero occurrence" (une valeur reelle,
+# pas un trou) — le traiter comme un simple "non mesure" ferait disparaitre
+# le cas le plus important : un type de lesion qui s'efface completement
+# entre deux scans.
 _METRIC_FIELDS = (
     ("concern", "concerns", CONCERN_EPSILON, False),
     ("zone", "zone_scores", CONCERN_EPSILON, False),

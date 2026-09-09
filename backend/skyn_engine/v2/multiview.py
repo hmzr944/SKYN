@@ -28,13 +28,13 @@ appel a `orchestrer_scan()`, qui gere elle-meme l'arret adaptatif
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 import cv2
 import numpy as np
 
 from . import calibration as C
-from .lesions import _blob_candidates, _classify, _local_excess, _robust_thr
+from .lesions import _blob_candidates, _classify, _local_excess, _robust_thr, _zone_of
 from .zones import FaceMap, build_face_map
 
 # Valeurs retenues a l'issue du chantier de bancs (backend/tools/) — voir
@@ -80,6 +80,17 @@ class ScanResult:
     # reellement des poses differentes ou des quasi-doublons — le risque
     # signale avant l'integration. Rien ne filtre encore la-dessus.
     vues_diagnostics: List[dict] = field(default_factory=list)
+    # Zones anatomiques reellement couvertes par au moins une vue utilisable
+    # (z.available, deja calcule par build_face_map — aucune nouvelle
+    # detection). Sert a distinguer "zone mesuree, propre" de "zone jamais
+    # vue" cote produit : voir zone_scoring.py. Union au fil des vues, donc
+    # ne peut que grandir — jamais devinee a partir des lesions confirmees.
+    zones_couvertes: List[str] = field(default_factory=list)
+    # Aire physique (cm2) de chaque zone couverte, prise sur la PREMIERE vue
+    # utilisable qui l'a vue — meme conversion px -> cm2 que partout
+    # ailleurs dans le moteur (voir _candidats_par_vue). Sert de denominateur
+    # a la densite de lesions par zone ; ne code aucun seuil.
+    zone_area_cm2: Dict[str, float] = field(default_factory=dict)
 
     @property
     def statut(self) -> str:
@@ -163,6 +174,12 @@ def _candidats_par_vue(fm: FaceMap) -> List[dict]:
         depasse_prod = (red > thr_red_prod) if src == "rouge" else (dark < -thr_dark_prod)
         out.append({
             "x": (cx - x0) / bw, "y": (cy - y0) / bh,
+            # Zone anatomique de CETTE vue, au meme titre que "decision_0" —
+            # aucun nouveau seuil, un lookup geometrique deja utilise partout
+            # ailleurs (_zone_of, lesions.py). Sert uniquement a l'etiquette
+            # de zone du produit (zone_scoring.py), jamais a la decision
+            # rouge/sombre ni a la classification.
+            "zone": _zone_of(fm, cx, cy),
             "red": red, "dark": dark, "yellow": yellow,
             "core_l": core_l, "core_s": core_s, "skin_s": skin_s,
             "r_px": r_px, "px_per_mm": px_per_mm, "src": src,
@@ -276,10 +293,19 @@ def _confirmer(vues_candidats: List[List[dict]]) -> List[dict]:
         if etat != "CONFIRMEE":
             continue
         k = len(obs)
+        # Zone de la piste = la zone majoritaire parmi ses observations —
+        # meme principe de vote que _decision_vote() pour le type, mais sur
+        # l'etiquette de zone posee par vue dans _candidats_par_vue(). Le tri
+        # avant le vote rend le departage deterministe (pas d'ordre d'iteration
+        # d'un set) : deux appels sur les memes vues donnent toujours la meme
+        # zone, meme en cas d'egalite stricte.
+        zones_obs = [o.get("zone", "autre") for o in obs]
+        zone = max(sorted(set(zones_obs)), key=zones_obs.count)
         confirmees.append({
             "x": sum(o["x"] for o in obs) / k,
             "y": sum(o["y"] for o in obs) / k,
             "type": classe,
+            "zone": zone,
             "n_observations": k,
             # Deja calcules ci-dessus pour la porte de purete — exposes ici
             # tels quels (aucun nouveau calcul, aucun seuil touche) pour que
@@ -317,6 +343,8 @@ def orchestrer_scan(images_b64: List[str], config: Optional[ScanConfig] = None) 
     vues_utilisables: List[List[dict]] = []
     diagnostics: List[dict] = []
     confirmees_precedentes: Optional[List[dict]] = None
+    zones_couvertes: Dict[str, None] = {}  # dict = set qui garde l'ordre d'apparition
+    zone_area_cm2: Dict[str, float] = {}
 
     for i, image_b64 in enumerate(images_b64):
         fm = build_face_map(image_b64)
@@ -328,17 +356,30 @@ def orchestrer_scan(images_b64: List[str], config: Optional[ScanConfig] = None) 
         # vues acceptees sont des poses reellement differentes (voir
         # STATUT_PAR_RAISON : aucun filtre n'agit encore la-dessus).
         diagnostics.append({"yaw_proxy": fm.quality.yaw_proxy, "roll_deg": fm.quality.roll_deg})
+        # Couverture de zone : union au fil des vues, aire prise sur la
+        # PREMIERE vue qui voit chaque zone. Meme conversion px -> cm2 que
+        # _candidats_par_vue (face_w / 140mm) : pas une nouvelle calibration,
+        # juste la meme regle relue ici pour normaliser une aire au lieu
+        # d'un rayon de lesion.
+        px_per_cm2 = ((max(1.0, float(fm.bbox[2])) / 140.0) * 10.0) ** 2
+        for name, z in fm.zones.items():
+            if z.available and name not in zones_couvertes:
+                zones_couvertes[name] = None
+                zone_area_cm2[name] = z.area_px / px_per_cm2
         n = len(vues_utilisables)
 
         if n >= config.max_vues:
-            return ScanResult(_confirmer(vues_utilisables), i + 1, n, "max_atteint", diagnostics)
+            return ScanResult(_confirmer(vues_utilisables), i + 1, n, "max_atteint", diagnostics,
+                               zones_couvertes=list(zones_couvertes), zone_area_cm2=zone_area_cm2)
 
         if n >= config.min_vues_utiles:
             confirmees = _confirmer(vues_utilisables)
             if (n >= config.cible_vues and confirmees_precedentes is not None
                     and _memes_positions(confirmees, confirmees_precedentes)):
-                return ScanResult(confirmees, i + 1, n, "cible_atteinte_stable", diagnostics)
+                return ScanResult(confirmees, i + 1, n, "cible_atteinte_stable", diagnostics,
+                                   zones_couvertes=list(zones_couvertes), zone_area_cm2=zone_area_cm2)
             confirmees_precedentes = confirmees
 
     confirmees = _confirmer(vues_utilisables) if vues_utilisables else []
-    return ScanResult(confirmees, len(images_b64), len(vues_utilisables), "frames_epuisees", diagnostics)
+    return ScanResult(confirmees, len(images_b64), len(vues_utilisables), "frames_epuisees", diagnostics,
+                       zones_couvertes=list(zones_couvertes), zone_area_cm2=zone_area_cm2)

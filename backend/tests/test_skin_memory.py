@@ -262,16 +262,19 @@ class TestSkinChanges:
 
 
 class TestGuidedScanChanges:
-    """Le scan multi-vue guide (source="guided") n'a ni concerns ni
-    zone_scores (voir _extract_scan_fields) — sans comparer lesion_counts,
-    une Phase construite uniquement a partir de scans guides n'aurait
-    jamais rien a montrer sur What Changed?."""
+    """Le scan multi-vue guide (source="guided") n'a pas de concerns (voir
+    _extract_scan_fields) — sans comparer lesion_counts, une Phase
+    construite uniquement a partir de scans guides n'aurait jamais rien a
+    montrer sur What Changed?. zone_scores, lui, arrive maintenant dans le
+    payload d'analyse (calcule par skyn_engine.v2.zone_scoring cote
+    /api/analyze/guided) — _extract_scan_fields doit juste le relayer."""
 
-    def _guided(self, lesion_types):
+    def _guided(self, lesion_types, zone_scores=None):
         return {
             "status": "TARGET_REACHED",
             "usable_views": 7,
             "lesions": [{"type": t} for t in lesion_types],
+            "zone_scores": zone_scores or {},
         }
 
     def test_lesion_count_drop_is_detected(self):
@@ -299,6 +302,24 @@ class TestGuidedScanChanges:
         assert scan.concerns == {}
         assert scan.zone_scores == {}
         assert scan.lesion_counts == {"comedon": 1}
+
+    def test_guided_zone_scores_are_relayed_from_analysis(self):
+        db = _fresh_db()
+        scan = _run(sm.ingest_scan(
+            db, "u1", "guided", self._guided(["comedon"], zone_scores={"nez": 62, "front": 100}),
+        ))
+        assert scan.zone_scores == {"nez": 62, "front": 100}
+
+    def test_guided_zone_change_is_detected_on_the_skin_map(self):
+        """Meme mecanique de comparaison que pour lesion_counts (intersection
+        des zones mesurees aux deux scans, voir _METRIC_FIELDS) — verifie ici
+        que zone_scores nourrit bien What Changed?, plus seulement stocke."""
+        db = _fresh_db()
+        _run(sm.ingest_scan(db, "u1", "guided", self._guided([], zone_scores={"nez": 90})))
+        _run(sm.ingest_scan(db, "u1", "guided", self._guided([], zone_scores={"nez": 40})))
+        view = _run(sm.get_active_period_view(db, "u1"))
+        nez = next(c for c in view["changes"] if c["kind"] == "zone" and c["metric"] == "nez")
+        assert nez["direction"] == "down"
 
 
 class TestListPeriods:

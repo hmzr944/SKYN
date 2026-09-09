@@ -437,6 +437,7 @@ async def skyn_engine_analyze_guided(payload: AnalyzeGuidedRequest,
         raise HTTPException(status_code=400, detail="Invalid scan configuration")
 
     from skyn_engine.v2.multiview import orchestrer_scan, ScanConfig
+    from skyn_engine.v2.zone_scoring import zone_scores_from_confirmed
 
     config = ScanConfig(min_vues_utiles=payload.min_vues_utiles,
                         cible_vues=payload.cible_vues, max_vues=payload.max_vues)
@@ -469,6 +470,11 @@ async def skyn_engine_analyze_guided(payload: AnalyzeGuidedRequest,
         # utilisables sont des poses reellement differentes plutot que des
         # quasi-doublons. Rien ne filtre encore la-dessus.
         "view_diagnostics": out.vues_diagnostics,
+        # Note 0-100 par zone reellement couverte par ce scan, derivee des
+        # lesions deja confirmees ci-dessus (voir skyn_engine.v2.zone_scoring) —
+        # jamais une zone non vue. Sans ca, skin_memory.py n'avait rien a
+        # afficher sur la Skin Map pour un scan guide (source == "guided").
+        "zone_scores": zone_scores_from_confirmed(out),
     }
 
 
