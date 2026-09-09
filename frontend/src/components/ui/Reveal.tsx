@@ -5,6 +5,7 @@ import Animated, {
   useReducedMotion,
   useSharedValue,
   withDelay,
+  withSpring,
   withTiming,
 } from "react-native-reanimated";
 
@@ -22,6 +23,14 @@ type RevealProps = {
   from?: Direction;
   /** Legere montee en echelle, pour un element qui doit sembler s'approcher. */
   scale?: boolean;
+  /**
+   * Arrivee en ressort (motion.springDrop) au lieu d'un fondu chronometre :
+   * l'element depasse legerement sa position finale puis s'y pose, comme un
+   * objet qui atterrit plutot qu'un element qui s'affiche. Reserve au
+   * premier bloc d'un ecran — deux blocs rebondissants a la fois font du
+   * bruit plutot qu'un rythme.
+   */
+  bouncy?: boolean;
   style?: StyleProp<ViewStyle>;
 };
 
@@ -37,6 +46,7 @@ export function Reveal({
   distance = 16,
   from = "up",
   scale = false,
+  bouncy = false,
   style,
 }: RevealProps) {
   const t = useSharedValue(0);
@@ -44,8 +54,14 @@ export function Reveal({
   const reduced = useReducedMotion();
 
   useEffect(() => {
-    t.value = withDelay(delay, withTiming(1, { duration, easing: ease.out }));
-  }, [t, delay, duration]);
+    if (reduced) {
+      t.value = withDelay(delay, withTiming(1, { duration: 0 }));
+    } else if (bouncy) {
+      t.value = withDelay(delay, withSpring(1, motion.springDrop));
+    } else {
+      t.value = withDelay(delay, withTiming(1, { duration, easing: ease.out }));
+    }
+  }, [t, delay, duration, bouncy, reduced]);
 
   const aStyle = useAnimatedStyle(() => {
     const rest = 1 - t.value;

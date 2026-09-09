@@ -102,7 +102,7 @@ export default function PhaseHistoryScreen() {
           keyExtractor={(p) => p.id}
           contentContainerStyle={styles.list}
           ListHeaderComponent={
-            <Reveal distance={10}>
+            <Reveal bouncy distance={10}>
               <Text style={styles.title}>Vos Phases</Text>
               <Text style={styles.lede}>
                 Chaque Phase raconte une période — pas une liste de scans datés.

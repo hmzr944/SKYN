@@ -15,6 +15,7 @@ import { ease } from "@/src/animation/ease";
 import { SkynLockup } from "@/src/components/brand/SkynLockup";
 import { AnimatedPressable } from "@/src/components/ui/AnimatedPressable";
 import { Reveal } from "@/src/components/ui/Reveal";
+import { type Locale, useTranslation } from "@/src/i18n";
 import {
   applyPrefs,
   bumpTime,
@@ -50,6 +51,7 @@ const LEGAL = "https://hmzr944.github.io/SKYN/legal";
 export default function SettingsScreen() {
   const router = useRouter();
   const { user } = useAuth();
+  const { t, locale, setLocale } = useTranslation();
   const aUnCompte = !!user && user.user_id !== "guest";
   const [reminders, setReminders] = useState<ReminderPrefs>(DEFAULT_PREFS);
   const [data, setData] = useState<DataSummary | null>(null);
@@ -72,11 +74,7 @@ export default function SettingsScreen() {
   const onExport = async () => {
     const json = await exportAll();
     await Clipboard.setStringAsync(json);
-    Alert.alert(
-      "Données copiées",
-      "Vos analyses, votre journal et vos suivis sont dans le presse-papier, " +
-        "au format JSON. Collez-les où vous voulez les conserver.",
-    );
+    Alert.alert(t("settings.exportedTitle"), t("settings.exportedBody"));
   };
 
   /** Demande confirmation, ici comme sur le web ou Alert n'a qu'un bouton. */
@@ -86,21 +84,20 @@ export default function SettingsScreen() {
       return;
     }
     Alert.alert(titre, question, [
-      { text: "Annuler", style: "cancel" },
-      { text: "Supprimer", style: "destructive", onPress: faire },
+      { text: t("common.cancel"), style: "cancel" },
+      { text: t("common.delete"), style: "destructive", onPress: faire },
     ]);
   };
 
   const onDeleteAccount = () => {
     confirmer(
-      "Supprimer votre compte ?",
-      "Cela ferme votre compte et supprime vos analyses, ici et en ligne. " +
-        "C'est définitif : rien ne pourra être récupéré.",
+      t("settings.deleteAccountConfirmTitle"),
+      t("settings.deleteAccountConfirmBody"),
       async () => {
         const r = await deleteAccount(user?.user_id ?? null);
         await refresh();
         setReminders(DEFAULT_PREFS);
-        Alert.alert("Suppression", deletionMessage(r));
+        Alert.alert(t("settings.deletionTitle"), deletionMessage(r));
         router.replace("/auth");
       },
     );
@@ -109,16 +106,13 @@ export default function SettingsScreen() {
   const onErase = () => {
     // Une suppression definitive se confirme. Sur le web, Alert n'a pas de
     // boutons multiples : on passe par la confirmation native du navigateur.
-    const question =
-      "Cela supprime vos analyses, votre journal, vos suivis et vos réglages. " +
-      "C'est définitif et immédiat.";
     const done = async () => {
       const n = await eraseAll();
       await refresh();
       setReminders(DEFAULT_PREFS);
-      Alert.alert("Données supprimées", `${n} entrées effacées de cet appareil.`);
+      Alert.alert(t("settings.erasedTitle"), t("settings.erasedBody", { count: n }));
     };
-    confirmer("Tout supprimer ?", question, done);
+    confirmer(t("settings.eraseConfirmTitle"), t("settings.eraseConfirmBody"), done);
   };
 
   const version =
@@ -131,7 +125,7 @@ export default function SettingsScreen() {
           style={styles.back}
           scaleTo={0.9}
           hitSlop={8}
-          accessibilityLabel="Retour"
+          accessibilityLabel={t("common.back")}
           onPress={() => router.back()}
         >
           <Text style={styles.backText}>←</Text>
@@ -141,44 +135,62 @@ export default function SettingsScreen() {
       </View>
 
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-        <Text style={styles.title}>Réglages</Text>
+        <Reveal bouncy>
+          <Text style={styles.title}>{t("settings.title")}</Text>
+        </Reveal>
+
+        {/* ————— Langue ————— */}
+        <Reveal delay={20}>
+          <Text style={styles.section}>{t("settings.language")}</Text>
+          <View style={styles.card}>
+            <View style={styles.langRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.rowLabel}>{t("settings.language")}</Text>
+                <Text style={styles.rowHint}>{t("settings.languageHint")}</Text>
+              </View>
+              <LanguageSwitch locale={locale} onChange={setLocale} />
+            </View>
+          </View>
+        </Reveal>
 
         {/* ————— Rappels ————— */}
         <Reveal delay={40}>
-          <Text style={styles.section}>Rappels</Text>
+          <Text style={styles.section}>{t("settings.remindersSection")}</Text>
           {/* La raison se lit AVANT les controles.
               Elle etait sous la carte : on appuyait d'abord sur deux
               interrupteurs qui ne bougeaient pas, et on lisait l'explication
               seulement apres — quand on l'a lue. */}
           {!remindersSupported ? (
             <Text style={styles.note} testID="settings-reminders-note">
-              Les rappels demandent des notifications programmées, que le
-              navigateur ne sait pas faire. Ils s&apos;activeront dans
-              l&apos;application installée.
+              {t("settings.remindersUnsupported")}
             </Text>
           ) : null}
           <View style={styles.card}>
             <ReminderRow
-              label="Le matin"
-              hint="Nettoyant, soin, protection solaire"
+              label={t("settings.remindersMorning")}
+              hint={t("settings.remindersMorningHint")}
+              toggleLabel={t("settings.remindersToggleLabel", { label: t("settings.remindersMorning").toLowerCase() })}
+              bumpLabel={t("settings.bumpTimeLabel", { time: formatTime(reminders.amHour, reminders.amMinute) })}
               on={reminders.am}
               time={formatTime(reminders.amHour, reminders.amMinute)}
               onToggle={(v) => update({ ...reminders, am: v })}
               onBump={() => {
-                const t = bumpTime(reminders.amHour, reminders.amMinute);
-                update({ ...reminders, amHour: t.hour, amMinute: t.minute });
+                const nt = bumpTime(reminders.amHour, reminders.amMinute);
+                update({ ...reminders, amHour: nt.hour, amMinute: nt.minute });
               }}
             />
             <View style={styles.sep} />
             <ReminderRow
-              label="Le soir"
-              hint="Le moment qui compte le plus"
+              label={t("settings.remindersEvening")}
+              hint={t("settings.remindersEveningHint")}
+              toggleLabel={t("settings.remindersToggleLabel", { label: t("settings.remindersEvening").toLowerCase() })}
+              bumpLabel={t("settings.bumpTimeLabel", { time: formatTime(reminders.pmHour, reminders.pmMinute) })}
               on={reminders.pm}
               time={formatTime(reminders.pmHour, reminders.pmMinute)}
               onToggle={(v) => update({ ...reminders, pm: v })}
               onBump={() => {
-                const t = bumpTime(reminders.pmHour, reminders.pmMinute);
-                update({ ...reminders, pmHour: t.hour, pmMinute: t.minute });
+                const nt = bumpTime(reminders.pmHour, reminders.pmMinute);
+                update({ ...reminders, pmHour: nt.hour, pmMinute: nt.minute });
               }}
             />
           </View>
@@ -186,24 +198,24 @@ export default function SettingsScreen() {
 
         {/* ————— Données ————— */}
         <Reveal delay={80}>
-          <Text style={styles.section}>Vos données</Text>
+          <Text style={styles.section}>{t("settings.dataSection")}</Text>
           <View style={styles.card}>
             <View style={styles.statRow}>
-              <Stat value={data?.scans ?? 0} label="analyses" />
-              <Stat value={data?.joursDeJournal ?? 0} label="jours notés" />
-              <Stat value={data?.suivis ?? 0} label="suivis" />
-              <Stat value={data?.poidsKo ?? 0} label="Ko" />
+              <Stat value={data?.scans ?? 0} label={t("settings.statScans")} />
+              <Stat value={data?.joursDeJournal ?? 0} label={t("settings.statJournalDays")} />
+              <Stat value={data?.suivis ?? 0} label={t("settings.statFollowups")} />
+              <Stat value={data?.poidsKo ?? 0} label={t("settings.statKo")} />
             </View>
             <View style={styles.sep} />
             <Row
-              label="Exporter mes données"
-              hint="Copie tout au format JSON"
+              label={t("settings.exportData")}
+              hint={t("settings.exportHint")}
               onPress={onExport}
             />
             <View style={styles.sep} />
             <Row
-              label="Supprimer mes données"
-              hint="Définitif, immédiat, sur cet appareil"
+              label={t("settings.eraseData")}
+              hint={t("settings.eraseHint")}
               danger
               onPress={onErase}
             />
@@ -211,8 +223,8 @@ export default function SettingsScreen() {
               <>
                 <View style={styles.sep} />
                 <Row
-                  label="Supprimer mon compte"
-                  hint="Ferme le compte et efface aussi la copie en ligne"
+                  label={t("settings.deleteAccount")}
+                  hint={t("settings.deleteAccountHint")}
                   danger
                   onPress={onDeleteAccount}
                 />
@@ -223,131 +235,106 @@ export default function SettingsScreen() {
 
         {/* ————— Confidentialité et cadre légal ————— */}
         <Reveal delay={120}>
-          <Text style={styles.section}>Confidentialité et cadre légal</Text>
+          <Text style={styles.section}>{t("settings.legalSection")}</Text>
           <View style={styles.card}>
             <Fold
               id="donnees"
               open={open}
               setOpen={setOpen}
-              label="Où vont vos données"
-              body={
-                "Vos analyses, votre journal et vos suivis sont stockés sur cet appareil, " +
-                "pas sur nos serveurs.\n\n" +
-                "Vos photos partent au moteur d'analyse le temps du calcul, puis sont " +
-                "effacées de l'appareil. Elles ne sont ni conservées ni réutilisées pour " +
-                "entraîner quoi que ce soit.\n\n" +
-                "Si vous avez un compte, seuls votre identifiant et vos scores de synthèse " +
-                "sont sauvegardés pour vous les retrouver sur un autre appareil."
-              }
+              label={t("settings.foldDataTitle")}
+              body={t("settings.foldDataBody")}
             />
             <View style={styles.sep} />
             <Fold
               id="medical"
               open={open}
               setOpen={setOpen}
-              label="Avertissement médical"
-              body={
-                "SKYN est un outil de mesure et de suivi. Ce n'est pas un dispositif " +
-                "médical et il ne pose aucun diagnostic.\n\n" +
-                "Les lectures qu'il propose décrivent ce qui est fréquent ou inhabituel, " +
-                "jamais une certitude. Elles ne remplacent pas l'avis d'un dermatologue.\n\n" +
-                "Consultez sans attendre en cas de douleur, de gonflement, de lésions qui " +
-                "s'étendent, ou si une réaction apparaît après un nouveau produit."
-              }
+              label={t("settings.foldMedicalTitle")}
+              body={t("settings.foldMedicalBody")}
             />
             <View style={styles.sep} />
             <Fold
               id="mineurs"
               open={open}
               setOpen={setOpen}
-              label="Utilisation par un mineur"
-              body={
-                "L'acné touche surtout les adolescents, et l'app leur est destinée.\n\n" +
-                "En dessous de 15 ans, le consentement d'un parent est requis pour le " +
-                "traitement des données en France. Les données restant sur l'appareil, " +
-                "aucun profil n'est constitué de notre côté."
-              }
+              label={t("settings.foldMinorsTitle")}
+              body={t("settings.foldMinorsBody")}
             />
             <View style={styles.sep} />
             <Fold
               id="droits"
               open={open}
               setOpen={setOpen}
-              label="Vos droits"
-              body={
-                "Accès, rectification, effacement, portabilité : ces droits s'exercent " +
-                "directement depuis la section « Vos données » ci-dessus, sans avoir à " +
-                "nous écrire ni à nous croire sur parole.\n\n" +
-                "L'export vous rend l'intégralité de ce qui est conservé.\n\n" +
-                "« Supprimer mes données » efface ce qui est sur cet appareil. " +
-                "« Supprimer mon compte » ferme en plus le compte et efface la copie " +
-                "en ligne de vos scores. L'app vous dit ensuite ce qui a réellement " +
-                "été supprimé, y compris si quelque chose a échoué."
-              }
+              label={t("settings.foldRightsTitle")}
+              body={t("settings.foldRightsBody")}
             />
           </View>
         </Reveal>
 
         {/* ————— À propos ————— */}
         <Reveal delay={160}>
-          <Text style={styles.section}>À propos</Text>
+          <Text style={styles.section}>{t("settings.aboutSection")}</Text>
           <View style={styles.card}>
             <Fold
               id="moteur"
               open={open}
               setOpen={setOpen}
-              label="Comment l'analyse fonctionne"
-              body={
-                "Le moteur repère 468 points du visage, en déduit 13 zones, et écarte " +
-                "sourcils, cils, lèvres et narines du calcul.\n\n" +
-                "Il compte les lésions et les classe par signature colorimétrique, estime " +
-                "le type de peau par différence de brillance entre zone T et zone U, et le " +
-                "phototype par angle typologique.\n\n" +
-                "Les produits sont ensuite appariés à ce relevé, avec un niveau de preuve " +
-                "affiché pour chacun et un contrôle des incompatibilités d'actifs."
-              }
+              label={t("settings.foldEngineTitle")}
+              body={t("settings.foldEngineBody")}
             />
             <View style={styles.sep} />
             <Fold
               id="licences"
               open={open}
               setOpen={setOpen}
-              label="Licences"
-              body={
-                "Outfit, de Rodrigo Fuenzalida, sous SIL Open Font License 1.1.\n\n" +
-                "Fraunces, de Undercase Type, sous SIL Open Font License 1.1.\n\n" +
-                "MediaPipe (guidage du cadrage), de Google, licence Apache 2.0.\n\n" +
-                "OpenCV, SciPy et NumPy, licences BSD.\n\n" +
-                "React Native et Expo, licence MIT."
-              }
+              label={t("settings.foldLicensesTitle")}
+              body={t("settings.foldLicensesBody")}
             />
             <View style={styles.sep} />
             <Row
-              label="Documents légaux"
-              hint="Confidentialité, mentions légales, conditions"
+              label={t("settings.legalDocs")}
+              hint={t("settings.legalDocsHint")}
               onPress={() => {
                 Linking.openURL(`${LEGAL}/confidentialite.html`).catch(() => {
-                  Alert.alert(
-                    "Page indisponible",
-                    "Impossible d'ouvrir le navigateur. Les points essentiels " +
-                      "restent dépliables ci-dessus.",
-                  );
+                  Alert.alert(t("settings.legalUnavailableTitle"), t("settings.legalUnavailableBody"));
                 });
               }}
             />
             <View style={styles.sep} />
             <View style={styles.versionRow}>
-              <Text style={styles.rowLabel}>Version</Text>
+              <Text style={styles.rowLabel}>{t("settings.version")}</Text>
               <Text style={styles.version}>{version}</Text>
             </View>
           </View>
         </Reveal>
 
-        <Text style={styles.foot}>
-          SKYN n&apos;est pas un dispositif médical et ne remplace pas un avis dermatologique.
-        </Text>
+        <Text style={styles.foot}>{t("settings.footNote")}</Text>
       </ScrollView>
     </SafeAreaView>
+  );
+}
+
+function LanguageSwitch({ locale, onChange }: { locale: Locale; onChange: (l: Locale) => void }) {
+  const { t } = useTranslation();
+  return (
+    <View style={styles.langSwitch}>
+      {(["fr", "en"] as const).map((l) => (
+        <AnimatedPressable
+          key={l}
+          style={[styles.langOption, locale === l && styles.langOptionOn]}
+          scaleTo={0.94}
+          haptic="light"
+          accessibilityRole="button"
+          accessibilityState={{ selected: locale === l }}
+          accessibilityLabel={l === "fr" ? t("settings.french") : t("settings.english")}
+          onPress={() => onChange(l)}
+        >
+          <Text style={[styles.langOptionText, locale === l && styles.langOptionTextOn]}>
+            {l === "fr" ? "FR" : "EN"}
+          </Text>
+        </AnimatedPressable>
+      ))}
+    </View>
   );
 }
 
@@ -451,6 +438,8 @@ function Fold({
 function ReminderRow({
   label,
   hint,
+  toggleLabel,
+  bumpLabel,
   on,
   time,
   onToggle,
@@ -458,6 +447,8 @@ function ReminderRow({
 }: {
   label: string;
   hint: string;
+  toggleLabel: string;
+  bumpLabel: string;
   on: boolean;
   time: string;
   onToggle: (v: boolean) => void;
@@ -477,7 +468,7 @@ function ReminderRow({
         disabled={!on}
         scaleTo={0.94}
         onPress={onBump}
-        accessibilityLabel={`Décaler l'heure, actuellement ${time}`}
+        accessibilityLabel={bumpLabel}
       >
         <Text style={[styles.timeText, on && styles.timeTextOn]}>{time}</Text>
       </AnimatedPressable>
@@ -487,7 +478,7 @@ function ReminderRow({
         onValueChange={onToggle}
         trackColor={{ false: colors.fgFaint, true: colors.accent }}
         thumbColor={colors.bg}
-        accessibilityLabel={`Rappel ${label.toLowerCase()}`}
+        accessibilityLabel={toggleLabel}
       />
     </View>
   );
@@ -566,6 +557,34 @@ const styles = StyleSheet.create({
   timeChipOn: { borderColor: colors.accentLine },
   timeText: { ...type.bodySmall, color: colors.fgDim },
   timeTextOn: { color: colors.accent },
+
+  langRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.m,
+    paddingHorizontal: spacing.m,
+    paddingVertical: 14,
+    minHeight: 56,
+  },
+  langSwitch: {
+    flexDirection: "row",
+    backgroundColor: colors.surfaceSunken,
+    borderRadius: radius.pill,
+    padding: 3,
+    gap: 2,
+  },
+  langOption: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: radius.pill,
+    minWidth: 44,
+    minHeight: 36,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  langOptionOn: { backgroundColor: colors.accent },
+  langOptionText: { ...type.label, color: colors.fgDim },
+  langOptionTextOn: { color: colors.onAccent },
 
   versionRow: {
     flexDirection: "row",

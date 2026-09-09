@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, Dimensions, ActivityIndicator } from "react-native";
+import { View, Text, StyleSheet, ScrollView, useWindowDimensions, ActivityIndicator } from "react-native";
 import Animated, {
   Extrapolation,
   interpolate,
@@ -13,42 +13,30 @@ import * as Haptics from "expo-haptics";
 import Svg, { Polyline, Circle, Defs, LinearGradient as SvgLinearGradient, Stop, Polygon } from "react-native-svg";
 
 import { colors, fonts, spacing, radius, shadow } from "@/src/theme";
+import { useTranslation } from "@/src/i18n";
 import { syncPendingReports } from "@/src/services/api";
 import { listScans, type ScanSummary } from "@/src/services/scanStore";
 import { CONCERN_LABEL, SEVERITY_LABEL, SKIN_TYPE_LABEL } from "@/src/types/analysis";
 import { useAuth } from "@/src/contexts/AuthContext";
+import { AmbientBackground } from "@/src/components/ui/AmbientBackground";
 import { FadeIn } from "@/src/components/ui/FadeIn";
 import { Swap } from "@/src/components/ui/Swap";
-import { Stagger } from "@/src/components/ui/Reveal";
+import { Reveal, Stagger } from "@/src/components/ui/Reveal";
 import { AnimatedPressable } from "@/src/components/ui/AnimatedPressable";
 import { SkynLockup } from "@/src/components/brand/SkynLockup";
 import { SkynMarkStill } from "@/src/components/brand/SkynMark";
 import { AnimatedNumber } from "@/src/components/ui/AnimatedNumber";
 import { accord, useGenre } from "@/src/services/gender";
 
-const { width: SCREEN_W } = Dimensions.get("window");
-const CHART_W = SCREEN_W - spacing.xl * 2 - spacing.m * 2;
-const CHART_H = 110;
-
 /** Hauteur de la barre compacte : elle sort d'exactement sa propre hauteur. */
 const COMPACT_H = 48;
 
-const TIPS = [
-  "Hydratez votre peau matin et soir avec une crème adaptée à votre type de peau.",
-  "Appliquez une protection solaire SPF 30+ chaque matin, même par temps couvert.",
-  "Buvez au moins 1,5L d'eau par jour pour soutenir l'hydratation cutanée.",
-  "Évitez de toucher votre visage pour limiter le transfert de bactéries.",
-  "Démaquillez-vous systématiquement avant de dormir.",
-  "Privilégiez un nettoyant doux, sans sulfates agressifs.",
-];
-
-function ScoreChart({ scores }: { scores: number[] }) {
+function ScoreChart({ scores, width, height }: { scores: number[]; width: number; height: number }) {
+  const { t } = useTranslation();
   if (scores.length === 0) {
     return (
-      <View style={[styles.chartEmpty, { width: CHART_W, height: CHART_H }]}>
-        <Text style={styles.chartEmptyText}>
-          La courbe apparaîtra dès votre premier bilan.
-        </Text>
+      <View style={[styles.chartEmpty, { width, height }]}>
+        <Text style={styles.chartEmptyText}>{t("dashboard.chartEmpty")}</Text>
       </View>
     );
   }
@@ -57,8 +45,8 @@ function ScoreChart({ scores }: { scores: number[] }) {
   const range = Math.max(1, max - min);
   const padX = 4;
   const padY = 16;
-  const innerW = CHART_W - padX * 2;
-  const innerH = CHART_H - padY * 2;
+  const innerW = width - padX * 2;
+  const innerH = height - padY * 2;
   const step = scores.length > 1 ? innerW / (scores.length - 1) : 0;
   const linePoints = scores
     .map(
@@ -71,7 +59,7 @@ function ScoreChart({ scores }: { scores: number[] }) {
     linePoints +
     ` ${padX + (scores.length - 1) * step},${padY + innerH}`;
   return (
-    <Svg width={CHART_W} height={CHART_H}>
+    <Svg width={width} height={height}>
       <Defs>
         <SvgLinearGradient id="areaFill" x1="0" y1="0" x2="0" y2="1">
           <Stop offset="0" stopColor={colors.accent} stopOpacity={0.25} />
@@ -102,20 +90,26 @@ function ScoreChart({ scores }: { scores: number[] }) {
   );
 }
 
-const MONTHS = [
-  "janvier", "février", "mars", "avril", "mai", "juin",
-  "juillet", "août", "septembre", "octobre", "novembre", "décembre",
-];
-
-function todayLabel() {
-  const d = new Date();
-  return `${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+function todayLabel(locale: string) {
+  return new Date().toLocaleDateString(locale === "en" ? "en-US" : "fr-FR", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
 }
 
 export default function DashboardScreen() {
   const router = useRouter();
   const { user } = useAuth();
   const genre = useGenre();
+  const { t, locale } = useTranslation();
+  const { width: screenW } = useWindowDimensions();
+  const chartW = screenW - spacing.xl * 2 - spacing.m * 2;
+  const chartH = 110;
+  const TIPS = [
+    t("dashboard.tip1"), t("dashboard.tip2"), t("dashboard.tip3"),
+    t("dashboard.tip4"), t("dashboard.tip5"), t("dashboard.tip6"),
+  ];
   const [scans, setScans] = useState<ScanSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
@@ -124,7 +118,7 @@ export default function DashboardScreen() {
     try {
       const synced = await syncPendingReports();
       if (synced > 0) {
-        setSyncMsg(`${synced} bilan${synced > 1 ? "s" : ""} synchronisé${synced > 1 ? "s" : ""}.`);
+        setSyncMsg(t("dashboard.synced", { count: synced, s: synced > 1 ? "s" : "" }));
         setTimeout(() => setSyncMsg(null), 3000);
       }
       // Les scans locaux sont la source unique : le miroir serveur peut etre
@@ -135,7 +129,7 @@ export default function DashboardScreen() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -177,19 +171,21 @@ export default function DashboardScreen() {
   const previous = scans[1];
   const delta = last && previous ? last.global_score - previous.global_score : null;
   const chartScores = [...scans].reverse().slice(-4).map((r) => r.global_score);
-  const firstName = (user?.name || "Vous").split(" ")[0];
+  const firstName = (user?.name || t("common.you")).split(" ")[0];
+  const greeting = t("dashboard.greeting", { name: firstName });
   const dayIndex = new Date().getDate();
   const tips = [TIPS[dayIndex % TIPS.length], TIPS[(dayIndex + 1) % TIPS.length]];
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
+      <AmbientBackground />
       {/* La barre compacte descend quand la grande salutation est passee : le
           contexte ne disparait pas, il change de forme. C'est un objet qui se
           deplace en reponse au doigt, pas une apparition decidee a l'avance. */}
       <Animated.View style={[styles.compact, compactStyle]} pointerEvents="none">
         <SkynMarkStill size={20} />
         <Text style={styles.compactText} numberOfLines={1}>
-          Bonjour, {firstName}.
+          {greeting}
         </Text>
       </Animated.View>
 
@@ -206,12 +202,12 @@ export default function DashboardScreen() {
         <View style={styles.headerRow}>
           <SkynLockup size={24} still />
         </View>
-        <FadeIn distance={10}>
+        <Reveal bouncy distance={10}>
           <Text style={styles.greeting} numberOfLines={1}>
-            Bonjour, {firstName}.
+            {greeting}
           </Text>
-          <Text style={styles.date}>{todayLabel()}</Text>
-        </FadeIn>
+          <Text style={styles.date}>{todayLabel(locale)}</Text>
+        </Reveal>
 
         {syncMsg ? (
           <FadeIn distance={6}>
@@ -234,20 +230,18 @@ export default function DashboardScreen() {
             <View style={styles.heroCard}>
               <Text style={styles.heroTitle}>
                 {accord(genre, {
-                  f: "Prête pour votre\npremière analyse ?",
-                  m: "Prêt pour votre\npremière analyse ?",
-                  n: "On commence par\nune première analyse ?",
+                  f: t("dashboard.heroTitleF"),
+                  m: t("dashboard.heroTitleM"),
+                  n: t("dashboard.heroTitleN"),
                 })}
               </Text>
-              <Text style={styles.heroSubtitle}>
-                {"Découvrez l'état réel de votre peau."}
-              </Text>
+              <Text style={styles.heroSubtitle}>{t("dashboard.heroSubtitle")}</Text>
               <AnimatedPressable
                 testID="dashboard-start-btn"
                 style={styles.heroBtn}
                 onPress={goScan}
               >
-                <Text style={styles.heroBtnText}>{"Lancer l'analyse"}</Text>
+                <Text style={styles.heroBtnText}>{t("dashboard.startAnalysis")}</Text>
               </AnimatedPressable>
             </View>
           ) : (
@@ -258,8 +252,8 @@ export default function DashboardScreen() {
               onPress={() => router.push(`/scan-result?id=${last.id}`)}
             >
               <Text style={styles.scoreLabel}>
-                DERNIER SCAN ·{" "}
-                {new Date(last.date).toLocaleDateString("fr-FR", {
+                {t("dashboard.lastScan")} ·{" "}
+                {new Date(last.date).toLocaleDateString(locale === "en" ? "en-US" : "fr-FR", {
                   day: "2-digit",
                   month: "long",
                 })}
@@ -273,7 +267,7 @@ export default function DashboardScreen() {
                 />
                 <View style={styles.scoreUnit}>
                   <Text style={styles.scoreMax} numberOfLines={1}>
-                    / 100
+                    {t("dashboard.max100")}
                   </Text>
                   {delta !== null && delta !== 0 ? (
                     <Text
@@ -298,12 +292,12 @@ export default function DashboardScreen() {
                 </View>
                 <View style={styles.pill}>
                   <View style={styles.pillDot} />
-                  <Text style={styles.pillLabel}>Peau</Text>
+                  <Text style={styles.pillLabel}>{t("dashboard.skinLabel")}</Text>
                   <Text style={styles.pillValue}>{SKIN_TYPE_LABEL[last.skin_type]}</Text>
                 </View>
                 <View style={styles.pill}>
                   <View style={styles.pillDot} />
-                  <Text style={styles.pillLabel}>Lésions</Text>
+                  <Text style={styles.pillLabel}>{t("dashboard.lesionsLabel")}</Text>
                   <Text style={styles.pillValue}>{last.lesion_total}</Text>
                 </View>
               </Stagger>
@@ -320,9 +314,9 @@ export default function DashboardScreen() {
         {!loading && scans.length > 0 ? (
           <FadeIn delay={140}>
             <View style={styles.chartCard}>
-              <Text style={styles.chartLabel}>EVOLUTION SUR 4 SCANS</Text>
+              <Text style={styles.chartLabel}>{t("dashboard.chartTitle")}</Text>
               <View style={styles.chartWrap}>
-                <ScoreChart scores={chartScores} />
+                <ScoreChart scores={chartScores} width={chartW} height={chartH} />
               </View>
             </View>
           </FadeIn>
@@ -330,7 +324,7 @@ export default function DashboardScreen() {
 
         {/* Conseils du jour */}
         <FadeIn delay={200}>
-          <Text style={styles.sectionTitle}>Conseils du jour</Text>
+          <Text style={styles.sectionTitle}>{t("dashboard.tipsTitle")}</Text>
         </FadeIn>
         <FadeIn delay={240}>
           <ScrollView
@@ -354,7 +348,7 @@ export default function DashboardScreen() {
               style={styles.cta}
               onPress={goScan}
             >
-              <Text style={styles.ctaText}>Analyser ma peau</Text>
+              <Text style={styles.ctaText}>{t("dashboard.analyzeSkin")}</Text>
             </AnimatedPressable>
           </FadeIn>
         ) : null}
@@ -366,7 +360,7 @@ export default function DashboardScreen() {
             haptic={false}
             onPress={goSkinMap}
           >
-            <Text style={styles.guidedLinkText}>Découvrir votre carte de peau (bêta)</Text>
+            <Text style={styles.guidedLinkText}>{t("dashboard.discoverSkinMap")}</Text>
           </AnimatedPressable>
         </FadeIn>
       </Animated.ScrollView>

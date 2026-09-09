@@ -1,7 +1,7 @@
 import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
-import { Dimensions, StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -23,9 +23,6 @@ import { pushReportToSupabase } from "@/src/services/supabase";
 import { colors, motion, radius, spacing, type } from "@/src/theme";
 import type { FaceAnalysis } from "@/src/types/analysis";
 import { storage } from "@/src/utils/storage";
-
-const { width: SCREEN_W } = Dimensions.get("window");
-const FIELD = Math.min(SCREEN_W * 0.72, 300);
 
 /**
  * Un echec technique ne se montre pas tel quel.
@@ -53,6 +50,11 @@ const PHASES = [
 export default function AnalysisScreen() {
   const router = useRouter();
   const { user } = useAuth();
+  // useWindowDimensions plutot que Dimensions.get() au niveau module : reagit
+  // a une rotation ou un redimensionnement (web), ne fige pas la taille du
+  // champ a la largeur mesuree au premier chargement du bundle.
+  const { width: screenW } = useWindowDimensions();
+  const field = Math.min(screenW * 0.72, 300);
   const [phase, setPhase] = useState(0);
   const [imageB64, setImageB64] = useState<string | null>(null);
   const [analysis, setAnalysis] = useState<FaceAnalysis | null>(null);
@@ -243,7 +245,7 @@ export default function AnalysisScreen() {
 
       <View style={styles.stage}>
         <ScanField
-          size={FIELD}
+          size={field}
           phase={phase}
           imageB64={imageB64}
           detections={detections}

@@ -3,6 +3,7 @@ import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
 
+import { AmbientBackground } from "@/src/components/ui/AmbientBackground";
 import { AnimatedPressable } from "@/src/components/ui/AnimatedPressable";
 import { Reveal } from "@/src/components/ui/Reveal";
 import { SkynLockup } from "@/src/components/brand/SkynLockup";
@@ -54,6 +55,7 @@ export default function SkinMapScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={["top", "bottom"]}>
+      <AmbientBackground />
       <View style={styles.header}>
         <SkynLockup size={24} still />
         <Text style={styles.betaTag}>bêta</Text>

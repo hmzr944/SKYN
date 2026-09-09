@@ -82,7 +82,7 @@ export default function WhatChangedScreen() {
         <Text style={styles.betaTag}>bêta</Text>
       </View>
       <ScrollView contentContainerStyle={styles.scroll}>
-        <Reveal distance={12}>
+        <Reveal bouncy distance={12}>
           <Text style={styles.kicker}>DEPUIS LE {periodDateLabel(view.period.starts_at).toUpperCase()}</Text>
           <Text style={styles.title}>What Changed?</Text>
         </Reveal>

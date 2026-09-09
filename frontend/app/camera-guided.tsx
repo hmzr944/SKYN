@@ -2,7 +2,7 @@ import { CameraView, useCameraPermissions } from "expo-camera";
 import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Dimensions, Platform, StyleSheet, Text, View } from "react-native";
+import { Platform, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Ellipse, Path } from "react-native-svg";
 import Animated, {
@@ -43,8 +43,6 @@ import { storage } from "@/src/utils/storage";
  * pour verifier ensuite, sur de vrais scans, si les vues envoyees etaient
  * effectivement variees.
  */
-
-const { width: WIN_W, height: WIN_H } = Dimensions.get("window");
 
 const cleanB64 = (b?: string | null) =>
   b ? (b.startsWith("data:") ? b.split(",")[1] ?? "" : b) : "";
@@ -105,6 +103,10 @@ function CoverageZone({ cx, cy, rx, ry }: { cx: number; cy: number; rx: number; 
 export default function CameraGuidedScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  // useWindowDimensions plutot que Dimensions.get() au niveau module : cette
+  // derniere se figeait a la taille mesuree au premier chargement du bundle,
+  // pas a celle de l'ecran au moment ou cette camera s'ouvre reellement.
+  const { width: WIN_W, height: WIN_H } = useWindowDimensions();
   const [permission, requestPermission] = useCameraPermissions();
   const [ready, setReady] = useState(false);
   const cameraRef = useRef<CameraView>(null);
@@ -265,7 +267,7 @@ export default function CameraGuidedScreen() {
       };
     }
     return out;
-  }, [ovalScale]);
+  }, [ovalScale, WIN_W, WIN_H]);
 
   const zonesActives = ZONE_REVEAL_ORDER.slice(
     0, Math.round((count / MAX_FRAMES) * ZONE_REVEAL_ORDER.length),
