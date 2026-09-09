@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
 
@@ -8,6 +8,7 @@ import { Reveal, Stagger } from "@/src/components/ui/Reveal";
 import { SkynLockup } from "@/src/components/brand/SkynLockup";
 import { FaceZoneMap } from "@/src/components/analysis/FaceZoneMap";
 import { PhaseHalo } from "@/src/components/skinMemory/PhaseHalo";
+import { SettlingLoader } from "@/src/components/skinMemory/SettlingLoader";
 import { SkinChangePill, InsufficientPill } from "@/src/components/skinMemory/SkinChangePill";
 import { api } from "@/src/services/api";
 import { attributionSentence, changeTone, confidenceLabel, latestScore } from "@/src/services/skinMemory";
@@ -48,7 +49,7 @@ export default function WhatChangedScreen() {
     return (
       <SafeAreaView style={styles.container} edges={["top", "bottom"]}>
         <View style={styles.loadingWrap}>
-          <ActivityIndicator color={colors.accent} />
+          <SettlingLoader />
         </View>
       </SafeAreaView>
     );

@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
 
@@ -8,6 +8,7 @@ import { Reveal } from "@/src/components/ui/Reveal";
 import { SkynLockup } from "@/src/components/brand/SkynLockup";
 import { FaceZoneMap } from "@/src/components/analysis/FaceZoneMap";
 import { PhaseHalo } from "@/src/components/skinMemory/PhaseHalo";
+import { SettlingLoader } from "@/src/components/skinMemory/SettlingLoader";
 import { SkinChangePill, InsufficientPill } from "@/src/components/skinMemory/SkinChangePill";
 import { api } from "@/src/services/api";
 import { changeTone, latestScore, zoneConfidenceMap } from "@/src/services/skinMemory";
@@ -60,7 +61,7 @@ export default function SkinMapScreen() {
 
       {view === undefined ? (
         <View style={styles.loadingWrap}>
-          <ActivityIndicator color={colors.accent} />
+          <SettlingLoader />
         </View>
       ) : !view ? (
         <ScrollView contentContainerStyle={styles.scroll}>

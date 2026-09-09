@@ -1,11 +1,12 @@
 import { useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { AnimatedPressable } from "@/src/components/ui/AnimatedPressable";
 import { Reveal } from "@/src/components/ui/Reveal";
 import { SkynLockup } from "@/src/components/brand/SkynLockup";
+import { SettlingLoader } from "@/src/components/skinMemory/SettlingLoader";
 import { api } from "@/src/services/api";
 import { track } from "@/src/services/analytics";
 import { colors, radius, spacing, type } from "@/src/theme";
@@ -142,8 +143,7 @@ export default function AnalysisGuidedScreen() {
         <SkynLockup size={26} still />
       </View>
       <View style={styles.loadingWrap}>
-        <ActivityIndicator color={colors.accent} />
-        <Text style={styles.loadingText}>Mise à jour de votre carte…</Text>
+        <SettlingLoader label="SKYN stabilise votre mesure…" />
       </View>
     </SafeAreaView>
   );
@@ -159,7 +159,6 @@ const styles = StyleSheet.create({
     paddingTop: spacing.m,
   },
   loadingWrap: { flex: 1, alignItems: "center", justifyContent: "center", gap: spacing.m },
-  loadingText: { ...type.body, color: colors.fgMuted },
 
   failWrap: { flex: 1, paddingHorizontal: spacing.l, alignItems: "center", justifyContent: "center", gap: spacing.m },
   failTitle: { ...type.title, color: colors.fg, textAlign: "center" },

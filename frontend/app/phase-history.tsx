@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { ActivityIndicator, FlatList, StyleSheet, Text, View } from "react-native";
+import { FlatList, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
 import Svg, { Line } from "react-native-svg";
@@ -9,6 +9,7 @@ import { AnimatedPressable } from "@/src/components/ui/AnimatedPressable";
 import { Reveal, Stagger } from "@/src/components/ui/Reveal";
 import { SkynLockup } from "@/src/components/brand/SkynLockup";
 import { PhaseHalo } from "@/src/components/skinMemory/PhaseHalo";
+import { SettlingLoader } from "@/src/components/skinMemory/SettlingLoader";
 import { ease } from "@/src/animation/ease";
 import { api } from "@/src/services/api";
 import { colors, fonts, radius, spacing, type } from "@/src/theme";
@@ -88,7 +89,7 @@ export default function PhaseHistoryScreen() {
 
       {periods === null ? (
         <View style={styles.loadingWrap}>
-          <ActivityIndicator color={colors.accent} />
+          <SettlingLoader />
         </View>
       ) : periods.length === 0 ? (
         <View style={styles.emptyWrap}>
