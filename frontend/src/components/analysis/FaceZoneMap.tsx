@@ -157,16 +157,23 @@ interface Props {
 }
 
 /** Même formule de visibilité que le rendu principal — utilisée deux fois
- * (état courant, état précédent) donc isolée pour ne jamais diverger. */
+ * (état courant, état précédent) donc isolée pour ne jamais diverger.
+ *
+ * Une zone mesurée n'est JAMAIS a opacite 0 : sur une peau nette (le cas le
+ * plus frequent), le seuil precedent effaçait TOUTES les zones a la fois —
+ * la carte se retrouvait vide, sans rien qui prouve qu'un visage a ete
+ * mesure. PLANCHER garde une trace tenue, sous le seuil ou l'attention
+ * commence, pour que "rien a signaler" se lise comme une mesure propre et
+ * non comme une mesure absente. */
 function opaciteDeZone(score: number | undefined, isSel: boolean): { visible: boolean; opacity: number } {
   const measured = typeof score === "number";
-  const burden = measured ? 1 - (score as number) / 100 : 0;
+  if (!measured) return { visible: false, opacity: 0 };
+  const burden = 1 - (score as number) / 100;
   const SEUIL = 0.2;
-  const visible = measured && (burden > SEUIL || isSel);
-  const opacity = visible
-    ? Math.min(0.9, ((burden - SEUIL) / (1 - SEUIL)) * 0.85 + (isSel ? 0.22 : 0.06))
-    : 0;
-  return { visible, opacity };
+  const PLANCHER = 0.09;
+  const surcharge = Math.max(0, burden - SEUIL) / (1 - SEUIL);
+  const opacity = Math.min(0.9, PLANCHER + surcharge * 0.85 + (isSel ? 0.22 : 0));
+  return { visible: true, opacity };
 }
 
 const AnimatedEllipse = Animated.createAnimatedComponent(Ellipse);
