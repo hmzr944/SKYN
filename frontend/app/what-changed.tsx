@@ -93,7 +93,7 @@ export default function WhatChangedScreen() {
               <PhaseHalo size={72} tone={worstTone} />
             </Reveal>
             <Reveal delay={140}>
-              <InsufficientPill label="Première mesure — rien à comparer encore" />
+              <InsufficientPill label="Première mesure, rien à comparer encore" />
               <Text style={styles.note}>
                 Revenez après votre prochain scan pour voir ce qui a changé.
               </Text>
@@ -150,7 +150,7 @@ export default function WhatChangedScreen() {
             <Text style={styles.caveat}>
               {confidenceLabel(view.changes[0]?.confidence ?? "low")} · {view.scans.length} scan
               {view.scans.length > 1 ? "s" : ""} sur cette Phase.{" "}
-              {"Plusieurs facteurs peuvent contribuer à une évolution — SKYN observe, il ne diagnostique pas."}
+              {"Plusieurs facteurs peuvent contribuer à une évolution. SKYN observe, il ne diagnostique pas."}
             </Text>
           </Reveal>
         ) : null}

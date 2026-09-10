@@ -40,7 +40,6 @@ export default function RootLayout() {
     Outfit_600SemiBold: require("@/assets/fonts/Outfit-SemiBold.ttf"),
     Outfit_700Bold: require("@/assets/fonts/Outfit-Bold.ttf"),
   });
-
   useEffect(() => {
     if ((iconsLoaded || iconsError) && (fontsLoaded || fontsError)) {
       SplashScreen.hideAsync();

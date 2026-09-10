@@ -70,7 +70,7 @@ export default function SkinMapScreen() {
           <Reveal distance={12}>
             <Text style={styles.title}>Votre carte de peau</Text>
             <Text style={styles.lede}>
-              Pas un diagnostic du jour — une mesure qui se construit à chaque scan, pour
+              Pas un diagnostic du jour : une mesure qui se construit à chaque scan, pour
               comprendre comment votre peau évolue, pas seulement où elle en est.
             </Text>
           </Reveal>

@@ -18,17 +18,17 @@ import Animated, {
   useSharedValue,
   withDelay,
   withRepeat,
-  withSequence,
   withSpring,
   withTiming,
 } from "react-native-reanimated";
 
+import { WithSkiaWeb } from "@shopify/react-native-skia/lib/module/web";
+
 import { ease } from "@/src/animation/ease";
 import { colors, motion } from "@/src/theme";
-import { FACE_CLOSED, FACE_LENGTH, FACE_PATH, MARK_VIEWBOX } from "@/src/theme/mark";
+import { FACE_CLOSED, MARK_VIEWBOX } from "@/src/theme/mark";
 import type { FaceBox } from "@/src/types/analysis";
 
-const AnimatedPath = Animated.createAnimatedComponent(Path);
 const AnimatedRect = Animated.createAnimatedComponent(Rect);
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
@@ -120,12 +120,15 @@ function frame(box?: FaceBox | null) {
  * calcul tourne dessus se lit comme un bug, pas comme une analyse en cours.
  * Retire : le contour reste seul, avec un halo qui respire a la place — la
  * meme idee que PhaseHalo ailleurs dans l'app, pas une photo qui bouge.
+ *
+ * Le contour lui-meme (ScanContour.tsx) est passe sur Skia : l'ancien trace
+ * SVG partait de rien, se completait, puis revenait a zero en une frame pour
+ * reboucler — signale a deux reprises comme "un trait qui ne va jamais
+ * jusqu'au bout". Un degrade conique qui tourne sans fin n'a pas ce
+ * probleme : une rotation complete boucle par construction.
  */
 export function ScanField({ size, phase, detections = [], faceBox, style }: Props) {
   const f = frame(faceBox);
-  // Le contour se trace en boucle : le balayage n'est pas fini tant que
-  // l'analyse tourne. Il se fige a la derniere phase.
-  const sweep = useSharedValue(0);
   // La bande de lecture descend puis remonte.
   const band = useSharedValue(0);
   // La pose des reperes.
@@ -137,22 +140,11 @@ export function ScanField({ size, phase, detections = [], faceBox, style }: Prop
 
   useEffect(() => {
     if (reduced) {
-      // Le contenu reste, le mouvement s'arrete : le contour se pose entier,
-      // la bande et le halo ne bougent plus.
-      sweep.value = withTiming(1, { duration: motion.slow });
+      // Le contenu reste, le mouvement s'arrete.
       band.value = 0.5;
       glow.value = 0.5;
       return;
     }
-    sweep.value = withRepeat(
-      withSequence(
-        withTiming(1, { duration: motion.sweep, easing: ease.expoOut }),
-        withTiming(1, { duration: 260 }),
-        withTiming(0, { duration: 0 }),
-      ),
-      -1,
-      false,
-    );
     band.value = withRepeat(
       withTiming(1, { duration: 1600, easing: ease.sineInOut }),
       -1,
@@ -163,7 +155,7 @@ export function ScanField({ size, phase, detections = [], faceBox, style }: Prop
       -1,
       true,
     );
-  }, [reduced, sweep, band, glow]);
+  }, [reduced, band, glow]);
 
   useEffect(() => {
     // Les reperes se posent a la phase des motifs, pas avant.
@@ -172,10 +164,6 @@ export function ScanField({ size, phase, detections = [], faceBox, style }: Prop
       withSpring(phase >= 2 ? 1 : 0, motion.springDrop),
     );
   }, [phase, marks]);
-
-  const contourProps = useAnimatedProps(() => ({
-    strokeDashoffset: FACE_LENGTH * (1 - sweep.value),
-  }));
 
   // La bande traverse tout le repere, marges comprises.
   const bandProps = useAnimatedProps(() => ({
@@ -240,19 +228,24 @@ export function ScanField({ size, phase, detections = [], faceBox, style }: Prop
             <DetectionMark key={i} d={d} progress={marks} index={i} frame={f} />
           ))}
         </G>
-
-        {/* Le contour — le symbole lui-meme, a l'echelle du visage. */}
-        <AnimatedPath
-          d={FACE_PATH}
-          fill="none"
-          stroke={colors.accent}
-          strokeWidth={1}
-          strokeLinecap="round"
-          strokeDasharray={FACE_LENGTH}
-          animatedProps={contourProps}
-        />
-
       </Svg>
+
+      {/* Le contour, sur Skia — voir ScanContour.tsx. Calque a part, pose
+          par-dessus le SVG : Skia et react-native-svg peuvent cohabiter,
+          chacun fait ce qu'il fait le mieux.
+
+          Charge dynamiquement via WithSkiaWeb : sur le web, l'objet `Skia`
+          du module se construit une seule fois, a l'evaluation du fichier —
+          un import statique l'evaluerait avant que CanvasKit (WASM) soit
+          pret, et figerait un `Skia` casse pour le reste de la session. */}
+      <Animated.View style={{ position: "absolute", top: 0, left: 0 }}>
+        <WithSkiaWeb
+          getComponent={() => import("@/src/components/analysis/ScanContour")}
+          componentProps={{ size }}
+          opts={{ locateFile: () => "/skia/canvaskit.wasm" }}
+          fallback={null}
+        />
+      </Animated.View>
     </Animated.View>
   );
 }

@@ -13,13 +13,15 @@ import {
   type ViewStyle,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import Svg, { Defs, RadialGradient, Rect, Stop } from "react-native-svg";
+import Svg, { Defs, Path, RadialGradient, Rect, Stop } from "react-native-svg";
 import * as Haptics from "expo-haptics";
 import Animated, {
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
   withDelay,
+  withRepeat,
+  withSequence,
   withSpring,
   withTiming,
 } from "react-native-reanimated";
@@ -44,29 +46,25 @@ import { Progress } from "@/src/components/onboarding/Progress";
 import { Autorisation, type Etat } from "@/src/components/onboarding/Autorisation";
 
 /**
- * L'onboarding, en composition editoriale.
+ * L'onboarding, en composition editoriale — trois pages, pas plus.
  *
  * ────────────────────────────────────────────────────────────────────────
  * CE QUI CHANGE, ET POURQUOI.
  *
- * L'ancienne version centrait tout : surtitre centre, illustration centree,
- * titre centre, texte centre. Cinq ecrans batis sur le meme axe, avec pour
- * seule variation le dessin du milieu. C'est une mise en page de diaporama,
- * pas de magazine — l'oeil n'a nulle part ou entrer.
+ * Cinq pages, c'est un onboarding qu'on subit : une promesse dite quatre
+ * fois sous des angles a peine differents avant d'arriver au vif du sujet.
+ * Le parcours classique d'une appli mobile tient en trois temps — ce qu'elle
+ * fait, ce qu'elle demande et pourquoi, puis on commence — et c'est celui-la
+ * qui reste ici.
  *
- * Ici le texte est FERRE A GAUCHE et le titre occupe la place d'un titre de
- * couverture : trois ou quatre lignes, chasse serree, interlignage court. La
- * figure ronde deborde a droite, traversee d'un filet en orbite. La
- * progression remonte en haut, en segments, la ou on la lit avant de lire le
- * reste.
- *
- * Une page sur cinq rompt la regle : fond terre, matiere pleine page, titre en
- * creme empile mot par mot. Une seule — c'est ce qui en fait un evenement. Si
- * les cinq le faisaient, ce ne serait plus qu'un autre gabarit repete.
+ * Le texte est FERRE A GAUCHE et le titre occupe la place d'un titre de
+ * couverture : trois ou quatre lignes, chasse serree, interlignage court.
+ * Chaque page porte SA propre photo (voir PhotoCard.tsx et BentoGrid.tsx
+ * pour la premiere) — jamais un rond, jamais une matiere abstraite reprise
+ * d'une page a l'autre.
  * ────────────────────────────────────────────────────────────────────────
  */
 
-const PAGE_COUNT = 5;
 const CONTENT_MAX_W = 480;
 /** Duree du glissement d'une page a l'autre. */
 const GLISSE = 380;
@@ -81,8 +79,6 @@ const JOY_PHOTO = require("@/assets/onboarding/joy.jpg");
 const HAND_PHOTO = require("@/assets/onboarding/hand.jpg");
 /** Une photo dediee par page suivante — voir LISEZ-MOI.md. */
 const PRIVACY_PHOTO = require("@/assets/onboarding/privacy.jpg");
-const CAMERA_PHOTO = require("@/assets/onboarding/camera.jpg");
-const REMINDERS_PHOTO = require("@/assets/onboarding/reminders.jpg");
 const START_PHOTO = require("@/assets/onboarding/start.jpg");
 
 type Slide = {
@@ -93,31 +89,27 @@ type Slide = {
   /** La photo dediee de cette page — chaque page delivre son message avec
    * sa propre image, jamais une matiere abstraite reprise partout. */
   photo: ImageSourcePropType;
-  /** Cette page demande une autorisation au systeme. */
-  demande?: "camera" | "rappels";
+  /** Les autorisations demandees sur cette page — jamais plus d'une page
+   * dediee a "demander la permission de X", trop pour trois ecrans. */
+  demandes?: readonly ("camera" | "rappels")[];
 };
 
 /**
  * ────────────────────────────────────────────────────────────────────────
- * L'ORDRE EST LE SUJET DE CET ECRAN.
+ * TROIS PAGES : CE QUE L'APP FAIT, CE QU'ELLE DEMANDE, ON COMMENCE.
  *
- * Il y avait quatre pages de discours puis une page de compte, et les
- * autorisations tombaient plus tard, seules, sur un ecran noir : la camera au
- * moment d'ouvrir le scan, les notifications jamais. On disait donc quatre
- * fois pourquoi l'app est bien, et zero fois ce qu'elle allait demander.
- *
- * Maintenant : une presentation, la vie privee, puis les deux demandes, puis
- * le compte. La vie privee vient AVANT les demandes — c'est l'argument qui les
- * rend acceptables, et le presenter apres ne sert plus a rien.
- *
- * Les deux pages de discours en trop ont fusionne dans la premiere. Une
- * promesse repetee sous trois angles n'est pas trois fois plus convaincante ;
- * elle repousse juste trois fois le moment ou l'app commence.
+ * Il y avait cinq pages : la promesse, la vie privee seule, la camera seule,
+ * les rappels seuls, puis le compte. Quatre temps de discours pour un seul
+ * message ("faites-nous confiance") repete sous des angles a peine
+ * differents. Le parcours classique d'une appli mobile tient en trois temps,
+ * et les deux demandes systeme (camera, rappels) n'ont pas besoin chacune de
+ * leur page : la vie privee est l'argument qui les rend acceptables, alors
+ * elles vivent ensemble sur la deuxieme page, pas seules sur un ecran vide.
  * ────────────────────────────────────────────────────────────────────────
  */
 const SLIDES: readonly Slide[] = [
   {
-    kicker: "01 · LA PROMESSE",
+    kicker: "LA PROMESSE",
     title: "Votre peau,\ndécryptée.",
     helper:
       "Une photo, quelques secondes, et vous savez où en est votre peau : lésions comptées et classées, zone par zone, avec une routine calibrée sur vos priorités.",
@@ -125,33 +117,16 @@ const SLIDES: readonly Slide[] = [
     variante: 0,
   },
   {
-    kicker: "02 · CONFIDENTIEL",
+    kicker: "VOTRE CONFIANCE",
     title: "Vos données\nvous appartiennent.",
     helper:
-      "Vos photos partent au moteur le temps du calcul, puis disparaissent. Vos analyses restent sur votre téléphone. Rien n'est revendu, rien n'entraîne quoi que ce soit.",
+      "Vos photos partent au moteur le temps du calcul, puis disparaissent. Vos analyses restent sur votre téléphone. Rien n'est revendu, rien n'entraîne quoi que ce soit. Voilà ce qu'il nous faut pour ça :",
+    demandes: ["camera", "rappels"],
     photo: PRIVACY_PHOTO,
     variante: 1,
   },
   {
-    kicker: "03 · L'APPAREIL PHOTO",
-    title: "Il nous faut\nvotre visage.",
-    helper:
-      "C'est la seule chose que SKYN regarde. Vous cadrez, l'app suit vos traits en direct et déclenche quand la pose est bonne.",
-    demande: "camera",
-    photo: CAMERA_PHOTO,
-    variante: 2,
-  },
-  {
-    kicker: "04 · LES RAPPELS",
-    title: "On vous fait\nsigne ?",
-    helper:
-      "Deux rappels par jour, matin et soir. Une routine tenue trois semaines vaut mieux qu'une routine parfaite tenue trois jours.",
-    demande: "rappels",
-    photo: REMINDERS_PHOTO,
-    variante: 3,
-  },
-  {
-    kicker: "05 · À VOUS DE JOUER",
+    kicker: "À VOUS DE JOUER",
     // L'onboarding passe AVANT la question du genre : impossible de s'accorder
     // ici. La tournure evite donc l'accord plutot que de choisir au hasard.
     title: "On découvre\nvotre peau ?",
@@ -160,6 +135,8 @@ const SLIDES: readonly Slide[] = [
     variante: 0,
   },
 ] as const;
+
+const PAGE_COUNT = SLIDES.length;
 
 /**
  * Une ligne de titre qui monte a sa place.
@@ -409,9 +386,9 @@ export default function OnboardingScreen() {
                           <Text style={styles.helper}>{slide.helper}</Text>
                         </Ligne>
 
-                        {slide.demande ? (
-                          <Ligne index={3} actif={active} style={styles.bloc}>
-                            {slide.demande === "camera" ? (
+                        {slide.demandes?.map((d, k) => (
+                          <Ligne key={d} index={3 + k} actif={active} style={styles.bloc}>
+                            {d === "camera" ? (
                               <Autorisation
                                 testID="onboarding-perm-camera"
                                 etat={etatCamera}
@@ -438,7 +415,7 @@ export default function OnboardingScreen() {
                               />
                             )}
                           </Ligne>
-                        ) : null}
+                        ))}
 
                         {i === PAGE_COUNT - 1 ? (
                           <Ligne index={3} actif={active} style={styles.bloc}>
@@ -515,19 +492,7 @@ export default function OnboardingScreen() {
         >
           <View style={styles.footerSlot}>
             {page > 0 ? (
-              <TouchableOpacity
-                testID="onboarding-back-btn"
-                onPress={() => goToPage(page - 1)}
-                style={styles.navBtn}
-                activeOpacity={0.6}
-                hitSlop={10}
-                accessibilityRole="button"
-                accessibilityLabel="Étape précédente"
-              >
-                <Text style={[styles.navText, sombre && styles.onDarkMuted]} numberOfLines={1}>
-                  ← Retour
-                </Text>
-              </TouchableOpacity>
+              <NavArrow direction="left" onPress={() => goToPage(page - 1)} />
             ) : (
               <SkynLockup size={20} still onDark={sombre} />
             )}
@@ -535,19 +500,7 @@ export default function OnboardingScreen() {
 
           <View style={[styles.footerSlot, styles.footerSlotEnd]}>
             {!isLast ? (
-              <TouchableOpacity
-                testID="onboarding-next-btn"
-                onPress={() => goToPage(page + 1)}
-                style={styles.navBtn}
-                activeOpacity={0.6}
-                hitSlop={10}
-                accessibilityRole="button"
-                accessibilityLabel="Étape suivante"
-              >
-                <Text style={[styles.navNext, sombre && styles.onDarkNext]} numberOfLines={1}>
-                  Suivant →
-                </Text>
-              </TouchableOpacity>
+              <NavArrow direction="right" onPress={() => goToPage(page + 1)} />
             ) : null}
           </View>
         </View>
@@ -591,6 +544,68 @@ function FondChaud({ actif }: { actif: boolean }) {
         <Rect x={0} y={0} width={100} height={200} fill="url(#fond-chaud)" />
       </Svg>
     </Animated.View>
+  );
+}
+
+/**
+ * La fleche de navigation — plus de "Suivant"/"Retour" en toutes lettres.
+ *
+ * Une fleche seule dit la meme chose plus vite, et laisse la page respirer.
+ * Elle nudge doucement vers son sens en continu — une invitation discrete a
+ * appuyer, pas juste un bouton statique qui attend — et repond a l'appui par
+ * le meme ressort que le reste de l'app (AnimatedPressable).
+ */
+function NavArrow({
+  direction,
+  onPress,
+}: {
+  direction: "left" | "right";
+  onPress: () => void;
+}) {
+  const reduced = useReducedMotion();
+  const nudge = useSharedValue(0);
+
+  useEffect(() => {
+    if (reduced) return;
+    nudge.value = withRepeat(
+      withSequence(
+        withDelay(400, withTiming(1, { duration: 700, easing: ease.sineInOut })),
+        withTiming(0, { duration: 700, easing: ease.sineInOut }),
+      ),
+      -1,
+      true,
+    );
+  }, [reduced, nudge]);
+
+  const sign = direction === "right" ? 1 : -1;
+  const nudgeStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: sign * nudge.value * 4 }],
+  }));
+
+  const d = direction === "right" ? "M9,5 L16,12 L9,19" : "M15,5 L8,12 L15,19";
+
+  return (
+    <AnimatedPressable
+      testID={direction === "right" ? "onboarding-next-btn" : "onboarding-back-btn"}
+      onPress={onPress}
+      scaleTo={0.86}
+      haptic="light"
+      style={styles.navArrow}
+      accessibilityLabel={direction === "right" ? "Étape suivante" : "Étape précédente"}
+    >
+      <Animated.View style={nudgeStyle}>
+        <Svg width={22} height={22} viewBox="0 0 24 24">
+          <Path
+            d={d}
+            fill="none"
+            stroke={colors.fg}
+            strokeWidth={2.4}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </Svg>
+      </Animated.View>
+    </AnimatedPressable>
   );
 }
 
@@ -732,17 +747,12 @@ const styles = StyleSheet.create({
   },
   footerSlot: { flex: 1, justifyContent: "center" },
   footerSlotEnd: { alignItems: "flex-end" },
-  navBtn: { minHeight: 44, justifyContent: "center", paddingVertical: 10 },
-  navText: {
-    fontFamily: fonts.body,
-    color: colors.fgMuted,
-    fontSize: 14,
-    letterSpacing: 0.3,
-  },
-  navNext: {
-    fontFamily: fonts.headingMedium,
-    color: colors.fg,
-    fontSize: 14,
-    letterSpacing: 0.3,
+  navArrow: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.surfaceSunken,
   },
 });

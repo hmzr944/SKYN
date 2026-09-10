@@ -105,7 +105,7 @@ export default function PhaseHistoryScreen() {
             <Reveal bouncy distance={10}>
               <Text style={styles.title}>Vos Phases</Text>
               <Text style={styles.lede}>
-                Chaque Phase raconte une période — pas une liste de scans datés.
+                Chaque Phase raconte une période, pas une liste de scans datés.
               </Text>
             </Reveal>
           }
