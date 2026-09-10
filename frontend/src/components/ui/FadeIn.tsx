@@ -9,6 +9,7 @@ type Props = {
   delay?: number;
   duration?: number;
   distance?: number;
+  bouncy?: boolean;
   style?: StyleProp<ViewStyle>;
 };
 
@@ -17,11 +18,12 @@ type Props = {
  *
  * Ce n'est plus qu'un alias de Reveal — garder deux implementations menait a
  * deux rythmes differents dans la meme app, et seule l'une des deux respectait
- * "Reduire les animations".
+ * "Reduire les animations". Alias fidele : chaque prop de Reveal doit rester
+ * disponible ici, sinon ce n'en est plus vraiment un.
  */
-export function FadeIn({ children, delay = 0, duration = motion.slow, distance = 14, style }: Props) {
+export function FadeIn({ children, delay = 0, duration = motion.slow, distance = 14, bouncy = false, style }: Props) {
   return (
-    <Reveal delay={delay} duration={duration} distance={distance} from="up" style={style}>
+    <Reveal delay={delay} duration={duration} distance={distance} from="up" bouncy={bouncy} style={style}>
       {children}
     </Reveal>
   );

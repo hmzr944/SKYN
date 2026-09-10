@@ -4,29 +4,29 @@ import {
   Text,
   StyleSheet,
   ScrollView,
-  ActivityIndicator,
   Pressable,
   Linking,
   useWindowDimensions,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import Svg, { Circle } from "react-native-svg";
+import Svg, { Circle, Defs, RadialGradient, Stop } from "react-native-svg";
 import Animated, {
   withDelay,
   useSharedValue,
   useAnimatedProps,
-  withTiming,
-  withRepeat,
   useAnimatedStyle,
+  withTiming,
 } from "react-native-reanimated";
 import * as Haptics from "expo-haptics";
 
 import { ease } from "@/src/animation/ease";
 import { colors, fonts, spacing, radius, shadow } from "@/src/theme";
 import { getScan } from "@/src/services/scanStore";
+import { AmbientBackground } from "@/src/components/ui/AmbientBackground";
 import { FadeIn } from "@/src/components/ui/FadeIn";
 import { AnimatedPressable } from "@/src/components/ui/AnimatedPressable";
+import { SettlingLoader } from "@/src/components/skinMemory/SettlingLoader";
 import { FaceZoneMap, ZoneLegend, scoreColor } from "@/src/components/analysis/FaceZoneMap";
 import { ProductVisual } from "@/src/components/ProductVisual";
 import {
@@ -56,6 +56,7 @@ function ScoreRing({ value, size = 168 }: { value: number; size?: number }) {
   const circ = 2 * Math.PI * r;
   const p = useSharedValue(0);
   const [shown, setShown] = useState(0);
+  const tone = scoreColor(value);
 
   useEffect(() => {
     p.value = withTiming(value / 100, { duration: 1500, easing: ease.out });
@@ -73,8 +74,27 @@ function ScoreRing({ value, size = 168 }: { value: number; size?: number }) {
     strokeDashoffset: circ * (1 - p.value),
   }));
 
+  // Le glow reprend la MEME teinte que l'anneau (scoreColor) : la couleur
+  // qui porte l'information s'etend dans l'espace autour d'elle, au lieu
+  // d'un anneau isole sur un fond plat — sans jamais sortir de l'echelle
+  // corail -> terre deja etablie ailleurs (FaceZoneMap, ConcernRow).
+  const glowSize = size * 1.8;
   return (
     <View style={{ width: size, height: size, alignItems: "center", justifyContent: "center" }}>
+      <Svg
+        width={glowSize}
+        height={glowSize}
+        style={{ position: "absolute", top: -(glowSize - size) / 2, left: -(glowSize - size) / 2 }}
+        pointerEvents="none"
+      >
+        <Defs>
+          <RadialGradient id="scoreGlow" cx="50%" cy="50%" r="50%">
+            <Stop offset="0" stopColor={tone} stopOpacity={0.16} />
+            <Stop offset="1" stopColor={tone} stopOpacity={0} />
+          </RadialGradient>
+        </Defs>
+        <Circle cx={glowSize / 2} cy={glowSize / 2} r={glowSize / 2} fill="url(#scoreGlow)" />
+      </Svg>
       <Svg width={size} height={size} style={{ transform: [{ rotate: "-90deg" }] }}>
         <Circle
           cx={size / 2} cy={size / 2} r={r}
@@ -82,7 +102,7 @@ function ScoreRing({ value, size = 168 }: { value: number; size?: number }) {
         />
         <AnimatedCircle
           cx={size / 2} cy={size / 2} r={r}
-          stroke={scoreColor(value)} strokeWidth={stroke} fill="none"
+          stroke={tone} strokeWidth={stroke} fill="none"
           strokeLinecap="round" strokeDasharray={circ}
           animatedProps={animProps}
         />
@@ -239,19 +259,6 @@ export default function ScanResultScreen() {
   const [moment, setMoment] = useState<"am" | "pm">("am");
   const [zone, setZone] = useState<ZoneKey | null>(null);
 
-  const pulse = useSharedValue(0);
-  useEffect(() => {
-    pulse.value = withRepeat(
-      withTiming(1, { duration: 1400, easing: ease.sineInOut }),
-      -1,
-      true,
-    );
-  }, [pulse]);
-  const pulseStyle = useAnimatedStyle(() => ({
-    opacity: 0.45 + pulse.value * 0.55,
-    transform: [{ scale: 0.97 + pulse.value * 0.06 }],
-  }));
-
   // L'ecran ne calcule plus rien : l'analyse a ete faite et enregistree par
   // l'ecran d'analyse. On relit un scan par son identifiant, ce qui rend un
   // resultat consultable des semaines plus tard depuis l'historique.
@@ -285,13 +292,11 @@ export default function ScanResultScreen() {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.loadingWrap}>
-          <Animated.View style={[styles.loadingOrb, pulseStyle]} />
-          <Text style={styles.loadingTitle}>Analyse en cours</Text>
+          <SettlingLoader label="Analyse en cours" />
           <Text style={styles.loadingHelper}>
             Segmentation du visage en 13 zones, détection des lésions et calcul
             de votre empreinte cutanée.
           </Text>
-          <ActivityIndicator color={colors.accent} style={{ marginTop: spacing.l }} />
         </View>
       </SafeAreaView>
     );
@@ -321,6 +326,7 @@ export default function ScanResultScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
+      <AmbientBackground />
       <ScrollView
         contentContainerStyle={{ paddingBottom: spacing.xxxl }}
         showsVerticalScrollIndicator={false}
@@ -336,7 +342,7 @@ export default function ScanResultScreen() {
         </View>
 
         {/* Score + diagnostic */}
-        <FadeIn>
+        <FadeIn bouncy>
           <View style={styles.hero}>
             <ScoreRing value={data.global_score} />
             <Text style={styles.diagnosis}>{data.diagnosis}</Text>
@@ -530,13 +536,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: spacing.xl,
-  },
-  loadingOrb: {
-    width: 88,
-    height: 88,
-    borderRadius: 44,
-    backgroundColor: colors.accentSoft,
-    marginBottom: spacing.l,
   },
   loadingTitle: {
     fontFamily: fonts.display,

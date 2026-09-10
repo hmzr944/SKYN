@@ -8,6 +8,7 @@ import Svg, { Defs, Mask, Path, Rect } from "react-native-svg";
 import Animated, {
   useAnimatedProps,
   useSharedValue,
+  withSequence,
   withTiming,
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -170,6 +171,11 @@ export default function CameraScreen() {
   const faceK = useSharedValue(0);
   const ringR = useSharedValue(0);
   const ringP = useSharedValue(0);
+  /** Pulsation du contour a chaque angle capture — la confirmation visuelle
+   * qui manquait au haptique seul : un trait qui epaissit puis se relache,
+   * dans le meme corail que le reste (colors.accent), jamais une couleur
+   * "succes" separee. */
+  const flash = useSharedValue(0);
   /** Derniere position lissee, cote JS : la detection saute, l'affichage non. */
   const smoothRef = useRef<{ x: number; y: number; k: number } | null>(null);
   const lastSeenRef = useRef(0);
@@ -331,6 +337,10 @@ export default function CameraScreen() {
           coveredRef.current = next;
           setCovered(next);
           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          flash.value = withSequence(
+            withTiming(1, { duration: 110 }),
+            withTiming(0, { duration: 520 }),
+          );
           if (next.length >= ANGLES.length) await finish(capturesRef.current);
         }
       } catch {
@@ -340,7 +350,7 @@ export default function CameraScreen() {
         holdSinceRef.current = null;
       }
     },
-    [finish],
+    [finish, flash],
   );
 
   /* ————— guidage live ————— */
@@ -504,6 +514,13 @@ export default function CameraScreen() {
   const facePathProps = useAnimatedProps(() => ({
     d: facePathAt(faceX.value, faceY.value, faceK.value),
   }));
+  // Meme trace que facePathProps, avec l'epaisseur du trait en plus : un
+  // Path ne prend qu'un seul `animatedProps`, donc le contour visible (pas
+  // le masque) a besoin de sa propre version qui porte les deux valeurs.
+  const contourProps = useAnimatedProps(() => ({
+    d: facePathAt(faceX.value, faceY.value, faceK.value),
+    strokeWidth: 2 + flash.value * 2.5,
+  }));
 
   return (
     /* ────────────────────────────────────────────────────────────────────
@@ -592,8 +609,7 @@ export default function CameraScreen() {
             <AnimatedPath
               fill="none"
               stroke={colors.accent}
-              strokeWidth={2}
-              animatedProps={facePathProps}
+              animatedProps={contourProps}
             />
 
             {/* La couronne vit dans le repere de l'ecran, pas dans celui du
