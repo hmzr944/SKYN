@@ -15,7 +15,10 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import Svg, { Defs, Path, RadialGradient, Rect, Stop } from "react-native-svg";
 import * as Haptics from "expo-haptics";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, {
+  runOnJS,
+  SharedValue,
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
@@ -31,7 +34,7 @@ import { useRouter } from "expo-router";
 
 import { ease } from "@/src/animation/ease";
 import { childDelay, spring, stagger } from "@/src/animation/motion";
-import { colors, fonts, spacing, radius, shadow } from "@/src/theme";
+import { colors, fonts, spacing, radius, shadow, motion } from "@/src/theme";
 import { onboardingPalette } from "@/src/theme/onboardingPalette";
 import { remindersSupported, requestPermission } from "@/src/services/reminders";
 import { storage } from "@/src/utils/storage";
@@ -180,6 +183,67 @@ function Ligne({
   return <Animated.View style={[style, aStyle]}>{children}</Animated.View>;
 }
 
+/**
+ * L'eloignement d'une page pendant le glissement.
+ *
+ * Le rail translate deja chaque page d'un ecran entier — ca deplace, ca ne
+ * donne pas de profondeur. Ici, une page qui s'eloigne du doigt perd un peu
+ * de presence (opacite, echelle) : le glissement devient un fondu-enchaine
+ * plutot qu'une diapositive qui claque d'un bord a l'autre.
+ */
+function PageDepth({
+  index,
+  scrollX,
+  screenW,
+  reduced,
+  style,
+  children,
+}: {
+  index: number;
+  scrollX: SharedValue<number>;
+  screenW: number;
+  reduced: boolean;
+  style?: StyleProp<ViewStyle>;
+  children: React.ReactNode;
+}) {
+  const aStyle = useAnimatedStyle(() => {
+    if (reduced) return { opacity: 1, transform: [{ scale: 1 }] };
+    const p = Math.min(1, Math.abs(scrollX.value / screenW - index));
+    return {
+      opacity: 1 - p * 0.6,
+      transform: [{ scale: 1 - p * 0.08 }],
+    };
+  });
+  return <Animated.View style={[style, aStyle]}>{children}</Animated.View>;
+}
+
+/**
+ * La photo derive un peu moins vite que le reste de la page pendant le
+ * glissement : c'est ce decalage relatif, pas l'opacite, qui se lit comme
+ * de la profondeur — le meme principe qu'un fond de parallaxe, applique ici
+ * a une seule couche plutot qu'a un decor entier.
+ */
+function PhotoParallax({
+  index,
+  scrollX,
+  screenW,
+  reduced,
+  children,
+}: {
+  index: number;
+  scrollX: SharedValue<number>;
+  screenW: number;
+  reduced: boolean;
+  children: React.ReactNode;
+}) {
+  const aStyle = useAnimatedStyle(() => {
+    if (reduced) return { transform: [{ translateX: 0 }] };
+    const p = scrollX.value / screenW - index;
+    return { transform: [{ translateX: p * -34 }] };
+  });
+  return <Animated.View style={aStyle}>{children}</Animated.View>;
+}
+
 export default function OnboardingScreen() {
   const { width: SCREEN_W, height: SCREEN_H } = useWindowDimensions();
   const [page, setPage] = useState(0);
@@ -244,15 +308,69 @@ export default function OnboardingScreen() {
     transform: [{ translateX: -scrollX.value }],
   }));
 
+  const posePage = (p: number) =>
+    reduced
+      ? withTiming(p * SCREEN_W, { duration: 0 })
+      : withSpring(p * SCREEN_W, motion.spring);
+
   const goToPage = (p: number) => {
     if (p < 0 || p > PAGE_COUNT - 1) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    scrollX.value = withTiming(p * SCREEN_W, {
-      duration: reduced ? 0 : GLISSE,
-      easing: ease.out,
-    });
+    scrollX.value = posePage(p);
     setPage(p);
   };
+
+  /**
+   * ────────────────────────────────────────────────────────────────────
+   * LE GLISSEMENT AU DOIGT.
+   *
+   * Avant, la seule facon de tourner une page etait la fleche : un pager
+   * qu'on ne peut PAS glisser au doigt se lit comme une diapositive, pas
+   * comme un carrousel. `scrollX` suit maintenant le geste image par image
+   * (pas de temps mort entre le doigt et le rail), avec une resistance
+   * elastique aux deux bouts — ceder un peu plutot que buter net dit "il
+   * n'y a rien de plus" sans avoir besoin d'un mot pour le dire.
+   *
+   * `activeOffsetX`/`failOffsetY` laissent le defilement vertical des pages
+   * courtes gagner sur un glissement essentiellement vertical, et le
+   * carrousel gagner sur un glissement essentiellement horizontal — sans ce
+   * partage, l'un des deux devient impossible a declencher.
+   */
+  const dragOrigin = useSharedValue(0);
+
+  const settle = (p: number) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setPage(p);
+  };
+
+  const panGesture = Gesture.Pan()
+    .activeOffsetX([-14, 14])
+    .failOffsetY([-10, 10])
+    .onStart(() => {
+      dragOrigin.value = scrollX.value;
+    })
+    .onUpdate((e) => {
+      const min = 0;
+      const max = (PAGE_COUNT - 1) * SCREEN_W;
+      let next = dragOrigin.value - e.translationX;
+      if (next < min) next = min + (next - min) * 0.32;
+      else if (next > max) next = max + (next - max) * 0.32;
+      scrollX.value = next;
+    })
+    .onEnd((e) => {
+      const current = scrollX.value / SCREEN_W;
+      // Une pichenette franche fait toujours avancer d'une page entiere,
+      // meme a peine deplacee — c'est le geste qui compte, pas la distance.
+      const flick = Math.abs(e.velocityX) > 480;
+      let target = flick
+        ? e.velocityX < 0
+          ? Math.ceil(current)
+          : Math.floor(current)
+        : Math.round(current);
+      target = Math.min(Math.max(target, 0), PAGE_COUNT - 1);
+      scrollX.value = posePage(target);
+      runOnJS(settle)(target);
+    });
 
   // La largeur change avec la fenetre : sans ce recalage, une rotation ou un
   // redimensionnement laisserait le rail entre deux pages.
@@ -299,6 +417,7 @@ export default function OnboardingScreen() {
 
         {/* Pages */}
         <View style={styles.viewport}>
+          <GestureDetector gesture={panGesture}>
           <Animated.View
             style={[styles.rail, { width: SCREEN_W * PAGE_COUNT }, railStyle]}
           >
@@ -320,7 +439,11 @@ export default function OnboardingScreen() {
                   importantForAccessibility={active ? "auto" : "no-hide-descendants"}
                   aria-hidden={!active}
                 >
-                  <View
+                  <PageDepth
+                    index={i}
+                    scrollX={scrollX}
+                    screenW={SCREEN_W}
+                    reduced={reduced}
                     style={[
                       styles.pageContent,
                       {
@@ -338,9 +461,11 @@ export default function OnboardingScreen() {
                       // cette page a plusieurs tuiles ; les suivantes portent
                       // chacune UNE photo dediee (voir PhotoCard.tsx).
                       <>
-                        <View style={styles.bentoLayer}>
-                          <BentoGrid hero={HERO_PHOTO} joy={JOY_PHOTO} hand={HAND_PHOTO} delay={90} />
-                        </View>
+                        <PhotoParallax index={i} scrollX={scrollX} screenW={SCREEN_W} reduced={reduced}>
+                          <View style={styles.bentoLayer}>
+                            <BentoGrid hero={HERO_PHOTO} joy={JOY_PHOTO} hand={HAND_PHOTO} delay={90} />
+                          </View>
+                        </PhotoParallax>
 
                         <Ligne index={0} actif={active} style={styles.bloc}>
                           <Text style={styles.kicker}>{slide.kicker}</Text>
@@ -364,7 +489,9 @@ export default function OnboardingScreen() {
                       </>
                     ) : (
                       <>
-                        <PhotoCard source={slide.photo} height={photoHeight} delay={90} />
+                        <PhotoParallax index={i} scrollX={scrollX} screenW={SCREEN_W} reduced={reduced}>
+                          <PhotoCard source={slide.photo} height={photoHeight} delay={90} />
+                        </PhotoParallax>
 
                         <Ligne index={0} actif={active} style={styles.bloc}>
                           <Text style={styles.kicker}>{slide.kicker}</Text>
@@ -470,11 +597,12 @@ export default function OnboardingScreen() {
                         ) : null}
                       </>
                     )}
-                  </View>
+                  </PageDepth>
                 </ScrollView>
               );
             })}
           </Animated.View>
+          </GestureDetector>
         </View>
 
         {/* Pied : deux liens, pas un bouton plein.
