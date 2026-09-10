@@ -7,7 +7,7 @@ import Animated, {
 } from "react-native-reanimated";
 
 import { ease } from "@/src/animation/ease";
-import { colors, palette } from "@/src/theme";
+import { colors, palette, spacing } from "@/src/theme";
 
 /**
  * La progression, en segments, tout en haut.
@@ -79,7 +79,7 @@ export function Progress({
 }
 
 const styles = StyleSheet.create({
-  row: { flexDirection: "row", gap: 5, flex: 1 },
+  row: { flexDirection: "row", gap: spacing.xs, flex: 1 },
   rail: { flex: 1, height: 2, borderRadius: 1, overflow: "hidden" },
   // L'echelle part du bord gauche, pas du centre : le segment se remplit dans
   // le sens de la lecture.

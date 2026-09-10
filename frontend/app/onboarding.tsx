@@ -832,7 +832,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.borderMid,
-    paddingVertical: 16,
+    paddingVertical: spacing.m,
     alignItems: "center",
     borderRadius: radius.pill,
     ...shadow.card,
@@ -849,7 +849,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     letterSpacing: 0.3,
   },
-  guestBtn: { alignSelf: "flex-start", paddingVertical: 12, minHeight: 44, justifyContent: "center" },
+  guestBtn: { alignSelf: "flex-start", paddingVertical: spacing.s, minHeight: 44, justifyContent: "center" },
   guestText: {
     fontFamily: fonts.bodyMedium,
     color: colors.fg,

@@ -122,7 +122,7 @@ const styles = StyleSheet.create({
   bloc: { width: "100%", marginTop: spacing.l, gap: spacing.s },
   bouton: {
     backgroundColor: colors.accent,
-    paddingVertical: 17,
+    paddingVertical: spacing.m,
     alignItems: "center",
     justifyContent: "center",
     borderRadius: radius.pill,
@@ -139,7 +139,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.s,
-    paddingVertical: 15,
+    paddingVertical: spacing.m,
     paddingHorizontal: spacing.m,
     borderRadius: radius.md,
     minHeight: 52,

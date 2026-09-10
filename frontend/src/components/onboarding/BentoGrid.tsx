@@ -12,7 +12,7 @@ import Animated, {
 } from "react-native-reanimated";
 import Svg, { Path } from "react-native-svg";
 
-import { colors, motion } from "@/src/theme";
+import { colors, motion, spacing } from "@/src/theme";
 import { onboardingPalette } from "@/src/theme/onboardingPalette";
 
 /**
@@ -177,8 +177,8 @@ export function BentoGrid({
 }
 
 const styles = StyleSheet.create({
-  grid: { width: "100%", gap: 10 },
-  row: { flexDirection: "row", gap: 10 },
+  grid: { width: "100%", gap: spacing.s },
+  row: { flexDirection: "row", gap: spacing.s },
   tile: {
     borderRadius: RAYON,
     overflow: "hidden",
@@ -191,9 +191,9 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    padding: 6,
+    padding: spacing.s,
   },
-  statSpark: { position: "absolute", top: 8, right: 10 },
+  statSpark: { position: "absolute", top: spacing.s, right: spacing.s },
   statValue: {
     fontFamily: "Fraunces_600SemiBold",
     fontSize: 26,
