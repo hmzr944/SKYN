@@ -11,11 +11,14 @@ import {
 import { Pressable } from "react-native-gesture-handler";
 import Animated, {
   useAnimatedStyle,
+  useReducedMotion,
   useSharedValue,
+  withSequence,
   withSpring,
   withTiming,
 } from "react-native-reanimated";
 
+import { ease } from "@/src/animation/ease";
 import { motion } from "@/src/theme";
 
 type Props = {
@@ -34,6 +37,16 @@ type Props = {
    */
   containerStyle?: StyleProp<ViewStyle>;
   scaleTo?: number;
+  /**
+   * Un ecrasement cartoon au lieu du scale uniforme habituel : anticipation
+   * (un leger gonflement avant l'appui), ecrasement asymetrique (ca s'aplatit
+   * en largeur, pas juste en taille), puis un rebond marque au relachement.
+   *
+   * RESERVE aux moments de recompense — la capture d'un scan, une case qui se
+   * coche, une permission accordee. Partout ailleurs, l'app chuchote ; ce
+   * n'est pas le comportement par defaut, il faut le demander explicitement.
+   */
+  squash?: boolean;
   disabled?: boolean;
   /** Retour haptique a l'appui. Coupe-le pour les elements secondaires. */
   haptic?: false | "light" | "medium" | "success";
@@ -101,6 +114,7 @@ export function AnimatedPressable({
   style,
   containerStyle,
   scaleTo = 0.96,
+  squash = false,
   disabled,
   haptic = "light",
   onLayout,
@@ -112,9 +126,14 @@ export function AnimatedPressable({
   testID,
 }: Props) {
   const scale = useSharedValue(1);
+  // N'existent que pour le mode `squash` — deux axes separes, parce qu'un
+  // ecrasement cartoon deforme, il ne redimensionne pas uniformement.
+  const sx = useSharedValue(1);
+  const sy = useSharedValue(1);
+  const reduced = useReducedMotion();
 
   const aStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
+    transform: squash ? [{ scaleX: sx.value }, { scaleY: sy.value }] : [{ scale: scale.value }],
   }));
 
   return (
@@ -136,10 +155,33 @@ export function AnimatedPressable({
       aria-disabled={!!disabled || accessibilityState?.disabled}
       onPressIn={() => {
         if (haptic) tap(haptic);
-        scale.value = withTiming(scaleTo, { duration: motion.instant });
+        if (squash && !reduced) {
+          // Anticipation : un leger etirement vers le haut avant l'ecrasement,
+          // comme un ressort qu'on arme en sens inverse. Puis ca s'aplatit —
+          // plus large, moins haut, comme presse du doigt — jamais l'inverse,
+          // sinon on lit un pincement, pas un ecrasement.
+          sx.value = withSequence(
+            withTiming(0.96, { duration: 55, easing: ease.out }),
+            withTiming(1.14, { duration: 90, easing: ease.in }),
+          );
+          sy.value = withSequence(
+            withTiming(1.05, { duration: 55, easing: ease.out }),
+            withTiming(0.88, { duration: 90, easing: ease.in }),
+          );
+        } else if (squash) {
+          sx.value = withTiming(scaleTo, { duration: motion.instant });
+          sy.value = withTiming(scaleTo, { duration: motion.instant });
+        } else {
+          scale.value = withTiming(scaleTo, { duration: motion.instant });
+        }
       }}
       onPressOut={() => {
-        scale.value = withSpring(1, motion.springPress);
+        if (squash) {
+          sx.value = withSpring(1, reduced ? motion.springPress : motion.springCartoon);
+          sy.value = withSpring(1, reduced ? motion.springPress : motion.springCartoon);
+        } else {
+          scale.value = withSpring(1, motion.springPress);
+        }
       }}
     >
       <Animated.View style={[style, aStyle, disabled && styles.eteint]}>{children}</Animated.View>

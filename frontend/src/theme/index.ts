@@ -191,4 +191,12 @@ export const motion = {
   springPress: { damping: 22, stiffness: 320, mass: 0.7 },
   /** Ressort d'arrivee : leger depassement, pour un element qui se pose. */
   springDrop: { damping: 12, stiffness: 180, mass: 0.8 },
+  /**
+   * Rebond marque, presque cartoon. RESERVE aux moments de recompense — la
+   * capture d'un scan, une case cochee, une permission accordee — jamais a
+   * une entree de contenu ou un appui ordinaire. L'app chuchote partout
+   * ailleurs ; ce ressort est la, precisement, pour les rares fois ou elle a
+   * le droit de sourire.
+   */
+  springCartoon: { damping: 8, stiffness: 260, mass: 0.7 },
 } as const;

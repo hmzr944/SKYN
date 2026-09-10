@@ -671,6 +671,7 @@ export default function CameraScreen() {
           style={styles.secondaryBtn}
           disabled={canUseCamera ? !ready : true}
           haptic="medium"
+          squash
         >
           <Text style={styles.secondaryText}>Prendre maintenant</Text>
         </AnimatedPressable>

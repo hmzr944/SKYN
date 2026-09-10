@@ -355,6 +355,7 @@ export default function CameraGuidedScreen() {
               style={styles.secondaryBtn}
               disabled={!canUseCamera || !ready || count >= MAX_FRAMES}
               haptic="medium"
+              squash
             >
               <Text style={styles.secondaryText}>Capturer une vue</Text>
             </AnimatedPressable>
