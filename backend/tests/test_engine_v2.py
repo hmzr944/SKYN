@@ -389,6 +389,34 @@ class TestRoutine:
                 others = leave_on[:i] + leave_on[i + 1:]
                 assert not _conflicts(a.product, others), a.product["id"]
 
+    def test_severe_active_acne_gets_an_acne_cleanser(self, catalog):
+        """Signale par un utilisateur reel : une peau a l'acne inflammatoire
+        marquee (papules nombreuses, peu de sensibilite mesuree) se voyait
+        recommander une eau micellaire apaisante comme nettoyant — un produit
+        pense pour la sensibilite/les rougeurs, hors sujet face a une acne
+        active severe. `_essential_score` ne pesait l'adequation aux
+        preoccupations mesurees qu'a 20 % fixe pour les etapes de socle,
+        meme quand l'acne active domine tout le reste : la marge separant le
+        bon choix d'un produit hors sujet pouvait etre trop etroite pour
+        etre fiable selon la composition du catalogue."""
+        ph = make_phenotype(skin_type="mixte", sensitive=False, redness_global=0.5)
+        fp = build_fingerprint(ph, make_lesions(3, papule=55, pustule=1, comedon=4), {})
+        rt = build_routine(fp, ph, {}, catalog=catalog)
+        nettoyant = next(p for p in rt.am if p.step == "nettoyant")
+        assert nettoyant.product["id"] != "bioderma-sensibio-h2o"
+        assert "acne_active" in (nettoyant.product.get("targets") or {}), nettoyant.product["id"]
+
+    def test_essential_score_unchanged_without_acne(self, catalog):
+        """La correction du test precedent ne doit rien changer pour une
+        peau sensible SANS acne active : l'eau micellaire reste le bon choix
+        exactement comme avant (w_concern retombe a 20 % quand acne_active
+        est nul — verifie ici bout en bout, pas seulement algebriquement)."""
+        ph = make_phenotype(skin_type="sensible", sensitive=True, redness_global=0.6)
+        fp = build_fingerprint(ph, make_lesions(0), {})
+        rt = build_routine(fp, ph, {}, catalog=catalog)
+        nettoyant = next(p for p in rt.am if p.step == "nettoyant")
+        assert nettoyant.product["id"] == "bioderma-sensibio-h2o"
+
     def test_pregnancy_excludes_contraindicated(self, catalog):
         ph = make_phenotype()
         prof = {"pregnant": True}

@@ -312,7 +312,7 @@ def _pick_for_step(cands: List[dict], step: str, moment: str,
     # centimes de depassement, ce qui n'a aucun sens pour l'utilisateur.
     ranked: List[Tuple[float, float, dict, List[str]]] = []
     for s, p, why in scored:
-        rank = _essential_score(p, s, ph, fp) if essential else s
+        rank = _essential_score(p, s, ph, fp, step) if essential else s
         rank *= _price_penalty(float(p.get("price_eur", 0.0)), ceiling)
         ranked.append((rank, s, p, why))
 
@@ -323,7 +323,7 @@ def _pick_for_step(cands: List[dict], step: str, moment: str,
     # Pour une etape de socle, le pourcentage affiche doit traduire l'adequation
     # au type de peau, pas la couverture des preoccupations : afficher "8 %"
     # sur un hydratant parfaitement adapte serait absurde pour l'utilisateur.
-    best_s = _essential_score(best_p, best_fit, ph, fp) if essential else best_fit
+    best_s = _essential_score(best_p, best_fit, ph, fp, step) if essential else best_fit
 
     # Un traitement cible sans motif mesure n'a pas lieu d'etre ; une etape de
     # socle reste utile meme sans correspondance forte.
@@ -349,7 +349,7 @@ def _price_penalty(price: float, ceiling: float) -> float:
 
 
 def _essential_score(product: dict, concern_fit: float, ph: Phenotype,
-                     fp: SkinFingerprint) -> float:
+                     fp: SkinFingerprint, step: Optional[str] = None) -> float:
     """Note d'adequation pour une etape de socle.
 
     Un nettoyant, un hydratant ou une creme solaire ne "traitent" pas une
@@ -375,11 +375,25 @@ def _essential_score(product: dict, concern_fit: float, ph: Phenotype,
     reactive = max(fp.get("sensitivity"), fp.get("barrier_damage"))
     w_gentle = 0.25 + 0.35 * reactive        # peau reactive : douceur prioritaire
 
-    return float(
-        (1.0 - w_gentle - 0.20) * type_fit
-        + w_gentle * gentleness
-        + 0.20 * concern_fit
-    )
+    # Le nettoyant est la seule etape de socle qui touche DIRECTEMENT les
+    # lesions actives — un hydratant ou une protection solaire restent en
+    # surface sans agir sur l'acne, mais un nettoyant EST un des leviers.
+    # A 20% fixe, l'adequation clinique pesait moins que la douceur ou la
+    # simple compatibilite de type de peau : sur une peau tres acneique,
+    # rien n'empechait un soin apaisant mais hors sujet de sortir en tete
+    # sur une marge etroite. Le poids grandit avec l'intensite mesuree de
+    # l'acne active, jamais au-dela de ce qu'elle justifie : a acne_active
+    # nul, w_concern reste 0.20 et la formule est inchangee — aucune
+    # regression sur les peaux sans acne.
+    w_concern = 0.20
+    if step == "nettoyant":
+        w_concern = 0.20 + 0.40 * fp.get("acne_active")
+
+    reste = 1.0 - w_concern
+    part_type = reste * ((1.0 - w_gentle - 0.20) / 0.80)
+    part_douceur = reste * (w_gentle / 0.80)
+
+    return float(part_type * type_fit + part_douceur * gentleness + w_concern * concern_fit)
 
 
 _ESSENTIAL_WHY = {
