@@ -11,7 +11,7 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 
-import { motion, radius } from "@/src/theme";
+import { motion, radius, spacing } from "@/src/theme";
 import { onboardingPalette } from "@/src/theme/onboardingPalette";
 
 /**
@@ -71,6 +71,10 @@ export function PhotoCard({
 const styles = StyleSheet.create({
   card: {
     width: "100%",
+    // Meme respiration que `bentoLayer` sur la page hero (voir onboarding.tsx) :
+    // sans elle, le kicker de la page collait directement sous la photo, la
+    // seule page a ne pas avoir cet espace.
+    marginBottom: spacing.l,
     borderRadius: radius.xl,
     overflow: "hidden",
     backgroundColor: onboardingPalette.sable,
