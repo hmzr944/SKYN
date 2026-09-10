@@ -12,6 +12,7 @@ import {
   type ViewStyle,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import Svg, { Defs, RadialGradient, Rect, Stop } from "react-native-svg";
 import * as Haptics from "expo-haptics";
 import Animated, {
   type SharedValue,
@@ -29,6 +30,7 @@ import { useRouter } from "expo-router";
 import { ease } from "@/src/animation/ease";
 import { childDelay, spring, stagger } from "@/src/animation/motion";
 import { colors, fonts, spacing, radius, shadow } from "@/src/theme";
+import { onboardingPalette } from "@/src/theme/onboardingPalette";
 import { remindersSupported, requestPermission } from "@/src/services/reminders";
 import { storage } from "@/src/utils/storage";
 import { useAuth } from "@/src/contexts/AuthContext";
@@ -75,7 +77,7 @@ const GLISSE = 380;
  * `require(...)`. Sans photo, le disque contient la matiere dessinee : l'app
  * est complete dans les deux cas, jamais en attente d'un fichier manquant.
  */
-const PORTRAIT = null; // require("@/assets/onboarding/portrait.jpg")
+const PORTRAIT = require("@/assets/onboarding/portrait.jpg");
 
 type Slide = {
   kicker: string;
@@ -315,6 +317,7 @@ export default function OnboardingScreen() {
       {/* La matiere pleine page vit SOUS les pages, pas dedans : elle doit
           pouvoir deborder derriere l'en-tete et le pied, la ou une page
           s'arrete. Elle s'efface quand on quitte l'ecran qui la porte. */}
+      <FondChaud actif={page === 0} />
       <FondPlein actif={sombre} />
 
       <SafeAreaView style={styles.safe} edges={["top", "bottom"]}>
@@ -594,6 +597,44 @@ export default function OnboardingScreen() {
         </View>
       </SafeAreaView>
     </View>
+  );
+}
+
+/**
+ * Le fond chaud de la page hero, qui se leve et se retire.
+ *
+ * Meme mecanisme que FondPlein, pour la page photo : un lavis dore/sable qui
+ * irrigue le haut de l'ecran, cote figure, et s'efface vers le creme aux
+ * bords. Sans lui la photo restait un rectangle colore pose sur un fond
+ * neutre indifferent ; avec lui, la chaleur de la photo se propage a la
+ * page entiere — c'est la page qui change, pas seulement un element dessus.
+ */
+function FondChaud({ actif }: { actif: boolean }) {
+  const t = useSharedValue(0);
+  const reduced = useReducedMotion();
+
+  useEffect(() => {
+    t.value = withTiming(actif ? 1 : 0, {
+      duration: reduced ? 0 : GLISSE,
+      easing: ease.out,
+    });
+  }, [actif, reduced, t]);
+
+  const aStyle = useAnimatedStyle(() => ({ opacity: t.value }));
+
+  return (
+    <Animated.View style={[StyleSheet.absoluteFill, aStyle]} pointerEvents="none">
+      <Svg width="100%" height="100%" viewBox="0 0 100 200" preserveAspectRatio="xMidYMid slice">
+        <Defs>
+          <RadialGradient id="fond-chaud" cx="72%" cy="20%" r="55%">
+            <Stop offset="0" stopColor={onboardingPalette.sable} stopOpacity={0.9} />
+            <Stop offset="0.55" stopColor={onboardingPalette.dore} stopOpacity={0.14} />
+            <Stop offset="1" stopColor={onboardingPalette.dore} stopOpacity={0} />
+          </RadialGradient>
+        </Defs>
+        <Rect x={0} y={0} width={100} height={200} fill="url(#fond-chaud)" />
+      </Svg>
+    </Animated.View>
   );
 }
 
