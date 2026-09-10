@@ -39,6 +39,7 @@ import { GoogleLogo } from "@/src/components/icons/GoogleLogo";
 import { useProviderAuth } from "@/src/hooks/useProviderAuth";
 import { SkynLockup } from "@/src/components/brand/SkynLockup";
 import { Figure, MatiereEntiere } from "@/src/components/onboarding/Figure";
+import { BentoGrid } from "@/src/components/onboarding/BentoGrid";
 import { Progress } from "@/src/components/onboarding/Progress";
 import { Autorisation, type Etat } from "@/src/components/onboarding/Autorisation";
 
@@ -71,13 +72,13 @@ const CONTENT_MAX_W = 480;
 const GLISSE = 380;
 
 /**
- * Une photo dans le disque de la premiere page.
- *
- * Depose un fichier dans `assets/onboarding/` et remplace `null` par son
- * `require(...)`. Sans photo, le disque contient la matiere dessinee : l'app
- * est complete dans les deux cas, jamais en attente d'un fichier manquant.
+ * Les trois photos de la grille bento du premier ecran (voir BentoGrid.tsx).
+ * Deposees dans `assets/onboarding/` — voir LISEZ-MOI.md pour le format et
+ * les droits.
  */
-const PORTRAIT = require("@/assets/onboarding/portrait.jpg");
+const HERO_PHOTO = require("@/assets/onboarding/hero.jpg");
+const JOY_PHOTO = require("@/assets/onboarding/joy.jpg");
+const HAND_PHOTO = require("@/assets/onboarding/hand.jpg");
 
 type Slide = {
   kicker: string;
@@ -410,28 +411,38 @@ export default function OnboardingScreen() {
                     ) : (
                       /* ─── Les pages editoriales ─── */
                       <>
-                        {/* La figure deborde a droite, et se decale plus vite
-                            que le texte : c'est ce decalage qui donne la
-                            profondeur au moment du changement de page. */}
-                        <Parallax
-                          scrollX={scrollX}
-                          index={i}
-                          width={SCREEN_W}
-                          rate={-0.18}
-                          // Un debord franc mais mesure : la boite fait deja
-                          // 1,26 fois le disque pour loger l'orbite, et un
-                          // tiers du disque en plus la poussait de 67 px hors
-                          // de l'ecran — l'ellipse et la scintille etaient
-                          // tranchees net par le bord droit.
-                          style={[styles.figureLayer, { marginRight: -spacing.m }]}
-                        >
-                          <Figure
-                            size={figureSize}
-                            source={i === 0 ? PORTRAIT : null}
-                            variante={slide.variante ?? 0}
-                            delay={90}
-                          />
-                        </Parallax>
+                        {i === 0 ? (
+                          // La grille bento remplace le disque unique sur la
+                          // page hero : photos reelles, tuiles rectangulaires
+                          // a coins arrondis, pleine largeur — voir
+                          // BentoGrid.tsx.
+                          <View style={styles.bentoLayer}>
+                            <BentoGrid hero={HERO_PHOTO} joy={JOY_PHOTO} hand={HAND_PHOTO} delay={90} />
+                          </View>
+                        ) : (
+                          /* La figure deborde a droite, et se decale plus vite
+                             que le texte : c'est ce decalage qui donne la
+                             profondeur au moment du changement de page. */
+                          <Parallax
+                            scrollX={scrollX}
+                            index={i}
+                            width={SCREEN_W}
+                            rate={-0.18}
+                            // Un debord franc mais mesure : la boite fait deja
+                            // 1,26 fois le disque pour loger l'orbite, et un
+                            // tiers du disque en plus la poussait de 67 px hors
+                            // de l'ecran — l'ellipse et la scintille etaient
+                            // tranchees net par le bord droit.
+                            style={[styles.figureLayer, { marginRight: -spacing.m }]}
+                          >
+                            <Figure
+                              size={figureSize}
+                              source={null}
+                              variante={slide.variante ?? 0}
+                              delay={90}
+                            />
+                          </Parallax>
+                        )}
 
                         <Ligne index={0} actif={active} style={styles.bloc}>
                           <Text style={styles.kicker}>{slide.kicker}</Text>
@@ -690,6 +701,7 @@ const styles = StyleSheet.create({
   // La figure sort du cadre a droite. Un rond entier centre est un logo ; un
   // rond qui deborde est une image dans une page.
   figureLayer: { alignSelf: "flex-end", marginBottom: spacing.l },
+  bentoLayer: { alignSelf: "stretch", marginBottom: spacing.l },
   bloc: { width: "100%" },
   kicker: {
     fontFamily: fonts.bodyMedium,

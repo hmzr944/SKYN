@@ -6,7 +6,6 @@ import Svg, {
   Ellipse,
   LinearGradient,
   Path,
-  RadialGradient,
   Rect,
   Stop,
 } from "react-native-svg";
@@ -25,7 +24,6 @@ import Animated, {
 import { ease } from "@/src/animation/ease";
 import { duration, spring } from "@/src/animation/motion";
 import { colors, palette } from "@/src/theme";
-import { onboardingPalette } from "@/src/theme/onboardingPalette";
 
 /**
  * La figure ronde de l'onboarding.
@@ -212,34 +210,8 @@ export function Figure({
     transform: [{ scale: 0.7 + eclat.value * 0.3 }, { rotate: `${eclat.value * 18}deg` }],
   }));
 
-  // La photo porte son propre halo, tire de ses tons dominants (voir
-  // onboardingPalette) — la matiere dessinee n'en a pas besoin, son fond
-  // translucide fait deja ce travail.
-  const glowSize = boite * 1.7;
-
   return (
     <View style={{ width: boite, height: boite, alignItems: "center", justifyContent: "center" }}>
-      {source ? (
-        <Animated.View
-          style={[
-            { position: "absolute", width: glowSize, height: glowSize },
-            disque,
-          ]}
-          pointerEvents="none"
-        >
-          <Svg width="100%" height="100%" viewBox="0 0 100 100">
-            <Defs>
-              <RadialGradient id="halo-figure" cx="50%" cy="50%" r="50%">
-                <Stop offset="0" stopColor={onboardingPalette.dore} stopOpacity={0.32} />
-                <Stop offset="0.6" stopColor={onboardingPalette.ambre} stopOpacity={0.1} />
-                <Stop offset="1" stopColor={onboardingPalette.ambre} stopOpacity={0} />
-              </RadialGradient>
-            </Defs>
-            <Circle cx={50} cy={50} r={50} fill="url(#halo-figure)" />
-          </Svg>
-        </Animated.View>
-      ) : null}
-
       {/* L'orbite : une ellipse tres fine, inclinee, qui tourne sans fin. */}
       <Animated.View style={[StyleSheet.absoluteFill, orbite]} pointerEvents="none">
         <Svg width="100%" height="100%" viewBox="0 0 100 100">
@@ -249,9 +221,8 @@ export function Figure({
             rx={48}
             ry={31}
             fill="none"
-            stroke={source ? onboardingPalette.dore : colors.accentLine}
+            stroke={colors.accentLine}
             strokeWidth={0.42}
-            strokeOpacity={source ? 0.7 : 1}
             transform="rotate(-24 50 50)"
           />
         </Svg>
@@ -275,28 +246,7 @@ export function Figure({
         ]}
       >
         {source ? (
-          <>
-            <Image source={source} style={styles.photo} resizeMode="cover" />
-            {/* Le voile : un vrai bord de traitement colorimetrique, pas une
-                photo brute posee dans un rond. Meme dore/ambre que le halo —
-                la photo se lit comme calibree pour la marque, pas importee
-                d'ailleurs. */}
-            <Svg
-              width={size}
-              height={size}
-              style={StyleSheet.absoluteFill}
-              pointerEvents="none"
-            >
-              <Defs>
-                <LinearGradient id="voile-figure" x1="0" y1="0" x2="0" y2="1">
-                  <Stop offset="0" stopColor={onboardingPalette.dore} stopOpacity={0.16} />
-                  <Stop offset="0.45" stopColor={onboardingPalette.dore} stopOpacity={0} />
-                  <Stop offset="1" stopColor={onboardingPalette.ambre} stopOpacity={0.34} />
-                </LinearGradient>
-              </Defs>
-              <Rect x={0} y={0} width={size} height={size} fill="url(#voile-figure)" />
-            </Svg>
-          </>
+          <Image source={source} style={styles.photo} resizeMode="cover" />
         ) : (
           <Matiere variante={variante} />
         )}
@@ -308,7 +258,7 @@ export function Figure({
         pointerEvents="none"
       >
         <Svg width={26} height={26} viewBox="0 0 26 26">
-          <Path d={etoile(13, 13, 12)} fill={source ? onboardingPalette.dore : colors.accent} />
+          <Path d={etoile(13, 13, 12)} fill={colors.accent} />
         </Svg>
       </Animated.View>
     </View>

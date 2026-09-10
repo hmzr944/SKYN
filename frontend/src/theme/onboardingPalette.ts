@@ -7,17 +7,17 @@
  * decor). L'onboarding est un moment de marque, pas un releve de donnees —
  * il peut se permettre plus de richesse.
  *
- * Mais pas n'importe laquelle : ces trois tons sont extraits directement de
- * la photo du hero (assets/onboarding/portrait.jpg — clustering des couleurs
- * dominantes), pas choisis a l'oeil. Un onboarding qui emprunte ses couleurs
- * a sa propre photo se lit comme un tout ; un onboarding qui les invente a
- * cote se lit comme deux designs recolles.
+ * Retour du premier passage : pas de brun, pas de teinte sombre — la grille
+ * bento reste sur des tons CLAIRS, derives des photos (jamais choisis a
+ * l'oeil), avec le corail de la marque comme seul accent vif.
  */
 export const onboardingPalette = {
-  /** Ton clair de la photo — la lumiere sur la peau. */
-  dore: "#D39565",
-  /** Ton profond de la photo — l'ombre, le cote chaud. */
-  ambre: "#AC4A31",
-  /** Neutre chaud clair, eclairci depuis le mur du fond de la photo. */
-  sable: "#E8DECE",
+  /** Ton clair, chaud — la lumiere sur la peau de la photo hero. */
+  dore: "#E8B98C",
+  /** Neutre chaud tres clair, eclairci depuis le fond des photos. */
+  sable: "#F4EDE1",
+  /** Rose poudre, tire du fond de la photo "main" — la tuile de couleur qui
+   * n'est pas une photo, pour que la grille ne soit pas que des rectangles
+   * d'images. */
+  blush: "#FBE2DE",
 } as const;
