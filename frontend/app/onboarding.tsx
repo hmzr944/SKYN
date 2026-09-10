@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   Platform,
   useWindowDimensions,
+  type ImageSourcePropType,
   type StyleProp,
   type ViewStyle,
 } from "react-native";
@@ -15,7 +16,6 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import Svg, { Defs, RadialGradient, Rect, Stop } from "react-native-svg";
 import * as Haptics from "expo-haptics";
 import Animated, {
-  type SharedValue,
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
@@ -38,8 +38,8 @@ import { AnimatedPressable } from "@/src/components/ui/AnimatedPressable";
 import { GoogleLogo } from "@/src/components/icons/GoogleLogo";
 import { useProviderAuth } from "@/src/hooks/useProviderAuth";
 import { SkynLockup } from "@/src/components/brand/SkynLockup";
-import { Figure, MatiereEntiere } from "@/src/components/onboarding/Figure";
 import { BentoGrid } from "@/src/components/onboarding/BentoGrid";
+import { PhotoCard } from "@/src/components/onboarding/PhotoCard";
 import { Progress } from "@/src/components/onboarding/Progress";
 import { Autorisation, type Etat } from "@/src/components/onboarding/Autorisation";
 
@@ -79,17 +79,20 @@ const GLISSE = 380;
 const HERO_PHOTO = require("@/assets/onboarding/hero.jpg");
 const JOY_PHOTO = require("@/assets/onboarding/joy.jpg");
 const HAND_PHOTO = require("@/assets/onboarding/hand.jpg");
+/** Une photo dediee par page suivante — voir LISEZ-MOI.md. */
+const PRIVACY_PHOTO = require("@/assets/onboarding/privacy.jpg");
+const CAMERA_PHOTO = require("@/assets/onboarding/camera.jpg");
+const REMINDERS_PHOTO = require("@/assets/onboarding/reminders.jpg");
+const START_PHOTO = require("@/assets/onboarding/start.jpg");
 
 type Slide = {
   kicker: string;
   title: string;
   helper: string;
-  /** Page pleine : fond terre, matiere entiere, titre empile en creme. */
-  pleine?: boolean;
-  /** Le titre s'empile mot par mot, chaque ligne ponctuee. */
-  lignes?: readonly string[];
   variante?: number;
-  photo?: boolean;
+  /** La photo dediee de cette page — chaque page delivre son message avec
+   * sa propre image, jamais une matiere abstraite reprise partout. */
+  photo: ImageSourcePropType;
   /** Cette page demande une autorisation au systeme. */
   demande?: "camera" | "rappels";
 };
@@ -118,16 +121,16 @@ const SLIDES: readonly Slide[] = [
     title: "Votre peau,\ndécryptée.",
     helper:
       "Une photo, quelques secondes, et vous savez où en est votre peau : lésions comptées et classées, zone par zone, avec une routine calibrée sur vos priorités.",
-    photo: true,
+    photo: HERO_PHOTO,
     variante: 0,
   },
   {
     kicker: "02 · CONFIDENTIEL",
-    pleine: true,
-    lignes: ["Analysées.", "Puis", "effacées."],
-    title: "Vos données vous appartiennent",
+    title: "Vos données\nvous appartiennent.",
     helper:
       "Vos photos partent au moteur le temps du calcul, puis disparaissent. Vos analyses restent sur votre téléphone. Rien n'est revendu, rien n'entraîne quoi que ce soit.",
+    photo: PRIVACY_PHOTO,
+    variante: 1,
   },
   {
     kicker: "03 · L'APPAREIL PHOTO",
@@ -135,7 +138,8 @@ const SLIDES: readonly Slide[] = [
     helper:
       "C'est la seule chose que SKYN regarde. Vous cadrez, l'app suit vos traits en direct et déclenche quand la pose est bonne.",
     demande: "camera",
-    variante: 1,
+    photo: CAMERA_PHOTO,
+    variante: 2,
   },
   {
     kicker: "04 · LES RAPPELS",
@@ -143,7 +147,8 @@ const SLIDES: readonly Slide[] = [
     helper:
       "Deux rappels par jour, matin et soir. Une routine tenue trois semaines vaut mieux qu'une routine parfaite tenue trois jours.",
     demande: "rappels",
-    variante: 2,
+    photo: REMINDERS_PHOTO,
+    variante: 3,
   },
   {
     kicker: "05 · À VOUS DE JOUER",
@@ -151,40 +156,10 @@ const SLIDES: readonly Slide[] = [
     // ici. La tournure evite donc l'accord plutot que de choisir au hasard.
     title: "On découvre\nvotre peau ?",
     helper: "Créez votre dossier cutané chiffré pour commencer votre premier bilan.",
-    variante: 3,
+    photo: START_PHOTO,
+    variante: 0,
   },
 ] as const;
-
-/**
- * Une couche de la page, decalee a sa propre vitesse.
- *
- * `rate` dit a quelle profondeur elle se trouve : positif, elle suit le
- * defilement et parait loin ; negatif, elle le devance et parait proche.
- */
-function Parallax({
-  scrollX,
-  index,
-  width,
-  rate,
-  style,
-  children,
-}: {
-  scrollX: SharedValue<number>;
-  index: number;
-  width: number;
-  rate: number;
-  style?: StyleProp<ViewStyle>;
-  children: React.ReactNode;
-}) {
-  const aStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: (scrollX.value - index * width) * rate }],
-  }));
-  return (
-    <Animated.View style={[style, aStyle]} pointerEvents="box-none">
-      {children}
-    </Animated.View>
-  );
-}
 
 /**
  * Une ligne de titre qui monte a sa place.
@@ -267,7 +242,7 @@ export default function OnboardingScreen() {
   // deux tailles fixes laissent forcement l'une des deux mal posee.
   const titleSize = Math.round(Math.min(Math.max(SCREEN_W * 0.098, 30), 42));
   const titleLead = Math.round(titleSize * 1.08);
-  const figureSize = isShort ? 156 : isNarrow ? 172 : 196;
+  const photoHeight = isShort ? 190 : isNarrow ? 210 : 240;
 
   /**
    * Position du pager, en points, suivie image par image.
@@ -311,15 +286,15 @@ export default function OnboardingScreen() {
   const finishOnboarding = () => storage.setItem("skyn_onboarding_seen", "1");
 
   const isLast = page === PAGE_COUNT - 1;
-  const sombre = SLIDES[page].pleine === true;
+  // Plus aucune page sombre : chaque page porte sa propre photo sur fond
+  // clair, y compris l'ancienne page "pleine" (confidentialite). `sombre`
+  // reste ici pour le contraste de l'en-tete/pied, au cas ou une page en
+  // aurait de nouveau besoin — elle vaut simplement toujours faux aujourd'hui.
+  const sombre = false;
 
   return (
     <View style={styles.container}>
-      {/* La matiere pleine page vit SOUS les pages, pas dedans : elle doit
-          pouvoir deborder derriere l'en-tete et le pied, la ou une page
-          s'arrete. Elle s'efface quand on quitte l'ecran qui la porte. */}
       <FondChaud actif={page === 0} />
-      <FondPlein actif={sombre} />
 
       <SafeAreaView style={styles.safe} edges={["top", "bottom"]}>
         {/* En-tete : la progression d'abord, la marque ensuite. C'est ce qu'on
@@ -356,7 +331,7 @@ export default function OnboardingScreen() {
                 <ScrollView
                   key={i}
                   style={{ width: SCREEN_W }}
-                  contentContainerStyle={[styles.page, slide.pleine && styles.pageBasse]}
+                  contentContainerStyle={styles.page}
                   showsVerticalScrollIndicator={false}
                   // Les quatre autres pages restent montees, hors champ. Sans
                   // ces lignes, leurs boutons restent atteignables au clavier
@@ -379,70 +354,40 @@ export default function OnboardingScreen() {
                       },
                     ]}
                   >
-                    {slide.pleine ? (
-                      /* ─── La page pleine ─── */
-                      <View style={styles.pleineBloc}>
-                        <Ligne index={0} actif={active}>
-                          <Text style={[styles.kicker, styles.onDarkKicker]}>
-                            {slide.kicker}
-                          </Text>
-                        </Ligne>
-                        <View style={styles.pleineTitre}>
-                          {slide.lignes?.map((mot, k) => (
-                            <Ligne key={mot} index={k + 1} actif={active}>
-                              <Text
-                                style={[
-                                  styles.title,
-                                  styles.onDarkTitle,
-                                  { fontSize: titleSize, lineHeight: titleLead },
-                                ]}
-                              >
-                                {mot}
-                              </Text>
-                            </Ligne>
-                          ))}
-                        </View>
-                        <Ligne index={(slide.lignes?.length ?? 0) + 1} actif={active}>
-                          <Text style={[styles.helper, styles.onDarkHelper]}>
-                            {slide.helper}
-                          </Text>
-                        </Ligne>
-                      </View>
-                    ) : (
-                      /* ─── Les pages editoriales ─── */
+                    {i === 0 ? (
+                      // La grille bento remplace le disque unique sur la page
+                      // hero : photos reelles, tuiles rectangulaires a coins
+                      // arrondis, pleine largeur — voir BentoGrid.tsx. Seule
+                      // cette page a plusieurs tuiles ; les suivantes portent
+                      // chacune UNE photo dediee (voir PhotoCard.tsx).
                       <>
-                        {i === 0 ? (
-                          // La grille bento remplace le disque unique sur la
-                          // page hero : photos reelles, tuiles rectangulaires
-                          // a coins arrondis, pleine largeur — voir
-                          // BentoGrid.tsx.
-                          <View style={styles.bentoLayer}>
-                            <BentoGrid hero={HERO_PHOTO} joy={JOY_PHOTO} hand={HAND_PHOTO} delay={90} />
-                          </View>
-                        ) : (
-                          /* La figure deborde a droite, et se decale plus vite
-                             que le texte : c'est ce decalage qui donne la
-                             profondeur au moment du changement de page. */
-                          <Parallax
-                            scrollX={scrollX}
-                            index={i}
-                            width={SCREEN_W}
-                            rate={-0.18}
-                            // Un debord franc mais mesure : la boite fait deja
-                            // 1,26 fois le disque pour loger l'orbite, et un
-                            // tiers du disque en plus la poussait de 67 px hors
-                            // de l'ecran — l'ellipse et la scintille etaient
-                            // tranchees net par le bord droit.
-                            style={[styles.figureLayer, { marginRight: -spacing.m }]}
+                        <View style={styles.bentoLayer}>
+                          <BentoGrid hero={HERO_PHOTO} joy={JOY_PHOTO} hand={HAND_PHOTO} delay={90} />
+                        </View>
+
+                        <Ligne index={0} actif={active} style={styles.bloc}>
+                          <Text style={styles.kicker}>{slide.kicker}</Text>
+                        </Ligne>
+
+                        <Ligne index={1} actif={active} style={styles.bloc}>
+                          <Text
+                            style={[
+                              styles.title,
+                              { fontSize: titleSize, lineHeight: titleLead },
+                            ]}
                           >
-                            <Figure
-                              size={figureSize}
-                              source={null}
-                              variante={slide.variante ?? 0}
-                              delay={90}
-                            />
-                          </Parallax>
-                        )}
+                            {slide.title}
+                          </Text>
+                        </Ligne>
+
+                        <Ligne index={2} actif={active} style={styles.bloc}>
+                          <View style={styles.filet} />
+                          <Text style={styles.helper}>{slide.helper}</Text>
+                        </Ligne>
+                      </>
+                    ) : (
+                      <>
+                        <PhotoCard source={slide.photo} height={photoHeight} delay={90} />
 
                         <Ligne index={0} actif={active} style={styles.bloc}>
                           <Text style={styles.kicker}>{slide.kicker}</Text>
@@ -645,27 +590,6 @@ function FondChaud({ actif }: { actif: boolean }) {
         </Defs>
         <Rect x={0} y={0} width={100} height={200} fill="url(#fond-chaud)" />
       </Svg>
-    </Animated.View>
-  );
-}
-
-/** Le fond terre de la page pleine, qui se leve et se retire. */
-function FondPlein({ actif }: { actif: boolean }) {
-  const t = useSharedValue(0);
-  const reduced = useReducedMotion();
-
-  useEffect(() => {
-    t.value = withTiming(actif ? 1 : 0, {
-      duration: reduced ? 0 : GLISSE,
-      easing: ease.out,
-    });
-  }, [actif, reduced, t]);
-
-  const aStyle = useAnimatedStyle(() => ({ opacity: t.value }));
-
-  return (
-    <Animated.View style={[StyleSheet.absoluteFill, aStyle]} pointerEvents="none">
-      <MatiereEntiere />
     </Animated.View>
   );
 }

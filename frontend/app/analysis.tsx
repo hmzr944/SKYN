@@ -12,6 +12,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { ease } from "@/src/animation/ease";
 import { ScanField } from "@/src/components/analysis/ScanField";
 import { SkynLockup } from "@/src/components/brand/SkynLockup";
+import { AmbientBackground } from "@/src/components/ui/AmbientBackground";
 import { AnimatedPressable } from "@/src/components/ui/AnimatedPressable";
 import { Reveal } from "@/src/components/ui/Reveal";
 import { useAuth } from "@/src/contexts/AuthContext";
@@ -56,7 +57,6 @@ export default function AnalysisScreen() {
   const { width: screenW } = useWindowDimensions();
   const field = Math.min(screenW * 0.72, 300);
   const [phase, setPhase] = useState(0);
-  const [imageB64, setImageB64] = useState<string | null>(null);
   const [analysis, setAnalysis] = useState<FaceAnalysis | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
   const [blackOut, setBlackOut] = useState(false);
@@ -85,7 +85,6 @@ export default function AnalysisScreen() {
         router.replace("/camera");
         return;
       }
-      setImageB64(b);
 
       // Le scan guide produit trois angles : la vue de face aplatit les joues
       // et les tempes, les profils les exposent. On transmet les angles
@@ -236,7 +235,8 @@ export default function AnalysisScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={["top", "bottom"]}>
-      <Reveal distance={10}>
+      <AmbientBackground />
+      <Reveal bouncy distance={10}>
         <View style={styles.header}>
           <SkynLockup size={26} still />
           <Text style={styles.counter}>0{phase + 1} / 04</Text>
@@ -247,14 +247,13 @@ export default function AnalysisScreen() {
         <ScanField
           size={field}
           phase={phase}
-          imageB64={imageB64}
           detections={detections}
           faceBox={analysis?.face_box}
           style={styles.field}
         />
 
         {/* Le titre se remplace a chaque phase : la cle force la re-entree. */}
-        <Reveal key={phase} delay={60} distance={12} style={styles.phaseBlock}>
+        <Reveal key={phase} bouncy delay={60} distance={12} style={styles.phaseBlock}>
           <Text style={styles.phaseTitle} testID={`analysis-phase-${phase}`}>
             {PHASES[phase].title}
           </Text>

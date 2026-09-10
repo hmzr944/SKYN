@@ -5,9 +5,9 @@ import Svg, {
   ClipPath,
   Defs,
   G,
-  Image as SvgImage,
   LinearGradient,
   Path,
+  RadialGradient,
   Rect,
   Stop,
 } from "react-native-svg";
@@ -15,7 +15,6 @@ import Animated, {
   useReducedMotion,
   SharedValue,
   useAnimatedProps,
-  useAnimatedStyle,
   useSharedValue,
   withDelay,
   withRepeat,
@@ -25,7 +24,7 @@ import Animated, {
 } from "react-native-reanimated";
 
 import { ease } from "@/src/animation/ease";
-import { colors, motion, palette } from "@/src/theme";
+import { colors, motion } from "@/src/theme";
 import { FACE_CLOSED, FACE_LENGTH, FACE_PATH, MARK_VIEWBOX } from "@/src/theme/mark";
 import type { FaceBox } from "@/src/types/analysis";
 
@@ -39,9 +38,10 @@ type Props = {
   size: number;
   /** 0 surface · 1 zones · 2 patterns · 3 rapport */
   phase: number;
-  imageB64?: string | null;
   detections?: Detection[];
-  /** La boite du visage dans la photo. Absente sur les analyses anciennes. */
+  /** La boite du visage dans la photo. Absente sur les analyses anciennes.
+   * Sert uniquement a positionner les reperes de lesions — la photo elle-meme
+   * n'est plus affichee (voir la note sur `ScanField` plus bas). */
   faceBox?: FaceBox | null;
   style?: StyleProp<ViewStyle>;
 };
@@ -106,20 +106,22 @@ function frame(box?: FaceBox | null) {
 /**
  * Le champ d'analyse.
  *
- * C'est le symbole de la marque, agrandi et pose sur la capture : meme contour,
- * meme breche. Le trace tourne autour du visage pendant que la bande de lecture
- * le parcourt de haut en bas, puis les reperes corail se posent la ou le moteur
- * a trouve quelque chose.
+ * C'est le symbole de la marque, agrandi : meme contour, meme breche. Le
+ * trace tourne autour du visage pendant que la bande de lecture le parcourt
+ * de haut en bas, puis les reperes corail se posent la ou le moteur a trouve
+ * quelque chose.
  *
  * Il portait aussi cinq cercles blancs censes montrer le decoupage en zones.
  * Ils etaient a des positions fixes pendant qu'un texte annonçait treize
  * regions : ils n'indiquaient rien, et encombraient la capture.
  *
- * La legere rotation en Y n'est pas un effet : elle donne au contour l'epaisseur
- * d'un volume, pour qu'on lise une surface examinee sous plusieurs angles
- * plutot qu'un gabarit plaque sur une photo.
+ * Il affichait aussi la PROPRE PHOTO de la personne, sous un voile terre, avec
+ * une legere rotation 3D continue — voir sa photo osciller pendant qu'un
+ * calcul tourne dessus se lit comme un bug, pas comme une analyse en cours.
+ * Retire : le contour reste seul, avec un halo qui respire a la place — la
+ * meme idee que PhaseHalo ailleurs dans l'app, pas une photo qui bouge.
  */
-export function ScanField({ size, phase, imageB64, detections = [], faceBox, style }: Props) {
+export function ScanField({ size, phase, detections = [], faceBox, style }: Props) {
   const f = frame(faceBox);
   // Le contour se trace en boucle : le balayage n'est pas fini tant que
   // l'analyse tourne. Il se fige a la derniere phase.
@@ -128,22 +130,18 @@ export function ScanField({ size, phase, imageB64, detections = [], faceBox, sty
   const band = useSharedValue(0);
   // La pose des reperes.
   const marks = useSharedValue(0);
-  // L'oscillation du volume.
-  const tilt = useSharedValue(0);
+  // Le halo qui respire, a la place de l'ancienne oscillation 3D.
+  const glow = useSharedValue(0);
 
-  // Trois boucles tournent ici en permanence : le trace, la bande de lecture
-  // et le basculement du volume. C'est l'ecran le plus penible de l'app pour
-  // quelqu'un sujet au mal des transports, et le seul dont on ne peut pas
-  // detourner le regard puisqu'il faut attendre.
   const reduced = useReducedMotion();
 
   useEffect(() => {
     if (reduced) {
       // Le contenu reste, le mouvement s'arrete : le contour se pose entier,
-      // la bande et le volume ne bougent plus.
+      // la bande et le halo ne bougent plus.
       sweep.value = withTiming(1, { duration: motion.slow });
       band.value = 0.5;
-      tilt.value = 0.5;
+      glow.value = 0.5;
       return;
     }
     sweep.value = withRepeat(
@@ -160,12 +158,12 @@ export function ScanField({ size, phase, imageB64, detections = [], faceBox, sty
       -1,
       true,
     );
-    tilt.value = withRepeat(
-      withTiming(1, { duration: 3800, easing: ease.sineInOut }),
+    glow.value = withRepeat(
+      withTiming(1, { duration: 2200, easing: ease.sineInOut }),
       -1,
       true,
     );
-  }, [reduced, sweep, band, tilt]);
+  }, [reduced, sweep, band, glow]);
 
   useEffect(() => {
     // Les reperes se posent a la phase des motifs, pas avant.
@@ -184,50 +182,43 @@ export function ScanField({ size, phase, imageB64, detections = [], faceBox, sty
     y: -6 + band.value * (MARK_VIEWBOX + 2),
   }));
 
-
-  const tiltStyle = useAnimatedStyle(() => ({
-    transform: [
-      { perspective: 700 },
-      { rotateY: `${(tilt.value - 0.5) * 13}deg` },
-      { rotateX: `${(0.5 - tilt.value) * 4}deg` },
-    ],
+  const glowProps = useAnimatedProps(() => ({
+    opacity: 0.18 + glow.value * 0.22,
   }));
 
   const list = detections.length > 0 ? detections : [];
 
   return (
-    <Animated.View style={[style, tiltStyle]}>
+    <Animated.View style={style}>
       <Svg width={size} height={size} viewBox={`0 0 ${MARK_VIEWBOX} ${MARK_VIEWBOX}`}>
         <Defs>
           <ClipPath id="skyn-face">
             <Path d={FACE_CLOSED} />
           </ClipPath>
+          <RadialGradient id="skyn-glow" cx="50%" cy="46%" r="55%">
+            <Stop offset="0" stopColor={colors.accent} stopOpacity="0.5" />
+            <Stop offset="1" stopColor={colors.accent} stopOpacity="0" />
+          </RadialGradient>
           <LinearGradient id="skyn-band" x1="0" y1="0" x2="0" y2="1">
-            <Stop offset="0" stopColor={palette.corail} stopOpacity="0" />
-            <Stop offset="0.5" stopColor={palette.corail} stopOpacity="0.85" />
-            <Stop offset="1" stopColor={palette.corail} stopOpacity="0" />
+            <Stop offset="0" stopColor={colors.accent} stopOpacity="0" />
+            <Stop offset="0.5" stopColor={colors.accent} stopOpacity="0.85" />
+            <Stop offset="1" stopColor={colors.accent} stopOpacity="0" />
           </LinearGradient>
         </Defs>
 
         <G clipPath="url(#skyn-face)">
-          {imageB64 ? (
-            <SvgImage
-              href={{ uri: `data:image/jpeg;base64,${imageB64}` }}
-              x={f.imgX}
-              y={f.imgY}
-              width={f.imgW}
-              height={f.imgH}
-              // Cadrage exact quand la boite du visage est connue ; sinon on
-              // laisse le rendu recouvrir la fenetre lui-meme.
-              preserveAspectRatio={f.known ? "none" : "xMidYMid slice"}
-              opacity={0.62}
-            />
-          ) : (
-            <Path d={FACE_CLOSED} fill={colors.surfaceSunken} />
-          )}
+          <Path d={FACE_CLOSED} fill={colors.surfaceSunken} />
 
-          {/* Voile terre : la capture passe au second plan, le trace au premier. */}
-          <Path d={FACE_CLOSED} fill={palette.terre} opacity={imageB64 ? 0.22 : 0.06} />
+          {/* Le halo qui respire — la vie de l'ecran, a la place d'une photo
+              qui bougeait sans qu'on comprenne pourquoi. */}
+          <AnimatedRect
+            x={0}
+            y={0}
+            width={MARK_VIEWBOX}
+            height={MARK_VIEWBOX}
+            fill="url(#skyn-glow)"
+            animatedProps={glowProps}
+          />
 
           {/* La bande de lecture. */}
           <AnimatedRect
