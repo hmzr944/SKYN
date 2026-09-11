@@ -10,7 +10,7 @@
  * chaque matin au reveil, ce qui est decourageant et faux).
  */
 import { storage } from "@/src/utils/storage";
-import type { FaceAnalysis, ProductPick } from "@/src/types/analysis";
+import type { ProductPick } from "@/src/types/analysis";
 
 const K_ROUTINE = "skyn_routine_v2";
 const K_LOG = "skyn_routine_log";
@@ -53,8 +53,21 @@ function addDays(key: string, delta: number): string {
   return todayKey(dt);
 }
 
+/**
+ * Ce dont "Ma routine" a besoin — juste le sous-ensemble de FaceAnalysis
+ * (flux /camera) ou de GuidedScanResponse (flux /camera-guided, desormais
+ * principal, voir analysis-guided.tsx) qui existe reellement des que le
+ * second calcul de /api/analyze/guided a reussi. Une routine construite
+ * est une routine construite, quel que soit le scan qui l'a produite.
+ */
+interface RoutineSource {
+  routine: { am: ProductPick[]; pm: ProductPick[]; weekly: ProductPick[]; total_price: number };
+  diagnosis: string;
+  skin_type: string;
+}
+
 /* ---------------- Routine ---------------- */
-export async function saveRoutineFromAnalysis(a: FaceAnalysis): Promise<void> {
+export async function saveRoutineFromAnalysis(a: RoutineSource): Promise<void> {
   const r: StoredRoutine = {
     am: a.routine.am,
     pm: a.routine.pm,

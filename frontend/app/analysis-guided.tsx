@@ -9,6 +9,7 @@ import { SkynLockup } from "@/src/components/brand/SkynLockup";
 import { SettlingLoader } from "@/src/components/skinMemory/SettlingLoader";
 import { api } from "@/src/services/api";
 import { track } from "@/src/services/analytics";
+import { saveRoutineFromAnalysis } from "@/src/services/routineStore";
 import { colors, radius, spacing, type } from "@/src/theme";
 import { storage } from "@/src/utils/storage";
 
@@ -89,6 +90,15 @@ export default function AnalysisGuidedScreen() {
         // lit la Phase a jour pour "Ce qui a change", pas cette reponse
         // brute seule.
         await api.ingestScan("guided", data as unknown as Record<string, unknown>);
+        // L'onglet "Ma routine" ne lisait jusqu'ici que ce que l'ancien flux
+        // (/camera) y deposait : pour quiconque n'utilise que le scan guide
+        // desormais principal, il restait vide malgre le second calcul de
+        // /api/analyze/guided (voir server.py). Facultatif ici seulement
+        // parce que ce second calcul peut, tres rarement, echouer sans faire
+        // echouer le scan entier — voir guidedScan.ts.
+        if (data.routine && data.diagnosis && data.skin_type) {
+          await saveRoutineFromAnalysis({ routine: data.routine, diagnosis: data.diagnosis, skin_type: data.skin_type });
+        }
         // Passe la reponse fraiche a l'ecran de resultat via le meme
         // mecanisme de stockage que skyn_guided_captures : ni variable en
         // memoire (ne survit pas a un rechargement), ni adaptation dans le
