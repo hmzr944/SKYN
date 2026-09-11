@@ -1,8 +1,18 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
+import Animated, {
+  useAnimatedStyle,
+  useReducedMotion,
+  useSharedValue,
+  withDelay,
+  withSequence,
+  withSpring,
+  withTiming,
+} from "react-native-reanimated";
 
+import { ease } from "@/src/animation/ease";
 import { AnimatedPressable } from "@/src/components/ui/AnimatedPressable";
-import { colors, fonts, radius, spacing } from "@/src/theme";
+import { colors, fonts, motion, radius, spacing } from "@/src/theme";
 
 /**
  * Une demande d'autorisation, posee dans l'onboarding.
@@ -50,6 +60,48 @@ export function Autorisation({
   testID?: string;
 }) {
   const [enCours, setEnCours] = useState(false);
+  const reduced = useReducedMotion();
+
+  // Le passage a "accorde" remplace le bouton par ce bloc d'un coup, sans la
+  // moindre transition — le seul etat de tout ce composant qui n'en ait
+  // aucune, alors que c'est justement le moment de recompense. `pop` porte
+  // l'ecrasement cartoon du bloc, `markPop` celui de la coche, decale d'un
+  // instant derriere pour qu'elle jaillisse plutot qu'elle apparaisse avec
+  // le reste.
+  //
+  // Le ref evite de rejouer ce rebond si l'autorisation etait DEJA accordee
+  // au montage (la camera, notamment, connait son etat des l'ouverture) : ce
+  // n'est une recompense que si elle vient d'etre obtenue PENDANT la
+  // session, pas un etat qui existait deja.
+  const dejaAccordeRef = useRef(etat === "accorde");
+  const pop = useSharedValue(etat === "accorde" ? 1 : 0.7);
+  const markPop = useSharedValue(etat === "accorde" ? 1 : 0);
+
+  useEffect(() => {
+    const accorde = etat === "accorde";
+    const etaitDejaAccorde = dejaAccordeRef.current;
+    dejaAccordeRef.current = accorde;
+    if (!accorde || etaitDejaAccorde) return;
+    if (reduced) {
+      pop.value = 1;
+      markPop.value = 1;
+      return;
+    }
+    pop.value = withSequence(
+      withTiming(0.82, { duration: 60, easing: ease.in }),
+      withSpring(1, motion.springCartoon),
+    );
+    markPop.value = withDelay(70, withSpring(1, motion.springCartoon));
+  }, [etat, reduced, pop, markPop]);
+
+  const popStyle = useAnimatedStyle(() => ({
+    opacity: Math.min(1, pop.value),
+    transform: [{ scale: pop.value }],
+  }));
+  const markStyle = useAnimatedStyle(() => ({
+    opacity: markPop.value,
+    transform: [{ scale: 0.4 + markPop.value * 0.6 }],
+  }));
 
   if (etat === "impossible") {
     return (
@@ -66,12 +118,12 @@ export function Autorisation({
   if (etat === "accorde") {
     return (
       <View style={styles.bloc}>
-        <View style={[styles.etat, styles.etatOk]}>
-          <Text style={styles.puce}>✓</Text>
+        <Animated.View style={[styles.etat, styles.etatOk, popStyle]}>
+          <Animated.Text style={[styles.puce, markStyle]}>✓</Animated.Text>
           <Text style={styles.etatTexte} testID={testID ? `${testID}-accorde` : undefined}>
             {motAccorde}
           </Text>
-        </View>
+        </Animated.View>
       </View>
     );
   }

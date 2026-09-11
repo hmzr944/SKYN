@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -10,14 +10,17 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
 import * as Haptics from "expo-haptics";
 import Animated, {
+  useReducedMotion,
   useSharedValue,
   useAnimatedStyle,
+  withDelay,
+  withSequence,
   withSpring,
   withTiming,
 } from "react-native-reanimated";
 
 import { ease } from "@/src/animation/ease";
-import { colors, fonts, spacing, radius, shadow } from "@/src/theme";
+import { colors, fonts, spacing, radius, shadow, motion } from "@/src/theme";
 import { FadeIn } from "@/src/components/ui/FadeIn";
 import { AnimatedPressable } from "@/src/components/ui/AnimatedPressable";
 import { SkynMark } from "@/src/components/brand/SkynMark";
@@ -56,15 +59,53 @@ function StepRow({
   done: boolean;
   onToggle: () => void;
 }) {
+  const reduced = useReducedMotion();
+  // `s` porte la couleur/bordure, en fondu simple — une teinte qui "rebondit"
+  // ne se lit pas, seule une forme le peut. `pop` porte l'ecrasement cartoon
+  // de la case ; `markPop`, celui de la coche, decale d'un instant derriere
+  // pour que la coche paraisse jaillir de la case plutot qu'apparaitre avec
+  // elle — un mouvement secondaire, pas juste le meme ressort recopie deux
+  // fois.
   const s = useSharedValue(done ? 1 : 0);
+  const pop = useSharedValue(done ? 1 : 0.88);
+  const markPop = useSharedValue(done ? 1 : 0);
+  // Sans lui, rouvrir cet ecran avec des cases deja cochees rejouerait le
+  // rebond au montage — ce n'est un moment de recompense que la premiere
+  // fois qu'on coche, pas a chaque fois que la ligne se remonte.
+  const etaitDejaFaitRef = useRef(done);
+
   useEffect(() => {
-    s.value = withSpring(done ? 1 : 0, { damping: 15, stiffness: 180 });
-  }, [done, s]);
+    const etaitDejaFait = etaitDejaFaitRef.current;
+    etaitDejaFaitRef.current = done;
+    s.value = withTiming(done ? 1 : 0, { duration: 160 });
+    if (reduced || (done && etaitDejaFait)) {
+      pop.value = done ? 1 : 0.88;
+      markPop.value = done ? 1 : 0;
+      return;
+    }
+    if (done) {
+      // La case se ratatine avant de jaillir au-dela de sa taille finale —
+      // c'est ce depassement, pas juste "grandir", qui se lit comme cocher
+      // plutot que comme un fondu.
+      pop.value = withSequence(
+        withTiming(0.76, { duration: 70, easing: ease.in }),
+        withSpring(1, motion.springCartoon),
+      );
+      markPop.value = withDelay(70, withSpring(1, motion.springCartoon));
+    } else {
+      pop.value = withTiming(0.88, { duration: 140, easing: ease.out });
+      markPop.value = withTiming(0, { duration: 90 });
+    }
+  }, [done, reduced, s, pop, markPop]);
 
   const boxStyle = useAnimatedStyle(() => ({
     backgroundColor: s.value > 0.5 ? colors.ok : "transparent",
     borderColor: s.value > 0.5 ? colors.ok : colors.borderMid,
-    transform: [{ scale: 0.9 + s.value * 0.1 }],
+    transform: [{ scale: pop.value }],
+  }));
+  const markStyle = useAnimatedStyle(() => ({
+    opacity: markPop.value,
+    transform: [{ scale: 0.4 + markPop.value * 0.6 }],
   }));
 
   return (
@@ -76,7 +117,7 @@ function StepRow({
       accessibilityLabel={`${STEP_LABEL[p.step] ?? p.step} : ${p.brand} ${p.name}`}
     >
       <Animated.View style={[styles.checkbox, boxStyle]}>
-        {done ? <Text style={styles.checkMark}>✓</Text> : null}
+        <Animated.Text style={[styles.checkMark, markStyle]}>✓</Animated.Text>
       </Animated.View>
       <View style={{ flex: 1 }}>
         <Text style={styles.stepLabel}>{STEP_LABEL[p.step] ?? p.step}</Text>
