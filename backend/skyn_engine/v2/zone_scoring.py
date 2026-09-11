@@ -29,7 +29,7 @@ from .pipeline import _zone_burden
 
 # Les seules lesions qui pesent sur la composante "inflammatoire" de la
 # charge — meme liste que pipeline.py::_zone_scores, pas une nouvelle regle.
-LESIONS_INFLAMMATOIRES = ("papule", "pustule")
+LESIONS_INFLAMMATOIRES = ("papule", "pustule", "nodule")
 
 
 def zone_scores_from_confirmed(result: ScanResult) -> Dict[str, int]:

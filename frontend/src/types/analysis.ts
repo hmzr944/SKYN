@@ -37,6 +37,7 @@ export type LesionType =
   | "comedon"
   | "papule"
   | "pustule"
+  | "nodule"
   | "marque_rouge"
   | "marque_brune";
 
@@ -208,6 +209,7 @@ export const LESION_LABEL: Record<LesionType, string> = {
   comedon: "Comédons",
   papule: "Papules",
   pustule: "Pustules",
+  nodule: "Nodules",
   marque_rouge: "Marques rouges",
   marque_brune: "Marques brunes",
 };

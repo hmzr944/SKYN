@@ -125,7 +125,8 @@ def _summary(fp: SkinFingerprint, ph: Phenotype, lr: LesionReport,
 
     tot = len(lr.lesions)
     if tot:
-        infl = lr.counts.get("papule", 0) + lr.counts.get("pustule", 0)
+        infl = (lr.counts.get("papule", 0) + lr.counts.get("pustule", 0)
+                + lr.counts.get("nodule", 0))
         where = ", ".join(ZONE_FR.get(z, z) for z in lr.dominant_zones[:2])
         s = f"{tot} lésions repérées"
         if infl:
@@ -181,7 +182,7 @@ def _zone_scores(fp: SkinFingerprint, lr: LesionReport, fm: FaceMap) -> Dict[str
             continue
         d = lr.density.get(name, 0.0)
         per = lr.per_zone.get(name, {})
-        infl = per.get("papule", 0) + per.get("pustule", 0)
+        infl = per.get("papule", 0) + per.get("pustule", 0) + per.get("nodule", 0)
         out[name] = int(round(100 * (1.0 - _zone_burden(d, infl))))
     return out
 
@@ -205,7 +206,7 @@ def _zone_scores_from_merged(per_zone: Dict[str, dict]) -> Dict[str, int]:
     for name, data in per_zone.items():
         d = data.get("density_cm2", 0.0)
         lesions = data.get("lesions") or {}
-        infl = lesions.get("papule", 0) + lesions.get("pustule", 0)
+        infl = lesions.get("papule", 0) + lesions.get("pustule", 0) + lesions.get("nodule", 0)
         out[name] = int(round(100 * (1.0 - _zone_burden(d, infl))))
     return out
 

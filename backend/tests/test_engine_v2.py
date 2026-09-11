@@ -48,7 +48,7 @@ def make_phenotype(**kw) -> Phenotype:
 
 
 def make_lesions(severity=2, **counts) -> LesionReport:
-    c = {"comedon": 0, "papule": 0, "pustule": 0,
+    c = {"comedon": 0, "papule": 0, "pustule": 0, "nodule": 0,
          "marque_rouge": 0, "marque_brune": 0}
     c.update(counts)
     zones = ["front", "joue_g", "joue_d", "menton"]
@@ -245,6 +245,23 @@ class TestClassification:
     def test_coeur_desature_reste_un_poil(self):
         """Meme legerement chaud, un noyau tres desature n'est pas une lesion."""
         assert classify(0.5, -4.0, 0.6, r_px=2.0, core_s=60.0 * 0.4) is None
+
+    def test_grande_lesion_inflammatoire_devient_un_nodule(self):
+        """Meme signature qu'une papule (voir test_papule_rouge_et_sombre_est_
+        retenue), mais assez grande (>= NODULE_MIN_MM) pour etre cliniquement
+        un nodule, pas une papule — inspire des systemes de reference (VISIA,
+        apps IA grand public) qui distinguent les deux dans leur grille de
+        severite type GAGS/IGA, alors que le moteur ne detectait jusqu'ici que
+        3 types de lesions actives sur les 4 usuels."""
+        # r_px=8.0, px_per_mm=2.6 (defauts de `classify`) -> d_mm ~ 6.15, au
+        # dessus du seuil de 5 mm.
+        assert classify(13.2, -12.2, 4.7, core_l=-17.6, core_s=135.7, r_px=8.0) == "nodule"
+
+    def test_petite_lesion_sous_le_seuil_reste_une_papule(self):
+        """La meme signature, mais en dessous du seuil de taille : toujours
+        une papule — le seuil doit discriminer sur la taille, pas sur autre
+        chose qui aurait change en meme temps."""
+        assert classify(13.2, -12.2, 4.7, core_l=-17.6, core_s=135.7, r_px=4.0) == "papule"
 
 
 # --------------------------------------------------------------------------

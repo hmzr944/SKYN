@@ -127,6 +127,9 @@ export function scoreColor(score: number): string {
 const LESION_COLOR: Record<string, string> = {
   papule: "#E23A59",
   pustule: "#FFB020",
+  // Plus profond, plus sombre que la papule : la teinte doit se lire comme
+  // "plus grave", pas comme une variante au hasard.
+  nodule: "#8A1030",
   comedon: "#5C4A42",
   marque_rouge: "#FF8FA3",
   marque_brune: "#A8724F",

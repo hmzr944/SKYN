@@ -77,7 +77,7 @@ def build_fingerprint(ph: Phenotype, lr: LesionReport,
     flags: List[str] = []
 
     # --- Axes mesures ------------------------------------------------------
-    infl_density = _density_sum(lr, ("papule", "pustule"))
+    infl_density = _density_sum(lr, ("papule", "pustule", "nodule"))
     com_density = _density_sum(lr, ("comedon",))
     mark_density = _density_sum(lr, ("marque_rouge", "marque_brune"))
 
@@ -100,9 +100,11 @@ def build_fingerprint(ph: Phenotype, lr: LesionReport,
                                + (0.25 if ph.sensitive else 0.0))
 
     if v["acne_active"] > 0:
+        nodules = lr.counts.get("nodule", 0)
+        nodule_txt = f", {nodules} nodules" if nodules else ""
         drivers["acne_active"] = (
-            f"{lr.counts['papule']} papules et {lr.counts['pustule']} pustules "
-            f"repérées, sévérité {lr.severity_label.replace('_', ' ')}"
+            f"{lr.counts['papule']} papules et {lr.counts['pustule']} pustules"
+            f"{nodule_txt} repérées, sévérité {lr.severity_label.replace('_', ' ')}"
         )
     if v["sebum"] > 0.4:
         drivers["sebum"] = (

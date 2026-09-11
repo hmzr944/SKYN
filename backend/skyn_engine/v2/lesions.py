@@ -42,7 +42,7 @@ from . import calibration as C
 # de vue.
 FACE_WIDTH_MM = 140.0
 
-LESION_TYPES = ("comedon", "papule", "pustule", "marque_rouge", "marque_brune")
+LESION_TYPES = ("comedon", "papule", "pustule", "nodule", "marque_rouge", "marque_brune")
 
 # Gravite relative, inspiree du Global Acne Grading System : un comedon vaut 1,
 # une papule 2, une pustule 3, un nodule 4. Les marques post-inflammatoires ne
@@ -52,9 +52,15 @@ LESION_SEVERITY = {
     "comedon": 1.0,
     "papule": 2.0,
     "pustule": 3.0,
+    "nodule": 4.0,
     "marque_rouge": 0.5,
     "marque_brune": 0.5,
 }
+
+# Seuil clinique usuel distinguant une papule d'un nodule : au-dela, la
+# lesion est plus profonde et plus grave, meme si sa signature optique (rouge,
+# en relief) ne differe en rien d'une papule plus petite.
+NODULE_MIN_MM = 5.0
 
 
 @dataclass
@@ -433,6 +439,18 @@ def _classify(red: float, dark: float, yellow: float, core_l: float,
     # Une tache sombre doit donc apporter DAVANTAGE de preuve coloree qu'une
     # tache en relief : c'est la seule facon de distinguer une lesion d'une
     # ombre, puisque l'obscurite seule est ambigue.
+    #
+    # Nodule : meme signature colorimetrique qu'une papule inflammatoire — ce
+    # qui la distingue cliniquement, c'est la taille (lesion plus profonde),
+    # pas la couleur. Le test doit donc passer AVANT celui de la papule : une
+    # grande lesion inflammatoire ne doit jamais retomber dans la branche
+    # papule faute d'un cas dedie. Les pustules larges restent classees
+    # "pustule" — leur propre regle, plus haut, ne regarde pas la taille et
+    # n'est pas touchee ici.
+    if d_mm >= NODULE_MIN_MM and (
+        (dark > -1.2 and red > 1.8) or (dark <= -1.2 and red > RED_IF_DARK)
+    ):
+        return "nodule"
     if d_mm >= 1.2 and (
         (dark > -1.2 and red > 1.8) or (dark <= -1.2 and red > RED_IF_DARK)
     ):
@@ -463,7 +481,7 @@ def _classify(red: float, dark: float, yellow: float, core_l: float,
 def _confidence(ltype: str, red: float, dark: float, core_l: float,
                 area: float, a_min: int, a_max: int) -> float:
     """Confiance heuristique : force du signal x plausibilite de la taille."""
-    if ltype in ("papule", "pustule"):
+    if ltype in ("papule", "pustule", "nodule"):
         signal = min(1.0, red / 6.0)
     elif ltype == "comedon":
         signal = min(1.0, abs(dark) / 6.0)
@@ -504,7 +522,9 @@ def _build_report(fm: FaceMap, lesions: List[Lesion],
         zc = per_zone.get(name)
         if not zc:
             continue
-        if zc["pustule"] > 0:
+        if zc["nodule"] > 0:
+            grade = 4.0
+        elif zc["pustule"] > 0:
             grade = 3.0
         elif zc["papule"] > 0:
             grade = 2.0
@@ -519,7 +539,7 @@ def _build_report(fm: FaceMap, lesions: List[Lesion],
 
     level, label = _severity(gags)
 
-    inflam = counts["papule"] + counts["pustule"]
+    inflam = counts["papule"] + counts["pustule"] + counts["nodule"]
     total_active = inflam + counts["comedon"]
     inflam_ratio = float(inflam / total_active) if total_active else 0.0
 
