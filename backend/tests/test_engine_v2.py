@@ -406,6 +406,35 @@ class TestRoutine:
         assert nettoyant.product["id"] != "bioderma-sensibio-h2o"
         assert "acne_active" in (nettoyant.product.get("targets") or {}), nettoyant.product["id"]
 
+    def test_severe_acne_with_high_measured_redness_still_gets_an_acne_cleanser(self, catalog):
+        """Le test precedent verrouille la formule pour une acne severe avec
+        PEU de sensibilite/rougeur mesuree — un scenario qui ne correspond
+        pas a ce qu'une vraie photo d'acne severe produit. En pratique, des
+        dizaines de papules rouges font grimper `redness_global`/`sensitive`
+        pres du maximum : c'est exactement ce qui s'est passe pour le meme
+        utilisateur reel apres la premiere correction — le nettoyant restait
+        l'eau micellaire, parce que le fixture de test precedent n'avait
+        jamais mesure ce que la formule fait quand sensibilite ET acne
+        active sont TOUTES LES DEUX elevees en meme temps.
+
+        Root cause reelle : redness_global se mesurait sur la zone entiere,
+        lesions comprises (voir phenotype.py, `_lesion_exclusion_mask`) — et
+        meme corrige, l'erytheme diffus autour d'une acne severe reste
+        eleve. Le vrai correctif est dans `_pick_for_step` (matching.py),
+        qui attenue sensibilite/rougeur/barriere pour le choix du nettoyant
+        SEULEMENT, proportionnellement a l'acne active mesuree."""
+        ph = make_phenotype(skin_type="mixte", sensitive=True, redness_global=1.0)
+        fp = build_fingerprint(ph, make_lesions(3, papule=45, pustule=2, comedon=3), {})
+        # Le scenario n'a de sens que s'il reproduit bien les deux
+        # concurrentes mesurees hautes en meme temps — sinon ce test ne
+        # couvre rien de plus que le precedent.
+        assert fp.get("acne_active") > 0.5, fp.get("acne_active")
+        assert fp.get("sensitivity") > 0.8, fp.get("sensitivity")
+        rt = build_routine(fp, ph, {}, catalog=catalog)
+        nettoyant = next(p for p in rt.am if p.step == "nettoyant")
+        assert nettoyant.product["id"] != "bioderma-sensibio-h2o"
+        assert "acne_active" in (nettoyant.product.get("targets") or {}), nettoyant.product["id"]
+
     def test_essential_score_unchanged_without_acne(self, catalog):
         """La correction du test precedent ne doit rien changer pour une
         peau sensible SANS acne active : l'eau micellaire reste le bon choix

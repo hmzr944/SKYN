@@ -26,7 +26,7 @@ S'ajoutent quatre regles de securite qui sont, elles aussi, personnalisantes :
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field, asdict, replace
 from typing import Dict, List, Optional, Tuple
 
 from .concerns import SkinFingerprint, CONCERN_KEYS
@@ -285,6 +285,28 @@ def _pick_for_step(cands: List[dict], step: str, moment: str,
     essential = step in ESSENTIAL_STEPS
     ceiling = _price_ceiling(profile)
 
+    # Pour le CHOIX du nettoyant seulement : quand l'acne active est marquee,
+    # une bonne part de la rougeur/sensibilite mesuree est l'inflammation de
+    # l'acne elle-meme, pas un trait de peau independant qui justifierait
+    # d'ecarter un actif therapeutique au profit d'un soin seulement apaisant
+    # (signale par un utilisateur reel : une acne severe avec de la rougeur
+    # associee se voyait recommander une eau micellaire sans aucun actif —
+    # voir le test `test_severe_active_acne_gets_an_acne_cleanser`, dont la
+    # premiere correction portait sur `_essential_score` mais pas sur ceci).
+    #
+    # On ne touche QUE la copie utilisee pour noter ce candidat-ci : `fp`
+    # original reste intact pour `_is_allowed` (les exclusions de securite —
+    # grossesse, peau tres reactive — doivent rester sur la mesure REELLE,
+    # jamais sur une version attenuee) et pour tout le reste de la routine.
+    fp_scoring = fp
+    if step == "nettoyant":
+        discount = 0.75 * fp.get("acne_active")
+        if discount > 0:
+            adjusted = dict(fp.vector)
+            for k in ("sensitivity", "redness", "barrier_damage"):
+                adjusted[k] = max(0.0, adjusted.get(k, 0.0) - discount)
+            fp_scoring = replace(fp, vector=adjusted)
+
     scored: List[Tuple[float, dict, List[str]]] = []
     for p in cands:
         if p.get("step") != step:
@@ -301,7 +323,7 @@ def _pick_for_step(cands: List[dict], step: str, moment: str,
         # socle est conservee quoi qu'il arrive, dans sa version la plus douce.
         if not essential and float(p.get("irritation", 0.0)) > budget_left:
             continue
-        s, why = _fit_score(p, fp)
+        s, why = _fit_score(p, fp_scoring)
         scored.append((s, p, why))
 
     if not scored:
@@ -312,7 +334,7 @@ def _pick_for_step(cands: List[dict], step: str, moment: str,
     # centimes de depassement, ce qui n'a aucun sens pour l'utilisateur.
     ranked: List[Tuple[float, float, dict, List[str]]] = []
     for s, p, why in scored:
-        rank = _essential_score(p, s, ph, fp, step) if essential else s
+        rank = _essential_score(p, s, ph, fp_scoring, step) if essential else s
         rank *= _price_penalty(float(p.get("price_eur", 0.0)), ceiling)
         ranked.append((rank, s, p, why))
 
@@ -323,7 +345,7 @@ def _pick_for_step(cands: List[dict], step: str, moment: str,
     # Pour une etape de socle, le pourcentage affiche doit traduire l'adequation
     # au type de peau, pas la couverture des preoccupations : afficher "8 %"
     # sur un hydratant parfaitement adapte serait absurde pour l'utilisateur.
-    best_s = _essential_score(best_p, best_fit, ph, fp, step) if essential else best_fit
+    best_s = _essential_score(best_p, best_fit, ph, fp_scoring, step) if essential else best_fit
 
     # Un traitement cible sans motif mesure n'a pas lieu d'etre ; une etape de
     # socle reste utile meme sans correspondance forte.

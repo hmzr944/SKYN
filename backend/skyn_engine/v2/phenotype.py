@@ -28,11 +28,12 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 import cv2
 import numpy as np
 
+from .lesions import Lesion
 from .zones import FaceMap, T_ZONE, U_ZONE
 from . import calibration as C
 
@@ -126,8 +127,52 @@ def _texture_energy(l_flat: np.ndarray, mask: np.ndarray, face_w: int) -> float:
     return float(np.std(v)) if v is not None else 0.0
 
 
+def _lesion_exclusion_mask(fm: FaceMap, lesions: Optional[List[Lesion]],
+                           shape: Tuple[int, int]) -> Optional[np.ndarray]:
+    """Les pixels d'une lesion, avec une marge pour son halo inflammatoire.
+
+    Signale par un utilisateur reel : une acne inflammatoire marquee (une
+    quarantaine de papules) faisait mesurer une "sensibilite/reactivite"
+    proche du maximum, ce qui faisait remonter des soins apaisants hors sujet
+    devant de vrais nettoyants anti-acne. `redness` (canal a*, plus bas) se
+    moyennait sur la zone ENTIERE, boutons compris — exclure leurs pixels
+    reduit donc mecaniquement la moyenne.
+
+    A verifier sur des photos reelles d'acne severe : cette exclusion a un
+    effet REEL mais MODESTE (quelques points sur l'echelle 4..16 de
+    `REDNESS_RANGE`), parce qu'une acne inflammatoire etendue laisse aussi un
+    erytheme diffus AUTOUR des lesions, pas seulement a leur coeur detecte —
+    au point que meme le 30e centile de rougeur d'une zone touchee reste
+    eleve. Cette exclusion reste correcte et utile independamment (une mesure
+    de "peau de fond" ne devrait de toute facon jamais inclure les lesions
+    elle-meme), mais le levier qui regle vraiment le probleme de nettoyant
+    est dans matching.py — `_pick_for_step`, qui attenue l'influence de
+    sensibilite/rougeur/barriere PROPORTIONNELLEMENT A l'acne active mesuree,
+    la ou cette exclusion seule ne suffit pas a sortir `redness_global` de la
+    saturation.
+    """
+    if not lesions:
+        return None
+    bx, by, bw, bh = fm.bbox
+    norm_dim = float(max(bw, bh)) or 1.0
+    h, w = shape
+    m = np.zeros((h, w), dtype=np.uint8)
+    any_drawn = False
+    for l in lesions:
+        cx = int(round(l.x * bw + bx))
+        cy = int(round(l.y * bh + by))
+        # Le halo rouge d'une papule deborde nettement de son coeur detecte —
+        # une marge trop courte laisserait son anneau contaminer la mesure
+        # qu'on cherche justement a proteger.
+        r = max(2, int(round(l.radius * norm_dim * 1.6)))
+        if 0 <= cx < w and 0 <= cy < h:
+            cv2.circle(m, (cx, cy), r, 255, -1)
+            any_drawn = True
+    return m if any_drawn else None
+
+
 def _zone_stats(fm: FaceMap, sat: np.ndarray, l_ref: float, mad_ref: float,
-                face_w: int) -> Dict[str, ZoneStats]:
+                face_w: int, lesion_mask: Optional[np.ndarray] = None) -> Dict[str, ZoneStats]:
     lab = fm.lab
     L = lab[:, :, 0] * (100.0 / 255.0)      # L* 0..100
     A = lab[:, :, 1] - 128.0                # a* centre
@@ -138,8 +183,20 @@ def _zone_stats(fm: FaceMap, sat: np.ndarray, l_ref: float, mad_ref: float,
         if not z.available:
             continue
         m = z.mask
+        # La rougeur de FOND s'exclut des lesions (voir _lesion_exclusion_mask) :
+        # `l_sel`/`b_sel` restent sur la zone entiere, seule `a_sel` (rougeur)
+        # en a besoin — c'est le seul canal dont l'inflation par les boutons a
+        # ete tracee jusqu'a une mesure de sensibilite fausse.
+        m_bg = m
+        if lesion_mask is not None:
+            excl = (m > 0) & (lesion_mask == 0)
+            # Zone quasi entierement couverte de lesions : se rabattre sur la
+            # zone complete plutot que mesurer sur une poignee de pixels non
+            # representatifs.
+            if int(excl.sum()) >= 25:
+                m_bg = (excl.astype(np.uint8)) * 255
         l_sel = _masked(L, m)
-        a_sel = _masked(A, m)
+        a_sel = _masked(A, m_bg)
         b_sel = _masked(B, m)
         if l_sel is None or a_sel is None or b_sel is None:
             continue
@@ -183,7 +240,11 @@ def _norm(v: float, lo: float, hi: float) -> float:
     return float(max(0.0, min(1.0, (v - lo) / (hi - lo))))
 
 
-def analyze_phenotype(fm: FaceMap) -> Phenotype:
+def analyze_phenotype(fm: FaceMap, lesions: Optional[List[Lesion]] = None) -> Phenotype:
+    """`lesions` (facultatif) exclut les lesions detectees de la mesure de
+    rougeur de fond — voir `_lesion_exclusion_mask`. Reste `None` par defaut
+    pour les appelants qui n'ont pas encore de detection (aucune regression :
+    c'est exactement le comportement d'avant sans cet argument)."""
     if not fm.detected:
         return Phenotype(
             skin_type="indetermine", skin_type_confidence=0.0,
@@ -202,7 +263,8 @@ def analyze_phenotype(fm: FaceMap) -> Phenotype:
     mad_ref = float(np.median(np.abs(ref - l_ref))) if ref is not None else 1.0
     mad_ref = mad_ref or 1.0
 
-    stats = _zone_stats(fm, sat, l_ref, mad_ref, face_w)
+    lesion_mask = _lesion_exclusion_mask(fm, lesions, fm.l_flat.shape[:2])
+    stats = _zone_stats(fm, sat, l_ref, mad_ref, face_w, lesion_mask)
     notes: List[str] = []
 
     # --- Sebum : le differentiel T/U est le coeur du typage ----------------

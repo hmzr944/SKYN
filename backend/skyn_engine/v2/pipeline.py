@@ -229,8 +229,12 @@ def analyze_face(image_b64: str, profile: Optional[dict] = None) -> FaceAnalysis
             elapsed_ms=int((time.time() - t0) * 1000),
         )
 
-    ph = analyze_phenotype(fm)
+    # La detection des lesions passe D'ABORD : le phenotype (rougeur de fond,
+    # sensibilite) doit pouvoir exclure leurs pixels de sa propre mesure,
+    # sinon une acne inflammatoire marquee se lit a tort comme une peau
+    # diffusement reactive — voir la note de _lesion_exclusion_mask.
     lr = detect_lesions(fm)
+    ph = analyze_phenotype(fm, lesions=lr.lesions)
     fp = build_fingerprint(ph, lr, profile)
     routine = build_routine(fp, ph, profile)
 
