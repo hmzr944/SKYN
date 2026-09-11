@@ -34,8 +34,18 @@ SHINE_RANGE = (0.01, 0.22)
 TEXTURE_RANGE = (2.0, 7.5)
 """Ecart-type du residu haute frequence de la luminance, a l'echelle du pore."""
 
-REDNESS_RANGE = (4.0, 16.0)
-"""a* moyen au-dessus du neutre, apres correction de balance des blancs."""
+REDNESS_RANGE = (0.05, 0.15)
+"""Indice d'erytheme moyen (voir `phenotype._erythema`), apres correction de
+balance des blancs.
+
+Remplace un ancien calibrage sur `a*` de LAB (4.0, 16.0) : ce canal melange
+rougeur (hemoglobine) ET brun (melanine), si bien qu'une acne inflammatoire
+etendue faisait saturer `redness_global` a 1.0 au meme titre qu'une vraie
+peau tres reactive — signale par un utilisateur reel, dont les photos
+d'acne severe ont aussi servi a recalibrer ces bornes (moyenne mesuree
+~0.064 sur un visage calme de reference, ~0.12-0.13 sur les zones les plus
+atteintes des photos d'acne severe — la borne haute laisse deliberement de
+la marge au-dessus pour ne pas saturer sur ce seul echantillon)."""
 
 UNEVENNESS_RANGE = (3.0, 13.0)
 """Ecart-type de L* dans une zone : proxy d'uniformite du teint."""
@@ -49,7 +59,13 @@ DRY_SEBUM_MAX = 0.30
 DRY_DRYNESS_MIN = 0.45
 
 # --- Reactivite ------------------------------------------------------------
-SENSITIVE_A_STAR_MIN = 13.0
+# Meme migration que REDNESS_RANGE, vers l'indice d'erytheme : ~0.066 sur le
+# groupe joues+nez d'un visage calme de reference, ~0.12-0.13 sur celui d'une
+# acne severe. Le seuil retenu se place a mi-chemin, pas au niveau de l'acne
+# severe elle-meme — ce indicateur signale une reactivite DIFFUSE, l'acne
+# active est deja portee par sa propre mesure (voir matching.py, qui attenue
+# justement cet indicateur quand l'acne active domine).
+SENSITIVE_ERYTHEMA_MIN = 0.09
 SENSITIVE_GLOBAL_MIN = 0.45
 
 # --- Detection de lesions --------------------------------------------------

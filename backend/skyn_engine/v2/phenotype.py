@@ -18,7 +18,11 @@ On produit ici trois axes independants, mesures et non declares :
   garde des marques brunes la ou une peau claire garde des marques rouges), et
   le choix du filtre solaire (les filtres mineraux laissent un voile blanc).
 
-* REACTIVITE, via le canal a* de LAB apres correction de balance des blancs.
+* REACTIVITE, via un indice d'erytheme (`log10(R/G)`, voir `_erythema` plus
+  bas) apres correction de balance des blancs — inspire de RBX (Canfield,
+  systeme VISIA de reference en dermatologie), qui separe le meme signal
+  rouge (hemoglobine) du brun (melanine) plutot que de mesurer une seule
+  teinte globale comme le fait `a*` de LAB.
 
 Les grandeurs de type "sebum" ou "hydratation" sont des PROXYS optiques, pas des
 mesures biophysiques. Un sebumetre mesure le sebum ; une photo mesure la
@@ -56,7 +60,7 @@ class ZoneStats:
     """Mesures brutes sur une zone."""
     name: str
     shine: float        # part de reflexion speculaire (proxy sebum), 0..1
-    redness: float      # a* moyen au-dessus du neutre
+    redness: float      # indice d'erytheme moyen (voir _erythema)
     texture: float      # energie haute frequence (proxy grain / pores)
     l_mean: float       # luminance moyenne (L* 0..100)
     l_std: float        # dispersion de luminance (proxy uniformite)
@@ -134,22 +138,25 @@ def _lesion_exclusion_mask(fm: FaceMap, lesions: Optional[List[Lesion]],
     Signale par un utilisateur reel : une acne inflammatoire marquee (une
     quarantaine de papules) faisait mesurer une "sensibilite/reactivite"
     proche du maximum, ce qui faisait remonter des soins apaisants hors sujet
-    devant de vrais nettoyants anti-acne. `redness` (canal a*, plus bas) se
-    moyennait sur la zone ENTIERE, boutons compris — exclure leurs pixels
-    reduit donc mecaniquement la moyenne.
+    devant de vrais nettoyants anti-acne. `redness` (voir `_erythema`,
+    plus bas) se moyennait sur la zone ENTIERE, boutons compris — exclure
+    leurs pixels reduit donc mecaniquement la moyenne.
 
-    A verifier sur des photos reelles d'acne severe : cette exclusion a un
-    effet REEL mais MODESTE (quelques points sur l'echelle 4..16 de
-    `REDNESS_RANGE`), parce qu'une acne inflammatoire etendue laisse aussi un
-    erytheme diffus AUTOUR des lesions, pas seulement a leur coeur detecte —
-    au point que meme le 30e centile de rougeur d'une zone touchee reste
-    eleve. Cette exclusion reste correcte et utile independamment (une mesure
-    de "peau de fond" ne devrait de toute facon jamais inclure les lesions
-    elle-meme), mais le levier qui regle vraiment le probleme de nettoyant
-    est dans matching.py — `_pick_for_step`, qui attenue l'influence de
-    sensibilite/rougeur/barriere PROPORTIONNELLEMENT A l'acne active mesuree,
-    la ou cette exclusion seule ne suffit pas a sortir `redness_global` de la
-    saturation.
+    Trois leviers, dans l'ordre ou ils ont ete poses :
+    1. Cette exclusion (ici) : correcte et utile independamment — une mesure
+       de "peau de fond" ne devrait de toute facon jamais inclure les
+       lesions elles-memes — mais son effet seul reste MODESTE sur `a*` de
+       LAB, parce qu'une acne etendue laisse aussi un erytheme diffus AUTOUR
+       des lesions, pas seulement a leur coeur detecte.
+    2. matching.py, `_pick_for_step` : attenue l'influence de
+       sensibilite/rougeur/barriere PROPORTIONNELLEMENT a l'acne active
+       mesuree, specifiquement pour le choix du nettoyant.
+    3. `_erythema` : remplace `a*` par un indice specifiquement sensible a
+       l'hemoglobine plutot qu'a la couleur de peau en general — sur les
+       memes photos reelles, la moyenne mesuree passe de saturee a 1.0 a
+       environ 0.7-0.75, avec une vraie gradation entre zones au lieu d'un
+       plafond uniforme. C'est ce dernier point qui regle la cause a la
+       racine ; les deux premiers restent necessaires et utiles en soi.
     """
     if not lesions:
         return None
@@ -171,12 +178,43 @@ def _lesion_exclusion_mask(fm: FaceMap, lesions: Optional[List[Lesion]],
     return m if any_drawn else None
 
 
+def _erythema(rgb: np.ndarray) -> np.ndarray:
+    """Indice d'erytheme : `log10(R/G)`, pixel par pixel.
+
+    Le meme principe que RBX (Canfield, systeme de reference VISIA utilise en
+    dermatologie) et les indices classiques de colorimetrie cutanee (Dawson
+    et al.) : separer le signal ROUGE (hemoglobine — inflammation, vaisseaux)
+    du signal BRUN (melanine — pigmentation), plutot que de les mesurer
+    ensemble sous une seule teinte.
+
+    L'hemoglobine absorbe fortement le vert (~540-580 nm) et beaucoup moins le
+    rouge ; la melanine absorbe les deux de facon comparable, sur un spectre
+    large. Le RAPPORT rouge/vert (ici en echelle log, donc une difference de
+    densites optiques) bouge donc surtout avec l'hemoglobine — une peau plus
+    mate n'en a pas mecaniquement plus pour autant, la ou `a*` de LAB, lui,
+    remonte avec les deux a la fois. C'etait la cause du bug signale par un
+    utilisateur reel : une acne inflammatoire etendue (donc beaucoup de rouge
+    hemoglobinique, localement et en halo diffus) faisait grimper `a*` au
+    point de saturer `redness_global`/`sensitive` a leur maximum, comme si la
+    peau etait diffusement reactive independamment de l'acne.
+
+    On reste volontairement sur une formule fixe plutot qu'une decomposition
+    ICA ajustee par photo (l'approche complete derriere RBX) : la variante
+    fixe est numeriquement stable sur une photo de telephone en lumiere non
+    controlee, quand un ajustement statistique par image ne l'est pas
+    forcement sur un nombre de pixels de peau modeste et parfois bruite.
+    """
+    r = np.clip(rgb[:, :, 0].astype(np.float32), 1.0, 255.0)
+    g = np.clip(rgb[:, :, 1].astype(np.float32), 1.0, 255.0)
+    return np.log10(r / g)
+
+
 def _zone_stats(fm: FaceMap, sat: np.ndarray, l_ref: float, mad_ref: float,
                 face_w: int, lesion_mask: Optional[np.ndarray] = None) -> Dict[str, ZoneStats]:
     lab = fm.lab
     L = lab[:, :, 0] * (100.0 / 255.0)      # L* 0..100
-    A = lab[:, :, 1] - 128.0                # a* centre
     B = lab[:, :, 2] - 128.0                # b* centre
+    EI = _erythema(fm.rgb)                  # indice d'erytheme (rougeur de fond)
 
     out: Dict[str, ZoneStats] = {}
     for name, z in fm.zones.items():
@@ -184,7 +222,7 @@ def _zone_stats(fm: FaceMap, sat: np.ndarray, l_ref: float, mad_ref: float,
             continue
         m = z.mask
         # La rougeur de FOND s'exclut des lesions (voir _lesion_exclusion_mask) :
-        # `l_sel`/`b_sel` restent sur la zone entiere, seule `a_sel` (rougeur)
+        # `l_sel`/`b_sel` restent sur la zone entiere, seul `ei_sel` (rougeur)
         # en a besoin — c'est le seul canal dont l'inflation par les boutons a
         # ete tracee jusqu'a une mesure de sensibilite fausse.
         m_bg = m
@@ -196,9 +234,9 @@ def _zone_stats(fm: FaceMap, sat: np.ndarray, l_ref: float, mad_ref: float,
             if int(excl.sum()) >= 25:
                 m_bg = (excl.astype(np.uint8)) * 255
         l_sel = _masked(L, m)
-        a_sel = _masked(A, m_bg)
+        ei_sel = _masked(EI, m_bg)
         b_sel = _masked(B, m)
-        if l_sel is None or a_sel is None or b_sel is None:
+        if l_sel is None or ei_sel is None or b_sel is None:
             continue
         l_mean, l_std = float(l_sel.mean()), float(l_sel.std())
         med = float(np.median(l_sel))
@@ -207,7 +245,7 @@ def _zone_stats(fm: FaceMap, sat: np.ndarray, l_ref: float, mad_ref: float,
         out[name] = ZoneStats(
             name=name,
             shine=_shine_ratio(fm.l_flat, sat, m, l_ref, mad_ref),
-            redness=max(0.0, float(a_sel.mean())),
+            redness=max(0.0, float(ei_sel.mean())),
             texture=_texture_energy(fm.l_flat, m, face_w),
             l_mean=l_mean, l_std=l_std, b_mean=float(b_sel.mean()),
             dark_ratio=dark_ratio, hair_ratio=z.hair_ratio,
@@ -290,7 +328,7 @@ def analyze_phenotype(fm: FaceMap, lesions: Optional[List[Lesion]] = None) -> Ph
     redness_global = _norm(redness_raw, *C.REDNESS_RANGE)
     # Reactivite : rougeur diffuse marquee, concentree sur les joues et le nez
     red_cheeks = _group_mean(stats, ("joue_g", "joue_d", "nez"), "redness")
-    sensitive = bool(red_cheeks > C.SENSITIVE_A_STAR_MIN
+    sensitive = bool(red_cheeks > C.SENSITIVE_ERYTHEMA_MIN
                      and redness_global > C.SENSITIVE_GLOBAL_MIN)
 
     # --- Uniformite du teint ----------------------------------------------

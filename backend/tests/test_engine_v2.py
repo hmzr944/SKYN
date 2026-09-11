@@ -83,6 +83,47 @@ class TestPhenotype:
         """b* nul ne doit pas lever de division par zero."""
         assert isinstance(_ita(60.0, 0.0), float)
 
+
+class TestErythema:
+    """L'indice d'erytheme (`log10(R/G)`) remplace `a*` de LAB comme mesure
+    de rougeur de fond — voir phenotype.py, `_erythema`, et son historique :
+    un utilisateur reel avec une acne severe voyait `redness_global`/
+    `sensitive` saturer a leur maximum, parce qu'`a*` melange rougeur
+    (hemoglobine) et teinte de peau (melanine). Ce que ces tests verrouillent
+    est precisement la propriete qui manquait a `a*` : une peau plus mate ne
+    doit pas se lire comme plus erythemateuse."""
+
+    def test_more_red_than_green_reads_as_erythema(self):
+        import numpy as np
+        from skyn_engine.v2.phenotype import _erythema
+
+        rgb = np.zeros((1, 3, 3), dtype=np.uint8)
+        rgb[0, 0] = [200, 100, 100]  # tres rouge par rapport au vert
+        rgb[0, 1] = [150, 150, 150]  # gris neutre : R = G
+        rgb[0, 2] = [100, 200, 100]  # plus vert que rouge
+
+        ei = _erythema(rgb)
+        assert ei[0, 0] > 0
+        assert abs(ei[0, 1]) < 1e-6
+        assert ei[0, 2] < 0
+        assert ei[0, 0] > ei[0, 1] > ei[0, 2]
+
+    def test_uniform_darkening_barely_moves_the_index(self):
+        """Deux pixels de meme RATIO R/G, l'un deux fois plus sombre que
+        l'autre — l'effet d'un assombrissement melanique, PAS d'un exces
+        d'hemoglobine. L'indice doit rester quasi identique : c'est cette
+        propriete, precisement, qui manque a `a*` de LAB et qui causait la
+        saturation signalee par l'utilisateur reel."""
+        import numpy as np
+        from skyn_engine.v2.phenotype import _erythema
+
+        rgb = np.zeros((1, 2, 3), dtype=np.uint8)
+        rgb[0, 0] = [200, 160, 140]
+        rgb[0, 1] = [100, 80, 70]
+
+        ei = _erythema(rgb)
+        assert abs(float(ei[0, 0]) - float(ei[0, 1])) < 0.02
+
     def test_skin_type_uses_tu_differential(self):
         """Une zone T brillante avec des joues mates donne une peau mixte.
 
