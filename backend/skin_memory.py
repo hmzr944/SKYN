@@ -454,6 +454,35 @@ def _skin_changes(
     return items
 
 
+async def _build_period_view(db, period: dict) -> dict:
+    """Le meme assemblage Scan/RoutineEvent/ProductEvent -> etat + changements,
+    qu'il s'agisse de la Phase active (`get_active_period_view`) ou d'une
+    Phase quelconque consultee apres coup, cloturee ou non (`get_period_view`,
+    le "Bilan de traitement") — une seule regle de calcul des changements,
+    jamais deux versions qui pourraient diverger."""
+    scans = await db.scans.find(
+        {"period_id": period["id"]}, {"_id": 0}
+    ).sort("created_at", 1).to_list(length=1000)
+    routine_events = await db.routine_events.find(
+        {"period_id": period["id"]}, {"_id": 0}
+    ).sort("at", 1).to_list(length=1000)
+    product_events = await db.product_events.find(
+        {"period_id": period["id"]}, {"_id": 0}
+    ).sort("at", 1).to_list(length=1000)
+
+    state = _phase_state(scans)
+    changes = _skin_changes(scans, product_events) if state != "baseline" else []
+
+    return {
+        "period": period,
+        "state": state,
+        "scans": scans,
+        "routine_events": routine_events,
+        "product_events": product_events,
+        "changes": [c.model_dump() for c in changes],
+    }
+
+
 async def get_active_period_view(db, user_id: str) -> Optional[dict]:
     """Tout ce dont le frontend a besoin pour afficher la Phase active :
     son etat, ses scans, sa routine, et les changements deja calculables —
@@ -461,28 +490,19 @@ async def get_active_period_view(db, user_id: str) -> Optional[dict]:
     active = await _get_active_period(db, user_id)
     if active is None:
         return None
+    return await _build_period_view(db, active)
 
-    scans = await db.scans.find(
-        {"period_id": active["id"]}, {"_id": 0}
-    ).sort("created_at", 1).to_list(length=1000)
-    routine_events = await db.routine_events.find(
-        {"period_id": active["id"]}, {"_id": 0}
-    ).sort("at", 1).to_list(length=1000)
-    product_events = await db.product_events.find(
-        {"period_id": active["id"]}, {"_id": 0}
-    ).sort("at", 1).to_list(length=1000)
 
-    state = _phase_state(scans)
-    changes = _skin_changes(scans, product_events) if state != "baseline" else []
-
-    return {
-        "period": active,
-        "state": state,
-        "scans": scans,
-        "routine_events": routine_events,
-        "product_events": product_events,
-        "changes": [c.model_dump() for c in changes],
-    }
+async def get_period_view(db, user_id: str, period_id: str) -> Optional[dict]:
+    """Le "Bilan" d'une Phase precise, active ou deja cloturee — meme forme
+    que `get_active_period_view`, pour qu'une Phase de traitement terminee
+    reste consultable apres coup (voir POST /api/treatments) sans dupliquer
+    la logique de comparaison. `None` si la Phase n'existe pas ou appartient
+    a quelqu'un d'autre — jamais de fuite entre comptes."""
+    period = await db.periods.find_one({"id": period_id, "user_id": user_id}, {"_id": 0})
+    if period is None:
+        return None
+    return await _build_period_view(db, period)
 
 
 async def list_periods(db, user_id: str, limit: int = 50) -> List[dict]:

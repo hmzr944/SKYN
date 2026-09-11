@@ -118,6 +118,10 @@ export const api = {
   getActivePeriod: () => request<ActivePeriodView | null>("/api/periods/active"),
   /** Historique des Phases, la plus recente (active ou non) en tete. */
   listPeriods: () => request<Period[]>("/api/periods"),
+  /** Le Bilan d'une Phase precise, active ou deja cloturee — voir l'ecran
+   * de bilan de traitement. Rejette si la Phase n'existe pas ou appartient
+   * a quelqu'un d'autre (404). */
+  getPeriod: (id: string) => request<ActivePeriodView>(`/api/periods/${id}`),
   logRoutineEvent: (type: RoutineEventType, diff: Record<string, string[]> = {}) =>
     request<RoutineEvent>("/api/routine-events", {
       method: "POST",

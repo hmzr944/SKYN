@@ -151,7 +151,16 @@ export default function PhaseHistoryScreen() {
                     {card}
                   </AnimatedPressable>
                 ) : (
-                  card
+                  // Une Phase close n'avait jusque-la aucune action au tap —
+                  // son Bilan (voir phase-summary.tsx) reste pourtant la
+                  // seule facon de revoir un traitement termine.
+                  <AnimatedPressable
+                    testID="phase-history-closed-card"
+                    scaleTo={0.985}
+                    onPress={() => router.push(`/phase-summary?id=${item.id}`)}
+                  >
+                    {card}
+                  </AnimatedPressable>
                 )}
               </Stagger>
             );

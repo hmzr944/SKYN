@@ -1,6 +1,14 @@
 import { CONCERN_LABEL, LESION_LABEL, ZONE_LABEL } from "@/src/types/analysis";
 import type { ConcernKey, LesionType, ZoneKey } from "@/src/types/analysis";
-import type { ChangeDirection, ChangeKind, Confidence, MemoryScan, Period, SkinChangeItem } from "@/src/types/skinMemory";
+import type {
+  ActivePeriodView,
+  ChangeDirection,
+  ChangeKind,
+  Confidence,
+  MemoryScan,
+  Period,
+  SkinChangeItem,
+} from "@/src/types/skinMemory";
 
 /**
  * Lecture d'un SkinChangeItem pour l'affichage — la seule logique de
@@ -95,4 +103,64 @@ export function zoneConfidenceMap(changes: SkinChangeItem[]): Partial<Record<Zon
 /** Le score du dernier scan de la Phase, ou `null` — un scan guidé n'en produit pas (voir skyn_engine.v2.multiview). */
 export function latestScore(scans: MemoryScan[]): number | null {
   return scans.length ? scans[scans.length - 1].global_score : null;
+}
+
+/**
+ * Les zones qui se sont le plus dégagées sur la Phase — pour le Bilan de
+ * traitement ("Zones les plus améliorées : front, menton"). Seulement les
+ * zones en tonalité "calm" avec un vrai mouvement (jamais "stable"), triées
+ * par amplitude, jamais par zone alphabétique — l'ordre porte l'information.
+ */
+export function topImprovedZones(changes: SkinChangeItem[], limit = 3): SkinChangeItem[] {
+  return changes
+    .filter((c) => c.kind === "zone" && c.direction !== "stable" && changeTone(c.kind, c.direction) === "calm")
+    .sort((a, b) => Math.abs(b.latest_value - b.baseline_value) - Math.abs(a.latest_value - a.baseline_value))
+    .slice(0, limit);
+}
+
+export type PhaseVerdict = "improving" | "watch" | "mixed" | "insufficient";
+
+/**
+ * Le verdict global d'une Phase ("Évolution globale : amélioration") — se
+ * lit UNIQUEMENT sur les changements assez confiants pour compter comme
+ * une vraie tendance (jamais "low", voir `_confidence_for_series` côté
+ * serveur). Sans un seul changement medium/high, il n'y a rien à conclure :
+ * `"insufficient"`, jamais un verdict optimiste par défaut — c'est la même
+ * règle que `phaseAttributionSentence` et `InsufficientPill`, appliquée ici
+ * à l'ensemble de la Phase plutôt qu'à une seule métrique.
+ */
+export function phaseVerdict(changes: SkinChangeItem[]): PhaseVerdict {
+  const trustworthy = changes.filter((c) => c.confidence !== "low" && c.direction !== "stable");
+  if (trustworthy.length === 0) return "insufficient";
+  let calm = 0;
+  let watch = 0;
+  for (const c of trustworthy) {
+    if (changeTone(c.kind, c.direction) === "calm") calm++;
+    else watch++;
+  }
+  if (calm > watch) return "improving";
+  if (watch > calm) return "watch";
+  return "mixed";
+}
+
+export const PHASE_VERDICT_LABEL: Record<PhaseVerdict, string> = {
+  improving: "Amélioration globale sur cette période",
+  watch: "Surtout des variations à surveiller sur cette période",
+  mixed: "Évolution mixte sur cette période",
+  insufficient: "Pas assez de données pour conclure",
+};
+
+/**
+ * Vrai si la Phase active est un traitement nommé, en cours depuis au
+ * moins 7 jours, sans le moindre nouveau scan depuis son début — le cas où
+ * un rappel J+7/14/30 (programmé une seule fois, en local, voir
+ * `scheduleTreatmentCheckpoints`) a été ignoré. Ne distingue pas LEQUEL des
+ * trois checkpoints est en cause : passé le premier, ce n'est plus
+ * actionnable de plus que "vous êtes en retard, faites le point" — voir la
+ * relance sur le tableau de bord.
+ */
+export function isTreatmentCheckpointOverdue(view: ActivePeriodView): boolean {
+  if (!view.period.label || view.period.ends_at) return false;
+  const daysSince = (Date.now() - new Date(view.period.starts_at).getTime()) / 86400000;
+  return daysSince >= 7 && view.scans.length === 0;
 }

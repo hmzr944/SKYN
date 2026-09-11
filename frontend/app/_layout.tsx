@@ -9,6 +9,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { AuthProvider } from "@/src/contexts/AuthContext";
 import { useIconFonts } from "@/src/hooks/use-icon-fonts";
+import { useNotificationDeepLink } from "@/src/hooks/useNotificationDeepLink";
 import { LocaleProvider } from "@/src/i18n";
 import { colors, motion } from "@/src/theme";
 
@@ -29,6 +30,7 @@ for (const C of [Text, TextInput] as unknown as Scalable[]) {
 }
 
 export default function RootLayout() {
+  useNotificationDeepLink();
   const [iconsLoaded, iconsError] = useIconFonts();
   // Outfit porte l'interface, Fraunces porte les titres et les chiffres.
   const [fontsLoaded, fontsError] = useFonts({

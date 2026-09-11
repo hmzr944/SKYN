@@ -143,6 +143,31 @@ class TestSkinMemoryEndpoints:
         # repond toujours (500), elle n'a pas ete supprimee/deplacee.
         assert r.status_code in (200, 500)
 
+    def test_get_period_by_id_returns_the_active_period(self, client, auth_headers):
+        client.post("/api/scans", json={"source": "v2", "analysis": V2_ANALYSIS}, headers=auth_headers)
+        active = client.get("/api/periods/active", headers=auth_headers).json()
+
+        r = client.get(f"/api/periods/{active['period']['id']}", headers=auth_headers)
+        assert r.status_code == 200
+        assert r.json()["period"]["id"] == active["period"]["id"]
+
+    def test_get_period_by_id_returns_a_closed_treatment_bilan(self, client, auth_headers):
+        client.post("/api/scans", json={"source": "v2", "analysis": V2_ANALYSIS}, headers=auth_headers)
+        client.post("/api/treatments", json={"name": "Acide salicylique"}, headers=auth_headers)
+        treatment = client.get("/api/periods/active", headers=auth_headers).json()
+        # Un second traitement cloture le premier.
+        client.post("/api/treatments", json={"name": "Nouveau traitement"}, headers=auth_headers)
+
+        r = client.get(f"/api/periods/{treatment['period']['id']}", headers=auth_headers)
+        assert r.status_code == 200
+        body = r.json()
+        assert body["period"]["label"] == "Acide salicylique"
+        assert body["period"]["ends_at"] is not None
+
+    def test_get_unknown_period_is_404(self, client, auth_headers):
+        r = client.get("/api/periods/not-a-real-id", headers=auth_headers)
+        assert r.status_code == 404
+
 
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))

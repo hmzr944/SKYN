@@ -391,5 +391,51 @@ class TestListPeriods:
         assert periods[0]["ends_at"] is None  # la Phase active en tete
 
 
+class TestGetPeriodView:
+    """get_period_view — le "Bilan" d'une Phase precise, la piece qui
+    manquait pour consulter un traitement apres qu'il soit termine (voir
+    _build_period_view, factorisee avec get_active_period_view)."""
+
+    def test_returns_the_active_period_by_id(self):
+        db = _fresh_db()
+        s1 = _run(sm.ingest_scan(db, "u1", "v2", V2_HIGH_QUALITY))
+        view = _run(sm.get_period_view(db, "u1", s1.period_id))
+        assert view is not None
+        assert view["period"]["id"] == s1.period_id
+        assert view["state"] == "baseline"
+
+    def test_returns_a_closed_treatment_period_with_its_own_changes(self):
+        db = _fresh_db()
+        _run(sm.ingest_scan(db, "u1", "v2", _v2(concerns={"texture": 0.60})))
+        _run(sm.start_treatment_phase(db, "u1", "Acide salicylique"))
+        treatment_period_id = _run(sm._get_active_period(db, "u1"))["id"]
+        # baseline_scan_id ne fait que pointer vers le dernier scan de la
+        # Phase precedente (continuite visuelle) — les changements, eux, ne
+        # se calculent que sur les scans propres a CETTE Phase : il en faut
+        # deux ICI, pas un point de depart emprunte a la precedente.
+        _run(sm.ingest_scan(db, "u1", "v2", _v2(concerns={"texture": 0.45})))
+        _run(sm.ingest_scan(db, "u1", "v2", _v2(concerns={"texture": 0.30})))
+        # Un second traitement cloture le premier — le Bilan du premier doit
+        # rester consultable, pas seulement celui de la Phase desormais active.
+        _run(sm.start_treatment_phase(db, "u1", "Nouveau traitement"))
+
+        view = _run(sm.get_period_view(db, "u1", treatment_period_id))
+        assert view is not None
+        assert view["period"]["label"] == "Acide salicylique"
+        assert view["period"]["ends_at"] is not None
+        texture = next(c for c in view["changes"] if c["metric"] == "texture")
+        assert texture["direction"] == "down"
+
+    def test_unknown_period_returns_none(self):
+        db = _fresh_db()
+        _run(sm.ingest_scan(db, "u1", "v2", V2_HIGH_QUALITY))
+        assert _run(sm.get_period_view(db, "u1", "not-a-real-id")) is None
+
+    def test_another_users_period_is_not_visible(self):
+        db = _fresh_db()
+        s1 = _run(sm.ingest_scan(db, "u1", "v2", V2_HIGH_QUALITY))
+        assert _run(sm.get_period_view(db, "u2", s1.period_id)) is None
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))

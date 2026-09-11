@@ -14,7 +14,8 @@ import Svg, { Polyline, Circle, Defs, LinearGradient as SvgLinearGradient, Stop,
 
 import { colors, fonts, spacing, radius, shadow } from "@/src/theme";
 import { useTranslation } from "@/src/i18n";
-import { syncPendingReports } from "@/src/services/api";
+import { api, syncPendingReports } from "@/src/services/api";
+import { isTreatmentCheckpointOverdue } from "@/src/services/skinMemory";
 import { listScans, type ScanSummary } from "@/src/services/scanStore";
 import { CONCERN_LABEL, SEVERITY_LABEL, SKIN_TYPE_LABEL } from "@/src/types/analysis";
 import { useAuth } from "@/src/contexts/AuthContext";
@@ -113,6 +114,7 @@ export default function DashboardScreen() {
   const [scans, setScans] = useState<ScanSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
+  const [overdueTreatment, setOverdueTreatment] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -135,6 +137,28 @@ export default function DashboardScreen() {
 
   useFocusEffect(
     useCallback(() => { load(); }, [load]),
+  );
+
+  // Relance in-app si un checkpoint J+7/14/30 a ete ignore — le rappel
+  // local ne s'envoie qu'une fois (voir scheduleTreatmentCheckpoints), donc
+  // sans ceci quelqu'un qui l'a manque ne serait jamais repris. Silencieux
+  // en cas d'echec : ce bandeau est un plus, pas une donnee dont le reste
+  // du tableau de bord depend.
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+      (async () => {
+        try {
+          const view = await api.getActivePeriod();
+          if (!cancelled) setOverdueTreatment(view && isTreatmentCheckpointOverdue(view) ? view.period.label : null);
+        } catch {
+          if (!cancelled) setOverdueTreatment(null);
+        }
+      })();
+      return () => {
+        cancelled = true;
+      };
+    }, []),
   );
 
   // Le scan guide est desormais LE parcours principal, pas une variante
@@ -217,6 +241,22 @@ export default function DashboardScreen() {
                 {syncMsg}
               </Text>
             </View>
+          </FadeIn>
+        ) : null}
+
+        {overdueTreatment ? (
+          <FadeIn distance={8}>
+            <AnimatedPressable
+              testID="dashboard-overdue-checkpoint-banner"
+              style={styles.overdueBanner}
+              haptic="light"
+              onPress={goScan}
+            >
+              <Text style={styles.overdueTitle}>{overdueTreatment}</Text>
+              <Text style={styles.overdueText}>
+                Vous n&apos;avez pas encore refait de scan sur cette Phase. Faites le point.
+              </Text>
+            </AnimatedPressable>
           </FadeIn>
         ) : null}
 
@@ -436,6 +476,26 @@ const styles = StyleSheet.create({
     fontSize: 11,
     textAlign: "center",
     letterSpacing: 1.5,
+  },
+  overdueBanner: {
+    backgroundColor: colors.accentSofter,
+    borderWidth: 1,
+    borderColor: colors.accentLine,
+    borderRadius: radius.lg,
+    padding: spacing.m,
+    marginBottom: spacing.l,
+  },
+  overdueTitle: {
+    fontFamily: fonts.bodyMedium,
+    fontSize: 13,
+    color: colors.accentDark,
+    marginBottom: 3,
+  },
+  overdueText: {
+    fontFamily: fonts.body,
+    fontSize: 12,
+    lineHeight: 17,
+    color: colors.fg,
   },
   heroCard: {
     backgroundColor: colors.accent,

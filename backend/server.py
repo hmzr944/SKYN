@@ -548,6 +548,18 @@ async def get_periods(authorization: Optional[str] = Header(None)):
     return await skin_memory.list_periods(db, user.user_id)
 
 
+@api_router.get("/periods/{period_id}")
+async def get_period(period_id: str, authorization: Optional[str] = Header(None)):
+    """Le "Bilan" d'une Phase precise, active ou deja cloturee — meme forme
+    que /periods/active, pour qu'une Phase de traitement terminee reste
+    consultable (voir l'ecran de bilan cote frontend)."""
+    user = await get_current_user(authorization)
+    view = await skin_memory.get_period_view(db, user.user_id, period_id)
+    if view is None:
+        raise HTTPException(status_code=404, detail="period not found")
+    return view
+
+
 @api_router.post("/routine-events")
 async def create_routine_event(payload: skin_memory.RoutineEventRequest,
                                 authorization: Optional[str] = Header(None)):

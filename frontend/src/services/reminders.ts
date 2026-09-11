@@ -280,7 +280,14 @@ export async function scheduleTreatmentCheckpoints(
     if (c.at.getTime() <= now) continue;
     await Notifications.scheduleNotificationAsync({
       identifier: c.id,
-      content: { title: c.title, body: c.body },
+      content: {
+        title: c.title,
+        body: c.body,
+        // Lu par le listener pose dans app/_layout.tsx : taper la
+        // notification doit ouvrir directement le scan guide, pas juste
+        // ramener sur l'app a l'endroit ou elle en etait.
+        data: { kind: "phase-checkpoint" },
+      },
       trigger: {
         type: Notifications.SchedulableTriggerInputTypes.DATE,
         date: c.at,
