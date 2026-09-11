@@ -85,7 +85,6 @@ export default function WhatChangedScreen() {
     <SafeAreaView style={styles.container} edges={["top", "bottom"]}>
       <View style={styles.header}>
         <SkynLockup size={26} still />
-        <Text style={styles.betaTag}>bêta</Text>
       </View>
       <ScrollView contentContainerStyle={styles.scroll}>
         <Reveal bouncy distance={12}>
@@ -186,7 +185,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.l,
     paddingTop: spacing.m,
   },
-  betaTag: { ...type.kicker, color: colors.fgDim },
   loadingWrap: { flex: 1, alignItems: "center", justifyContent: "center" },
   scroll: { padding: spacing.l, gap: spacing.m, paddingBottom: spacing.xxl },
   kicker: { ...type.kicker, color: colors.fgDim },

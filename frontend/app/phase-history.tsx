@@ -85,7 +85,6 @@ export default function PhaseHistoryScreen() {
     <SafeAreaView style={styles.container} edges={["top", "bottom"]}>
       <View style={styles.header}>
         <SkynLockup size={26} still />
-        <Text style={styles.betaTag}>bêta</Text>
       </View>
 
       {periods === null ? (
@@ -172,7 +171,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.l,
     paddingTop: spacing.m,
   },
-  betaTag: { ...type.kicker, color: colors.fgDim },
   loadingWrap: { flex: 1, alignItems: "center", justifyContent: "center" },
   emptyWrap: { flex: 1, alignItems: "center", justifyContent: "center", gap: spacing.s, paddingHorizontal: spacing.l },
   emptyTitle: { ...type.title, color: colors.fg, textAlign: "center" },

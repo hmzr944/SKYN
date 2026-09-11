@@ -203,7 +203,14 @@ export default function RoutineScreen() {
           <AnimatedPressable
             style={styles.emptyCta}
             haptic="medium"
-            onPress={() => router.push("/camera")}
+            // Exception deliberee : /camera-guided (desormais le parcours
+          // principal ailleurs dans l'app) ne calcule pas encore de routine
+          // — il ne fait tourner que lesions.py/zone_scoring.py, pas
+          // phenotype.py/matching.py (voir /api/analyze/guided). Pointer ici
+          // vers le scan guide rendrait cette promesse ("votre routine sera
+          // construite") fausse. A corriger quand la routine sera calculee
+          // pour ce parcours — pas avant.
+          onPress={() => router.push("/camera")}
           >
             <Text style={styles.ctaText}>Scanner ma peau</Text>
           </AnimatedPressable>
@@ -333,6 +340,13 @@ export default function RoutineScreen() {
 
         <AnimatedPressable
           style={[styles.cta, { marginTop: spacing.l }]}
+          // Exception deliberee : /camera-guided (desormais le parcours
+          // principal ailleurs dans l'app) ne calcule pas encore de routine
+          // — il ne fait tourner que lesions.py/zone_scoring.py, pas
+          // phenotype.py/matching.py (voir /api/analyze/guided). Pointer ici
+          // vers le scan guide rendrait cette promesse ("votre routine sera
+          // construite") fausse. A corriger quand la routine sera calculee
+          // pour ce parcours — pas avant.
           onPress={() => router.push("/camera")}
         >
           <Text style={styles.ctaText}>Nouveau scan</Text>

@@ -289,8 +289,12 @@ export default function CameraGuidedScreen() {
         >
           <Text style={styles.closeText}>✕</Text>
         </AnimatedPressable>
+        {/* "bêta" restait affiché ici alors que ce scan est desormais LE
+            parcours principal (voir _layout.tsx/dashboard.tsx) — un vrai
+            titre, pas une etiquette qui sape la confiance au moment precis
+            ou l'on veut qu'il se lise comme le coeur de l'app. */}
         <Text style={styles.headerTitle} accessibilityLabel={`${count} sur ${MAX_FRAMES} vues capturées`}>
-          bêta
+          Scan guidé
         </Text>
         <View style={{ width: 36 }} />
       </View>

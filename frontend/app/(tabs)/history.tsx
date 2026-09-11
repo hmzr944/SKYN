@@ -56,7 +56,7 @@ export default function HistoryScreen() {
 
   const goScan = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    router.push("/camera");
+    router.push("/camera-guided");
   };
 
   return (

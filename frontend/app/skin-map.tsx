@@ -17,8 +17,7 @@ import { colors, fonts, radius, spacing, type } from "@/src/theme";
 import type { ActivePeriodView } from "@/src/types/skinMemory";
 
 /**
- * "Votre carte de peau" — écran expérimental (bêta), en parallèle du
- * dashboard.tsx par défaut. Répond à "où en est ma peau ?" par la carte de
+ * "Votre carte de peau" — répond à "où en est ma peau ?" par la carte de
  * zones et le Skin Change de la Phase active, pas par un score en gros —
  * voir le deck "SKYN Skin Memory" (recommandation : Personal Skin Map).
  */
@@ -58,7 +57,6 @@ export default function SkinMapScreen() {
       <AmbientBackground />
       <View style={styles.header}>
         <SkynLockup size={24} still />
-        <Text style={styles.betaTag}>bêta</Text>
       </View>
 
       {view === undefined ? (
@@ -166,7 +164,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.l,
     paddingTop: spacing.m,
   },
-  betaTag: { ...type.kicker, color: colors.fgDim },
   loadingWrap: { flex: 1, alignItems: "center", justifyContent: "center" },
   scroll: { padding: spacing.l, gap: spacing.l, paddingBottom: spacing.xxl, alignItems: "center" },
   title: { ...type.title, color: colors.fg, textAlign: "center" },

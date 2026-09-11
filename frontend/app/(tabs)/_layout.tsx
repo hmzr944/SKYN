@@ -192,7 +192,12 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
           accessibilityLabel="Lancer une analyse"
           onPress={() => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-            router.push("/camera");
+            // Le scan guide est le SEUL parcours qui alimente la Memoire de
+            // peau (Phases, What Changed?) — voir la note dans
+            // analysis-guided.tsx. L'ancien /camera reste dans le code, mais
+            // n'est plus le point d'entree principal : un scan qui n'ecrit
+            // jamais dans la memoire n'a pas sa place derriere LE bouton.
+            router.push("/camera-guided");
           }}
         >
           <Ionicons name="camera" size={22} color={colors.onAccent} />

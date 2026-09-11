@@ -137,16 +137,17 @@ export default function DashboardScreen() {
     useCallback(() => { load(); }, [load]),
   );
 
+  // Le scan guide est desormais LE parcours principal, pas une variante
+  // beta a cote : c'est le seul qui alimente la Memoire de peau (Phases,
+  // What Changed?) — voir analysis-guided.tsx. L'ancien scan 3 angles
+  // (/camera) reste dans le code, mais plus derriere aucun bouton
+  // principal ; un scan qui n'ecrit jamais dans la memoire n'a plus sa
+  // place ici.
   const goScan = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    router.push("/camera");
+    router.push("/camera-guided");
   };
 
-  // Entree experimentale vers la memoire persistante (chantier 5) : carte
-  // de peau -> scan guide -> What Changed?, en parallele du scan 3 angles
-  // ci-dessus qui reste le parcours par defaut. Volontairement discrete :
-  // c'est un mode beta, pas une alternative mise en avant tant qu'il n'a
-  // pas ete verifie sur de vrais scans.
   const goSkinMap = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     router.push("/skin-map");
