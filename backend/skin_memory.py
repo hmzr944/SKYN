@@ -174,19 +174,22 @@ def _extract_scan_fields(source: str, analysis: Dict[str, Any]) -> Dict[str, Any
             "lesion_counts": analysis.get("lesion_counts") or {},
             "lesions": analysis.get("lesions") or [],
         }
-    # source == "guided" — pas de concerns cote moteur multi-vue aujourd'hui
-    # (vocabulaire different du flux v2, voir concerns.py). zone_scores,
-    # lui, est fourni par /api/analyze/guided depuis skyn_engine.v2.zone_scoring
-    # -- calcule sur les lesions confirmees ci-dessous, jamais sur une zone
-    # non couverte par le scan (voir ce module pour la garantie).
+    # source == "guided" — zone_scores/lesion_counts viennent du suivi
+    # multi-vue (skyn_engine.v2.zone_scoring, calcule sur les lesions
+    # CONFIRMEES ci-dessous, jamais sur une zone non couverte par le scan).
+    # global_score/concerns, eux, viennent d'un second calcul separe
+    # (analyze_multi, plafonne a 3 vues — voir /api/analyze/guided) : deux
+    # systemes distincts composes a l'endpoint, pas fusionnes. Absents si
+    # ce second calcul a echoue a detecter un visage (tres improbable a ce
+    # stade), auquel cas on degrade proprement plutot que de deviner.
     lesions = analysis.get("lesions") or []
     counts: Dict[str, int] = {}
     for lesion in lesions:
         t = lesion.get("type") or "inconnu"
         counts[t] = counts.get(t, 0) + 1
     return {
-        "global_score": None,
-        "concerns": {},
+        "global_score": analysis.get("global_score"),
+        "concerns": analysis.get("concerns") or {},
         "zone_scores": analysis.get("zone_scores") or {},
         "lesion_counts": counts,
         "lesions": lesions,

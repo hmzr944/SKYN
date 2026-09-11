@@ -438,22 +438,26 @@ async def skyn_engine_analyze_guided(payload: AnalyzeGuidedRequest,
 
     from skyn_engine.v2.multiview import orchestrer_scan, ScanConfig
     from skyn_engine.v2.zone_scoring import zone_scores_from_confirmed
+    from skyn_engine.v2.pipeline import analyze_multi
 
     config = ScanConfig(min_vues_utiles=payload.min_vues_utiles,
                         cible_vues=payload.cible_vues, max_vues=payload.max_vues)
+    profile_doc = await db.profiles.find_one({"user_id": user.user_id}, {"_id": 0}) or {}
 
     def _run():
-        return orchestrer_scan(images, config)
+        # Deux pipelines deja valides separement, composes ici plutot que
+        # fusionnes en interne — voir la note plus bas sur `rich`.
+        return orchestrer_scan(images, config), analyze_multi(images[:3], profile_doc)
 
     try:
         # Meme raison que /analyze/v2 : pipeline bloquant/CPU-bound, a ne
         # jamais executer directement dans la coroutine.
-        out = await run_in_threadpool(_run)
+        out, rich = await run_in_threadpool(_run)
     except Exception as e:
         logger.exception(f"SKYN Engine guided scan failure: {e}")
         raise HTTPException(status_code=500, detail="Analysis failed")
 
-    return {
+    response = {
         "lesions": out.lesions_confirmees,
         "frames_received": out.n_vues_recues,
         "usable_views": out.n_vues_utilisables,
@@ -476,6 +480,39 @@ async def skyn_engine_analyze_guided(payload: AnalyzeGuidedRequest,
         # afficher sur la Skin Map pour un scan guide (source == "guided").
         "zone_scores": zone_scores_from_confirmed(out),
     }
+
+    # `rich` : type de peau, phototype, empreinte de preoccupations et
+    # routine, par la MEME fonction que /analyze/v2 (analyze_multi),
+    # plafonnee aux 3 premieres vues pour ne pas multiplier le cout de
+    # calcul par les jusqu'a 9 vues d'un scan guide. Delibere : le suivi
+    # multi-vue (lesions/zone_scores ci-dessus, deja alimente a la Memoire
+    # de peau) et l'empreinte/routine restent deux systemes distincts,
+    # chacun deja valide de son cote, composes au niveau de l'endpoint —
+    # pas fusionnes en un detecteur unique. Si `rich` echoue a detecter un
+    # visage sur ces 3 vues (tres improbable : orchestrer_scan vient d'en
+    # valider au moins `min_vues_utiles`), on renvoie quand meme la partie
+    # deja fiable ci-dessus plutot que de faire echouer tout le scan.
+    if rich.ok:
+        response.update({
+            "global_score": rich.global_score,
+            "skin_type": rich.skin_type,
+            "skin_type_confidence": rich.skin_type_confidence,
+            "phototype": rich.phototype,
+            "phototype_label": rich.phototype_label,
+            "severity_level": rich.severity_level,
+            "severity_label": rich.severity_label,
+            "gags_score": rich.gags_score,
+            "diagnosis": rich.diagnosis,
+            "summary": rich.summary,
+            "concerns": rich.concerns,
+            "top_concerns": rich.top_concerns,
+            "drivers": rich.drivers,
+            "hormonal_pattern": rich.hormonal_pattern,
+            "routine": rich.routine,
+            "cautions": rich.cautions,
+            "face_box": rich.face_box,
+        })
+    return response
 
 
 @api_router.post("/scans")

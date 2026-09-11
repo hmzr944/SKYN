@@ -127,6 +127,45 @@ class TestAnalyzeGuided:
         assert r1.status_code == r2.status_code == 200
         assert r1.json()["zone_scores"] == r2.json()["zone_scores"]
 
+    def test_routine_and_skin_type_now_present(self, client, auth_headers):
+        """Le trou signale par un utilisateur reel : ce scan alimentait la
+        Memoire de peau mais ne calculait ni routine ni type de peau — le
+        parcours principal de l'app ne pouvait donc jamais tenir sa promesse
+        ("votre routine sera construite"). Comble par un second calcul
+        (analyze_multi, la meme fonction que /analyze/v2) plafonne aux 3
+        premieres vues — voir server.py."""
+        images = [_b64(FIXTURE)] * 7
+        payload = {"images_base64": images, "min_vues_utiles": 5, "cible_vues": 7, "max_vues": 9}
+        r = client.post("/api/analyze/guided", json=payload, headers=auth_headers)
+        assert r.status_code == 200
+        body = r.json()
+        assert body["skin_type"] not in (None, "indetermine")
+        assert isinstance(body["global_score"], int)
+        assert 0 <= body["global_score"] <= 100
+        assert isinstance(body["concerns"], dict) and body["concerns"]
+        assert "am" in body["routine"] and "pm" in body["routine"]
+        # Le nettoyant (ou tout autre produit) doit venir du VRAI catalogue,
+        # pas d'un texte fixe — si ce champ est vide, la routine annoncee
+        # n'existe pas vraiment.
+        assert any(body["routine"]["am"]) or any(body["routine"]["pm"])
+
+    def test_guided_lesions_and_zone_scores_unaffected_by_rich_analysis(self, client, auth_headers):
+        """Le second calcul (routine/type de peau) ne doit jamais se
+        substituer au suivi multi-vue confirme : `lesions`/`zone_scores`
+        restent exactement ceux d'`orchestrer_scan`, pas ceux — plus
+        faibles, non trackes — du calcul plafonne a 3 vues."""
+        images = [_b64(FIXTURE)] * 7
+        payload = {"images_base64": images, "min_vues_utiles": 5, "cible_vues": 7, "max_vues": 9}
+        r = client.post("/api/analyze/guided", json=payload, headers=auth_headers)
+        assert r.status_code == 200
+        body = r.json()
+        for lesion in body["lesions"]:
+            # Signature propre a orchestrer_scan/_confirmer — pas presente
+            # sur les lesions d'un FaceAnalysis classique (qui ont `radius`,
+            # `confidence`, etc. a la place).
+            assert "n_observations" in lesion
+            assert "evidence" in lesion
+
 
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))
