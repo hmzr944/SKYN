@@ -15,6 +15,7 @@ import { AnimatedPressable } from "@/src/components/ui/AnimatedPressable";
 import { Reveal } from "@/src/components/ui/Reveal";
 import { SkynLockup } from "@/src/components/brand/SkynLockup";
 import { api } from "@/src/services/api";
+import { scheduleTreatmentCheckpoints } from "@/src/services/reminders";
 import { colors, fonts, radius, spacing, type } from "@/src/theme";
 
 /**
@@ -42,7 +43,12 @@ export default function StartTreatmentScreen() {
     setBusy(true);
     setError(null);
     try {
-      await api.startTreatment(name.trim(), goal.trim());
+      const treatmentName = name.trim();
+      await api.startTreatment(treatmentName, goal.trim());
+      // N'attend jamais l'autorisation notifications pour continuer : un
+      // refus, ou l'absence de support (web), ne doit jamais bloquer le
+      // debut de la Phase elle-meme — voir scheduleTreatmentCheckpoints.
+      scheduleTreatmentCheckpoints(treatmentName).catch(() => {});
       router.replace("/phase-history");
     } catch {
       setError(

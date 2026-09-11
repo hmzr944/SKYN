@@ -27,6 +27,10 @@ const K_PREFS = "skyn_reminders";
 const ID_AM = "skyn-routine-am";
 const ID_PM = "skyn-routine-pm";
 const ID_INTRO = "skyn-introduction";
+const ID_PHASE_J7 = "skyn-phase-j7";
+const ID_PHASE_J14 = "skyn-phase-j14";
+const ID_PHASE_J30 = "skyn-phase-j30";
+const PHASE_CHECKPOINT_IDS = [ID_PHASE_J7, ID_PHASE_J14, ID_PHASE_J30];
 
 export interface ReminderPrefs {
   am: boolean;
@@ -204,6 +208,92 @@ export async function scheduleIntroReminder(productName: string): Promise<boolea
 export async function cancelIntroReminder(): Promise<void> {
   if (!SUPPORTED) return;
   await cancel(ID_INTRO);
+}
+
+/**
+ * Les trois rendez-vous d'une Phase de traitement — J+7, J+14, J+30.
+ *
+ * A la différence du rappel d'introduction (quotidien, un point subjectif
+ * du jour), ceux-ci sont ponctuels et disent explicitement CE QUE la
+ * comparaison peut montrer maintenant, pas juste "n'oubliez pas de
+ * scanner". Le nom du traitement n'ancre que le premier — les deux
+ * suivants parlent de la Phase elle-même, une fois le contexte déjà posé.
+ *
+ * Programmés en soirée comme le reste des rappels de peau (voir
+ * `scheduleIntroReminder`), à une heure distincte pour ne pas s'empiler
+ * avec eux si tous sont actifs en même temps.
+ *
+ * Limite connue, assumée : si la Phase se termine autrement qu'en
+ * commençant un nouveau traitement (un changement de routine ordinaire,
+ * par exemple), ces trois rappels ne sont pas annulés pour autant — ils
+ * sont peu nombreux et espacés de plusieurs jours, et le pire cas est un
+ * rappel qui arrive pour une Phase déjà close, pas un rappel qui
+ * n'arrive jamais. Démarrer un NOUVEAU traitement, en revanche, annule et
+ * remplace toujours les trois précédents (mêmes identifiants stables).
+ */
+const CHECKPOINT_HOUR = 20;
+
+function checkpointDate(start: Date, daysAfter: number): Date {
+  const d = new Date(start);
+  d.setDate(d.getDate() + daysAfter);
+  d.setHours(CHECKPOINT_HOUR, 0, 0, 0);
+  return d;
+}
+
+export async function scheduleTreatmentCheckpoints(
+  treatmentName: string,
+  startedAt: Date = new Date()
+): Promise<boolean> {
+  if (!SUPPORTED) return false;
+  for (const id of PHASE_CHECKPOINT_IDS) await cancel(id);
+
+  const granted = await requestPermission();
+  if (!granted) return false;
+  await ensureAndroidChannel();
+
+  const checkpoints = [
+    {
+      id: ID_PHASE_J7,
+      at: checkpointDate(startedAt, 7),
+      title: "7 jours dans cette Phase",
+      body: `${treatmentName} : votre peau a maintenant un premier point de comparaison. Faites le scan.`,
+    },
+    {
+      id: ID_PHASE_J14,
+      at: checkpointDate(startedAt, 14),
+      title: "Deux semaines déjà",
+      body: "Comparez votre peau aujourd'hui avec le début de cette Phase.",
+    },
+    {
+      id: ID_PHASE_J30,
+      at: checkpointDate(startedAt, 30),
+      title: "30 jours dans cette Phase",
+      body: "Voici ce que SKYN peut maintenant comparer. Faites le scan pour votre bilan.",
+    },
+  ];
+
+  const now = Date.now();
+  for (const c of checkpoints) {
+    // Ne programme jamais dans le passe — defensif seulement : avec
+    // `startedAt` par defaut a maintenant, les trois echeances tombent
+    // toujours dans le futur.
+    if (c.at.getTime() <= now) continue;
+    await Notifications.scheduleNotificationAsync({
+      identifier: c.id,
+      content: { title: c.title, body: c.body },
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.DATE,
+        date: c.at,
+        channelId: "routine",
+      } as Notifications.DateTriggerInput,
+    });
+  }
+  return true;
+}
+
+export async function cancelTreatmentCheckpoints(): Promise<void> {
+  if (!SUPPORTED) return;
+  for (const id of PHASE_CHECKPOINT_IDS) await cancel(id);
 }
 
 export function formatTime(hour: number, minute: number): string {
