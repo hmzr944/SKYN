@@ -99,6 +99,30 @@ class TestSkinMemoryEndpoints:
         periods = client.get("/api/periods", headers=auth_headers).json()
         assert len(periods) == 2
 
+    def test_treatment_start_opens_named_period(self, client, auth_headers):
+        client.post("/api/scans", json={"source": "v2", "analysis": V2_ANALYSIS}, headers=auth_headers)
+        before = client.get("/api/periods/active", headers=auth_headers).json()
+
+        r = client.post("/api/treatments",
+                         json={"name": "Traitement anti-imperfections", "goal": "reduire les boutons"},
+                         headers=auth_headers)
+        assert r.status_code == 200
+        assert r.json()["type"] == "treatment_started"
+
+        after = client.get("/api/periods/active", headers=auth_headers).json()
+        assert after["period"]["id"] != before["period"]["id"]
+        assert after["period"]["label"] == "Traitement anti-imperfections"
+        assert after["period"]["goal"] == "reduire les boutons"
+
+    def test_treatment_requires_active_period(self, client, auth_headers):
+        r = client.post("/api/treatments", json={"name": "Traitement X"}, headers=auth_headers)
+        assert r.status_code == 400
+
+    def test_treatment_rejects_blank_name(self, client, auth_headers):
+        client.post("/api/scans", json={"source": "v2", "analysis": V2_ANALYSIS}, headers=auth_headers)
+        r = client.post("/api/treatments", json={"name": "   "}, headers=auth_headers)
+        assert r.status_code == 400
+
     def test_product_event_requires_active_period(self, client, auth_headers):
         r = client.post("/api/product-events",
                          json={"type": "introduced", "product_id": "x", "moment": "am"},

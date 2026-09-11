@@ -31,6 +31,7 @@ function rangeLabel(p: Period): string {
 }
 
 function chapterName(p: Period, index: number, total: number): string {
+  if (p.label) return p.label;
   if (p.opened_by === "baseline") return "Baseline";
   return `Phase ${total - index}`;
 }
@@ -107,6 +108,14 @@ export default function PhaseHistoryScreen() {
               <Text style={styles.lede}>
                 Chaque Phase raconte une période, pas une liste de scans datés.
               </Text>
+              <AnimatedPressable
+                testID="phase-history-new-treatment-btn"
+                style={styles.newTreatmentBtn}
+                haptic="light"
+                onPress={() => router.push("/start-treatment")}
+              >
+                <Text style={styles.newTreatmentText}>+ Nouveau traitement</Text>
+              </AnimatedPressable>
             </Reveal>
           }
           renderItem={({ item, index }) => {
@@ -170,7 +179,23 @@ const styles = StyleSheet.create({
   emptyNote: { ...type.body, color: colors.fgMuted, textAlign: "center" },
   list: { padding: spacing.l, gap: spacing.m, paddingBottom: spacing.xxl },
   title: { ...type.title, color: colors.fg, marginBottom: 4 },
-  lede: { ...type.bodySmall, color: colors.fgMuted, marginBottom: spacing.l },
+  lede: { ...type.bodySmall, color: colors.fgMuted, marginBottom: spacing.m },
+  newTreatmentBtn: {
+    alignSelf: "flex-start",
+    borderWidth: 1,
+    borderColor: colors.borderMid,
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.m,
+    paddingVertical: spacing.s,
+    backgroundColor: colors.surface,
+    marginBottom: spacing.l,
+  },
+  newTreatmentText: {
+    fontFamily: fonts.bodyMedium,
+    fontSize: 12,
+    letterSpacing: 0.3,
+    color: colors.fg,
+  },
   card: {
     backgroundColor: colors.surface,
     borderRadius: radius.lg,

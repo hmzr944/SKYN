@@ -1,6 +1,6 @@
 import { CONCERN_LABEL, LESION_LABEL, ZONE_LABEL } from "@/src/types/analysis";
 import type { ConcernKey, LesionType, ZoneKey } from "@/src/types/analysis";
-import type { ChangeDirection, ChangeKind, Confidence, MemoryScan, SkinChangeItem } from "@/src/types/skinMemory";
+import type { ChangeDirection, ChangeKind, Confidence, MemoryScan, Period, SkinChangeItem } from "@/src/types/skinMemory";
 
 /**
  * Lecture d'un SkinChangeItem pour l'affichage — la seule logique de
@@ -63,6 +63,19 @@ export function attributionSentence(item: SkinChangeItem, productLabel: (id: str
   if (!item.attribution || item.attribution.length === 0) return null;
   const names = item.attribution.map(productLabel).join(", ");
   return `Depuis l'introduction de ${names}, une évolution a été observée.`;
+}
+
+/**
+ * Même règle corrélationnelle que `attributionSentence`, mais pour une
+ * Phase nommée (voir POST /api/treatments) plutôt qu'un produit introduit
+ * dans la routine — deux mécanismes distincts, jamais mélangés : celle-ci
+ * lit `period.label`, l'autre `item.attribution`. `null` si la Phase n'a
+ * pas de nom (changement de routine anonyme, ou Baseline) ou si la
+ * confiance est trop faible pour qu'une phrase interprétative ait un sens.
+ */
+export function phaseAttributionSentence(item: SkinChangeItem, period: Period): string | null {
+  if (!period.label || item.confidence === "low") return null;
+  return `Cette évolution est associée à la période suivant l'introduction de ${period.label}, sans permettre d'en conclure qu'il en est la cause.`;
 }
 
 /**

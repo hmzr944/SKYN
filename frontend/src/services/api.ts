@@ -128,6 +128,17 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ type, product_id: productId, moment }),
     }),
+  /**
+   * Demarre une Phase nommee autour d'un traitement precis — "je commence
+   * CE traitement, montre-moi si ca marche", pas un simple changement de
+   * routine anonyme. Cloture la Phase active et en ouvre une nouvelle,
+   * ancree sur le dernier scan connu (voir server.py, POST /api/treatments).
+   */
+  startTreatment: (name: string, goal?: string) =>
+    request<RoutineEvent>("/api/treatments", {
+      method: "POST",
+      body: JSON.stringify({ name, goal: goal || undefined }),
+    }),
 };
 
 // ===== Offline pending reports =====

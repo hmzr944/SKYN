@@ -31,7 +31,7 @@ from skyn_engine.v2.multiview import ScanConfig
 # dans le temps, donc volontairement hors modele plutot que mal modelise.
 VALID_SOURCES = ("v2", "guided")
 
-STRUCTURAL_ROUTINE_EVENT_TYPES = {"step_added", "step_removed", "step_changed"}
+STRUCTURAL_ROUTINE_EVENT_TYPES = {"step_added", "step_removed", "step_changed", "treatment_started"}
 
 # Zone neutre autour de zero en dessous de laquelle un delta de concern
 # (echelle 0..1) est affiche comme "stable" plutot que comme un mouvement —
@@ -73,6 +73,14 @@ class Period(BaseModel):
     opened_by: str                                  # "baseline" | RoutineEvent.id
     baseline_scan_id: str
     latest_scan_id: str
+    # Nom et objectif d'un traitement, quand c'est LUI qui a ouvert cette
+    # Phase (opened_by pointe alors vers un RoutineEvent type=
+    # "treatment_started") — copies ici depuis l'evenement pour que
+    # l'affichage n'ait jamais besoin d'un second appel pour nommer une
+    # Phase. `None` pour une Phase ouverte par un changement de routine
+    # anonyme ou la toute premiere (baseline).
+    label: Optional[str] = None
+    goal: Optional[str] = None
 
 
 class RoutineEvent(BaseModel):
@@ -80,8 +88,15 @@ class RoutineEvent(BaseModel):
     user_id: str
     period_id: str
     at: datetime = Field(default_factory=_now)
-    type: str                                       # created|step_added|step_removed|step_changed
+    type: str                                       # created|step_added|step_removed|step_changed|treatment_started
     diff: Dict[str, List[str]] = Field(default_factory=dict)
+    # Uniquement pour type == "treatment_started" : le nom du traitement tel
+    # que saisi ("Traitement anti-imperfections"), et un objectif libre et
+    # facultatif ("reduire les boutons du menton"). Text libre, comme le
+    # reste du catalogue produit dans cette app — voir la note dans
+    # `matching.py` sur l'absence de grande base de produits.
+    label: Optional[str] = None
+    goal: Optional[str] = None
 
 
 class ProductEvent(BaseModel):
@@ -104,6 +119,11 @@ class ScanIngestRequest(BaseModel):
 class RoutineEventRequest(BaseModel):
     type: str
     diff: Dict[str, List[str]] = Field(default_factory=dict)
+
+
+class TreatmentStartRequest(BaseModel):
+    name: str
+    goal: Optional[str] = None
 
 
 class ProductEventRequest(BaseModel):
@@ -221,6 +241,31 @@ async def ingest_scan(db, user_id: str, source: str, analysis: Dict[str, Any]) -
 
 # ============ Evenements routine / produit ============
 
+async def _close_and_reopen(db, user_id: str, active: dict, event: RoutineEvent) -> Period:
+    """Ferme la Phase active et en ouvre une nouvelle, ancree sur le dernier
+    scan connu — le mecanisme commun a tout evenement STRUCTUREL, qu'il
+    s'agisse d'un changement de routine ou d'un traitement nomme. Ancrer sur
+    le dernier scan (plutot que d'exiger un rescan immediat) veut dire que
+    la nouvelle Phase a deja un point de depart des le jour 0 : l'utilisateur
+    n'est jamais bloque en attendant de re-scanner avant de pouvoir dire
+    "je commence ca aujourd'hui"."""
+    now = event.at
+    await db.periods.update_one({"id": active["id"]}, {"$set": {"ends_at": now}})
+    new_period = Period(
+        user_id=user_id,
+        opened_by=event.id,
+        baseline_scan_id=active["latest_scan_id"],
+        latest_scan_id=active["latest_scan_id"],
+        starts_at=now,
+        label=event.label,
+        goal=event.goal,
+    )
+    event.period_id = new_period.id
+    await db.periods.insert_one(new_period.model_dump())
+    await db.routine_events.insert_one(event.model_dump())
+    return new_period
+
+
 async def log_routine_event(
     db, user_id: str, type_: str, diff: Optional[Dict[str, List[str]]] = None
 ) -> RoutineEvent:
@@ -230,29 +275,46 @@ async def log_routine_event(
 
     if type_ in STRUCTURAL_ROUTINE_EVENT_TYPES:
         # Un changement structurant de routine cloture la Phase en cours et
-        # en ouvre une nouvelle, ancree sur le dernier scan connu — c'est ce
-        # qui garantit, par construction, qu'une Phase ne peut jamais
-        # chevaucher deux changements de routine a la fois (voir la regle
-        # d'attribution dans _skin_changes).
-        now = _now()
-        await db.periods.update_one({"id": active["id"]}, {"$set": {"ends_at": now}})
-        event = RoutineEvent(
-            user_id=user_id, period_id="", type=type_, diff=diff or {}, at=now
-        )
-        new_period = Period(
-            user_id=user_id,
-            opened_by=event.id,
-            baseline_scan_id=active["latest_scan_id"],
-            latest_scan_id=active["latest_scan_id"],
-            starts_at=now,
-        )
-        event.period_id = new_period.id
-        await db.periods.insert_one(new_period.model_dump())
-        await db.routine_events.insert_one(event.model_dump())
+        # en ouvre une nouvelle — c'est ce qui garantit, par construction,
+        # qu'une Phase ne peut jamais chevaucher deux changements structurels
+        # a la fois (voir la regle d'attribution dans _skin_changes).
+        event = RoutineEvent(user_id=user_id, period_id="", type=type_, diff=diff or {}, at=_now())
+        await _close_and_reopen(db, user_id, active, event)
         return event
 
     event = RoutineEvent(user_id=user_id, period_id=active["id"], type=type_, diff=diff or {})
     await db.routine_events.insert_one(event.model_dump())
+    return event
+
+
+async def start_treatment_phase(
+    db, user_id: str, name: str, goal: Optional[str] = None
+) -> RoutineEvent:
+    """Le point d'entree qui manquait : "je commence CE traitement precis",
+    pas un changement de routine anonyme. Un `product_event` seul (introduit/
+    arrete) ne rouvre jamais de Phase — voir `log_product_event` — donc rien
+    ne nommait ni ne datait le debut d'un suivi avant/apres. C'est ce nom qui
+    transforme "j'ai change ma routine" en "voici ce que je veux verifier,
+    montre-moi si ca marche" (voir What Changed? cote frontend).
+
+    Reutilise exactement le meme mecanisme de fermeture/reouverture qu'un
+    changement de routine structurant (`_close_and_reopen`) : pas de nouvelle
+    logique de Phase a maintenir en parallele, juste un type d'evenement de
+    plus qui porte un nom et un objectif.
+    """
+    active = await _get_active_period(db, user_id)
+    if active is None:
+        raise ValueError("no active period — user must complete a first scan first")
+
+    name = name.strip()
+    if not name:
+        raise ValueError("treatment name must not be empty")
+
+    event = RoutineEvent(
+        user_id=user_id, period_id="", type="treatment_started",
+        label=name, goal=(goal.strip() or None) if goal else None, at=_now(),
+    )
+    await _close_and_reopen(db, user_id, active, event)
     return event
 
 

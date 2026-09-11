@@ -34,9 +34,20 @@ export interface Period {
   opened_by: string;
   baseline_scan_id: string;
   latest_scan_id: string;
+  /** Nom du traitement, uniquement quand cette Phase a ete ouverte par
+   * POST /api/treatments — `null` pour une Phase ouverte par un simple
+   * changement de routine, ou la toute premiere (baseline). */
+  label: string | null;
+  /** Objectif libre et facultatif, saisi au meme moment que `label`. */
+  goal: string | null;
 }
 
-export type RoutineEventType = "created" | "step_added" | "step_removed" | "step_changed";
+export type RoutineEventType =
+  | "created"
+  | "step_added"
+  | "step_removed"
+  | "step_changed"
+  | "treatment_started";
 
 export interface RoutineEvent {
   id: string;
@@ -45,6 +56,8 @@ export interface RoutineEvent {
   at: string;
   type: RoutineEventType;
   diff: Record<string, string[]>;
+  label: string | null;
+  goal: string | null;
 }
 
 export interface ProductEvent {

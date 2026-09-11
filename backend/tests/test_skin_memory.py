@@ -201,6 +201,65 @@ class TestRoutineAndProductEvents:
             _run(sm.log_product_event(db, "u1", "introduced", "x", "am"))
 
 
+class TestTreatmentPhase:
+    """start_treatment_phase — la porte d'entree "je commence ce traitement
+    precis", distincte d'un changement de routine anonyme (voir sa docstring
+    dans skin_memory.py)."""
+
+    def test_starting_a_treatment_rolls_period_like_a_structural_event(self):
+        db = _fresh_db()
+        s1 = _run(sm.ingest_scan(db, "u1", "v2", V2_HIGH_QUALITY))
+        old_period_id = s1.period_id
+
+        event = _run(sm.start_treatment_phase(db, "u1", "Traitement anti-imperfections", "reduire les boutons du menton"))
+        assert event.type == "treatment_started"
+        assert event.label == "Traitement anti-imperfections"
+        assert event.goal == "reduire les boutons du menton"
+
+        old_period = _run(db.periods.find_one({"id": old_period_id}, {"_id": 0}))
+        assert old_period["ends_at"] is not None
+
+        new_period = _run(sm._get_active_period(db, "u1"))
+        assert new_period["id"] != old_period_id
+        assert new_period["opened_by"] == event.id
+        # Ancree sur le dernier scan connu, comme un changement structurel :
+        # pas besoin de rescanner immediatement pour avoir un point de depart.
+        assert new_period["baseline_scan_id"] == s1.id
+        assert new_period["label"] == "Traitement anti-imperfections"
+        assert new_period["goal"] == "reduire les boutons du menton"
+
+    def test_goal_is_optional(self):
+        db = _fresh_db()
+        _run(sm.ingest_scan(db, "u1", "v2", V2_HIGH_QUALITY))
+        event = _run(sm.start_treatment_phase(db, "u1", "Nouveau nettoyant"))
+        assert event.goal is None
+        new_period = _run(sm._get_active_period(db, "u1"))
+        assert new_period["label"] == "Nouveau nettoyant"
+        assert new_period["goal"] is None
+
+    def test_blank_name_is_rejected(self):
+        db = _fresh_db()
+        _run(sm.ingest_scan(db, "u1", "v2", V2_HIGH_QUALITY))
+        with pytest.raises(ValueError):
+            _run(sm.start_treatment_phase(db, "u1", "   "))
+
+    def test_treatment_without_scan_raises(self):
+        db = _fresh_db()
+        with pytest.raises(ValueError):
+            _run(sm.start_treatment_phase(db, "u1", "Traitement X"))
+
+    def test_a_routine_scale_period_carries_no_label(self):
+        """Une Phase ouverte par un changement de routine ordinaire (pas un
+        traitement nomme) ne doit pas se retrouver avec un `label` — sinon
+        l'ecran Phases ne pourrait plus distinguer les deux origines."""
+        db = _fresh_db()
+        _run(sm.ingest_scan(db, "u1", "v2", V2_HIGH_QUALITY))
+        _run(sm.log_routine_event(db, "u1", "step_added", {"added": ["x"]}))
+        active = _run(sm._get_active_period(db, "u1"))
+        assert active["label"] is None
+        assert active["goal"] is None
+
+
 class TestSkinChanges:
     def test_stable_within_epsilon(self):
         db = _fresh_db()

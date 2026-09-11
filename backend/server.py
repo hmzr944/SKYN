@@ -542,6 +542,24 @@ async def create_product_event(payload: skin_memory.ProductEventRequest,
     return event.model_dump()
 
 
+@api_router.post("/treatments")
+async def start_treatment(payload: skin_memory.TreatmentStartRequest,
+                           authorization: Optional[str] = Header(None)):
+    """Demarre une Phase nommee autour d'un traitement precis : cloture la
+    Phase active et en ouvre une nouvelle portant ce nom (et un objectif
+    facultatif) — voir skin_memory.start_treatment_phase. C'est la porte
+    d'entree du suivi avant/apres qu'un /product-events seul ne fournit pas
+    (il n'ouvre jamais de nouvelle Phase, voir sa docstring)."""
+    user = await get_current_user(authorization)
+    try:
+        event = await skin_memory.start_treatment_phase(
+            db, user.user_id, payload.name, payload.goal
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return event.model_dump()
+
+
 @api_router.post("/recommendations", response_model=RecommendationsResponse)
 async def gpt4o_recommendations(payload: RecommendationsRequest, authorization: Optional[str] = Header(None)):
     """Hybrid: numeric scores stay deterministic (frontend mock). Only the 3 final

@@ -11,7 +11,13 @@ import { PhaseHalo } from "@/src/components/skinMemory/PhaseHalo";
 import { SettlingLoader } from "@/src/components/skinMemory/SettlingLoader";
 import { SkinChangePill, InsufficientPill } from "@/src/components/skinMemory/SkinChangePill";
 import { api } from "@/src/services/api";
-import { attributionSentence, changeTone, confidenceLabel, latestScore } from "@/src/services/skinMemory";
+import {
+  attributionSentence,
+  changeTone,
+  confidenceLabel,
+  latestScore,
+  phaseAttributionSentence,
+} from "@/src/services/skinMemory";
 import { colors, fonts, radius, spacing, type } from "@/src/theme";
 import type { ActivePeriodView } from "@/src/types/skinMemory";
 
@@ -85,6 +91,12 @@ export default function WhatChangedScreen() {
         <Reveal bouncy distance={12}>
           <Text style={styles.kicker}>DEPUIS LE {periodDateLabel(view.period.starts_at).toUpperCase()}</Text>
           <Text style={styles.title}>What Changed?</Text>
+          {view.period.label ? (
+            <Text style={styles.phaseLabel}>
+              {view.period.label}
+              {view.period.goal ? ` · ${view.period.goal}` : ""}
+            </Text>
+          ) : null}
         </Reveal>
 
         {view.state === "baseline" ? (
@@ -134,7 +146,7 @@ export default function WhatChangedScreen() {
         {view.state !== "baseline" && view.changes.length > 0 && (
           <Stagger style={styles.list} delay={140} distance={14}>
             {view.changes.map((c) => {
-              const note = attributionSentence(c, productLabel);
+              const note = attributionSentence(c, productLabel) ?? phaseAttributionSentence(c, view.period);
               return (
                 <View key={`${c.kind}-${c.metric}`} style={styles.row}>
                   <SkinChangePill item={c} />
@@ -179,6 +191,7 @@ const styles = StyleSheet.create({
   scroll: { padding: spacing.l, gap: spacing.m, paddingBottom: spacing.xxl },
   kicker: { ...type.kicker, color: colors.fgDim },
   title: { ...type.title, color: colors.fg, marginTop: 6 },
+  phaseLabel: { ...type.bodySmall, color: colors.accent, marginTop: 4 },
   haloRow: { alignItems: "flex-start", marginVertical: spacing.s },
   mapRow: { alignItems: "center", marginTop: spacing.s },
   mapSlot: { position: "relative" },
