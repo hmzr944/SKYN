@@ -230,13 +230,22 @@ def _split_touching(comp: np.ndarray, r_min_px: float) -> List[np.ndarray]:
 
 
 def _blob_candidates(excess: np.ndarray, mask: np.ndarray, k: float,
-                     a_min: int, a_max: int) -> List[Tuple[int, int, float, int]]:
+                     a_min: int, a_max: int,
+                     a_max_single: Optional[int] = None,
+                     ) -> List[Tuple[int, int, float, int]]:
     """Composantes connexes au-dessus d'un seuil robuste.
 
     Retourne (cx, cy, aire, label) pour chaque candidat de taille plausible.
     Le label distingue les candidats entre eux mais ne correspond plus
     directement a une etiquette de `connectedComponents` : un candidat issu
     d'une separation recoit un label negatif, unique dans l'appel.
+
+    `a_max_single`, quand fourni, est un second plafond — plus large — pour
+    un blob qui echoue `a_max` mais dont `_split_touching` ne trouve RIEN a
+    separer (un seul foyer local, donc une seule lesion, pas un amas). Sans
+    lui, un nodule ou un kyste reellement gros n'a nulle part ou aller :
+    trop grand pour le plafond normal, et la separation ne peut rien faire
+    d'un blob qui n'est deja qu'un seul objet.
     """
     sel = excess[mask > 0]
     if sel.size < 50:
@@ -271,7 +280,21 @@ def _blob_candidates(excess: np.ndarray, mask: np.ndarray, k: float,
         # chercher du bruit dans du bruit.
         if area < a_min * 1.6:
             continue
-        for frag in _split_touching(comp, r_min_px):
+        frags = _split_touching(comp, r_min_px)
+
+        if not frags:
+            # Un seul foyer local : ce n'est pas un amas de lesions collees,
+            # c'en est UNE, simplement plus grande que le plafond habituel.
+            # Un nodule ou un kyste reel merite un second essai, avec un
+            # plafond plus large mais la MEME exigence de forme — remplie et
+            # ronde, pas juste "grande".
+            if a_max_single is not None and _passes_shape(
+                s_area, s_bw, s_bh, fill, circularity, a_min, a_max_single
+            ):
+                out.append((int(cent[i][0]), int(cent[i][1]), float(area), i))
+            continue
+
+        for frag in frags:
             fshape = _shape_stats(frag)
             if fshape is None:
                 continue
@@ -332,12 +355,19 @@ def detect_lesions(fm: FaceMap) -> LesionReport:
     r_max_px = max(4.0, (C.LESION_MAX_MM / 2.0) * px_per_mm)
     a_min = max(4, int(np.pi * r_min_px ** 2))
     a_max = max(a_min + 8, int(np.pi * r_max_px ** 2))
+    # Plafond de secours pour UNE lesion inflammatoire isolee, reellement
+    # volumineuse (nodule, kyste) — voir _blob_candidates et le commentaire
+    # de LESION_MAX_MM_NODULE. Ne s'applique qu'aux candidats rouges : un
+    # comedon ou une marque brune anormalement grands restent bien plus
+    # probablement un artefact (ombre, poil, zone de maquillage).
+    r_max_single_px = max(r_max_px, (C.LESION_MAX_MM_NODULE / 2.0) * px_per_mm)
+    a_max_single = max(a_max, int(np.pi * r_max_single_px ** 2))
 
     cands: Dict[Tuple[int, int], Tuple[float, str]] = {}
 
     # (a) Lesions inflammatoires : exces de rouge
     for cx, cy, area, _ in _blob_candidates(a_exc, core_mask, C.RED_BLOB_K,
-                                            a_min, a_max):
+                                            a_min, a_max, a_max_single):
         cands[(cx, cy)] = (area, "rouge")
     # (b) Comedons ouverts et marques brunes : exces de sombre
     for cx, cy, area, _ in _blob_candidates(-l_exc, core_mask, C.DARK_BLOB_K,

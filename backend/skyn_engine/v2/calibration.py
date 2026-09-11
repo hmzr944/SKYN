@@ -71,7 +71,22 @@ SENSITIVE_GLOBAL_MIN = 0.45
 # --- Detection de lesions --------------------------------------------------
 LESION_MIN_MM = 0.8
 LESION_MAX_MM = 6.0
-"""Diametres plausibles : du microcomedon a la grosse papule."""
+"""Diametres plausibles pour un candidat ISOLE : du microcomedon a la grosse
+papule. Un blob plus grand que ca declenche une TENTATIVE de separation
+(`_split_touching`, pour le cas frequent : plusieurs lesions collees) avant
+d'etre juge — ce n'est pas un plafond absolu, voir LESION_MAX_MM_NODULE."""
+
+LESION_MAX_MM_NODULE = 15.0
+"""Plafond absolu pour une lesion inflammatoire isolee (rouge) qui reste UNE
+SEULE lesion apres tentative de separation — un nodule ou un kyste, pas
+plusieurs papules collees. Sans lui, un nodule reellement volumineux etait
+rejete en silence : trop gros pour passer tel quel, et `_split_touching` ne
+sait rien separer d'un blob a un seul foyer (voir _blob_candidates). Une vraie
+tache aberrante (ombre, zone de maquillage) reste ecartee par les criteres de
+forme (remplissage, circularite) : ce plafond n'assouplit que la TAILLE, pas
+la forme. Reserve aux candidats rouges (inflammatoires) — un comedon ou une
+marque brune anormalement grands restent bien plus probablement un artefact
+qu'une vraie lesion unique, et ne beneficient pas de ce second plafond."""
 
 RED_BLOB_K = 2.2
 DARK_BLOB_K = 2.6

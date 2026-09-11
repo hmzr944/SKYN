@@ -244,6 +244,49 @@ class TestBlobSplitting:
         cands = _blob_candidates(excess, mask, C.RED_BLOB_K, a_min, a_max)
         assert len(cands) == 2
 
+    def test_single_large_lesion_is_dropped_without_rescue_ceiling(self):
+        """Un seul disque, plus grand que `a_max` : `_split_touching` n'a
+        rien a separer (un seul foyer local), donc le blob est perdu si
+        aucun second plafond n'est fourni — c'est le bug signale : un nodule
+        ou un kyste reellement volumineux disparaissait purement et
+        simplement du rapport, sans jamais atteindre `_classify`."""
+        import cv2
+        import numpy as np
+        from skyn_engine.v2 import calibration as C
+        from skyn_engine.v2.lesions import _blob_candidates
+
+        excess = np.zeros((80, 80), dtype=np.float32)
+        mask = np.zeros((80, 80), dtype=np.uint8)
+        cv2.circle(mask, (40, 40), 35, 255, -1)
+        cv2.circle(excess, (40, 40), 15, 20.0, -1)  # aire ~707, > a_max
+        rng = np.random.default_rng(0)
+        excess += rng.normal(0, 0.5, excess.shape).astype(np.float32) * (mask > 0)
+
+        a_min, a_max = 8, 400
+        cands = _blob_candidates(excess, mask, C.RED_BLOB_K, a_min, a_max)
+        assert len(cands) == 0
+
+    def test_single_large_lesion_survives_with_rescue_ceiling(self):
+        """Le meme disque isole, mais avec `a_max_single` fourni : garde
+        comme UN candidat — pas rejete, pas scinde en plusieurs faux
+        fragments. C'est le chemin qu'emprunte un nodule reel."""
+        import cv2
+        import numpy as np
+        from skyn_engine.v2 import calibration as C
+        from skyn_engine.v2.lesions import _blob_candidates
+
+        excess = np.zeros((80, 80), dtype=np.float32)
+        mask = np.zeros((80, 80), dtype=np.uint8)
+        cv2.circle(mask, (40, 40), 35, 255, -1)
+        cv2.circle(excess, (40, 40), 15, 20.0, -1)
+        rng = np.random.default_rng(0)
+        excess += rng.normal(0, 0.5, excess.shape).astype(np.float32) * (mask > 0)
+
+        a_min, a_max = 8, 400
+        cands = _blob_candidates(excess, mask, C.RED_BLOB_K, a_min, a_max,
+                                 a_max_single=1000)
+        assert len(cands) == 1
+
 
 class TestClassification:
     def test_papule_rouge_et_sombre_est_retenue(self):
