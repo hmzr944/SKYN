@@ -13,15 +13,12 @@ import { colors, radius, spacing, type } from "@/src/theme";
 import { storage } from "@/src/utils/storage";
 
 /**
- * Etape de traitement du scan guide (EXPERIMENTAL) — ecran distinct de
- * scan-result.tsx, qui reste le seul ecran de resultat du scan 3 angles.
- *
- * Depuis le chantier 5 (memoire persistante), un succes ne s'affiche plus
- * ici : le scan est ingere dans la Phase active via POST /api/scans, puis
- * l'ecran redirige vers /what-changed, qui lit la Phase a jour plutot
- * qu'un resultat brut passe en memoire. Cet ecran ne gere donc plus que le
- * chargement et l'echec — voir `guided_scan_completed` dans le journal
- * local pour le dataset d'usage complet.
+ * Etape de traitement du scan guide, parcours principal depuis l'unification
+ * (voir scan-result-guided.tsx). Un succes ne s'affiche jamais ici : le scan
+ * est ingere dans la Phase active via POST /api/scans, la reponse fraiche est
+ * deposee en stockage pour l'ecran de resultat, puis on y redirige. Cet ecran
+ * ne gere donc que le chargement et l'echec — voir `guided_scan_completed`
+ * dans le journal local pour le dataset d'usage complet.
  */
 
 function humanError(e: unknown): string {
@@ -88,10 +85,17 @@ export default function AnalysisGuidedScreen() {
         });
 
         // Chantier 5 : rattache ce scan a la Phase active (ou en cree une
-        // baseline) avant de montrer quoi que ce soit — What Changed? lit
-        // la Phase a jour, pas cette reponse brute.
+        // baseline) avant de montrer quoi que ce soit — l'ecran de resultat
+        // lit la Phase a jour pour "Ce qui a change", pas cette reponse
+        // brute seule.
         await api.ingestScan("guided", data as unknown as Record<string, unknown>);
-        if (!cancelled) router.replace("/what-changed");
+        // Passe la reponse fraiche a l'ecran de resultat via le meme
+        // mecanisme de stockage que skyn_guided_captures : ni variable en
+        // memoire (ne survit pas a un rechargement), ni adaptation dans le
+        // FaceAnalysis de scanStore.ts (formes trop differentes — voir
+        // GuidedLesion vs Lesion).
+        await storage.setItem("skyn_last_guided_result", JSON.stringify(data));
+        if (!cancelled) router.replace("/scan-result-guided");
       } catch (e) {
         if (cancelled) return;
         setFailure(humanError(e));
