@@ -113,9 +113,9 @@ type Slide = {
 const SLIDES: readonly Slide[] = [
   {
     kicker: "LA PROMESSE",
-    title: "Votre peau,\ndécryptée.",
+    title: "SKYN se souvient\nde votre peau.",
     helper:
-      "Une photo, quelques secondes, et vous savez où en est votre peau : lésions comptées et classées, zone par zone, avec une routine calibrée sur vos priorités.",
+      "Un premier scan pose un point de départ. Ensuite, à chaque nouveau scan, SKYN compare et vous montre ce qui a vraiment changé — pas un diagnostic isolé, une mémoire qui se construit.",
     photo: HERO_PHOTO,
     variante: 0,
   },

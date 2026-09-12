@@ -5,10 +5,10 @@ import { FadeIn } from "@/src/components/ui/FadeIn";
 import { AnimatedPressable } from "@/src/components/ui/AnimatedPressable";
 
 const STEPS = [
-  "Détection des patterns lumineux à la surface de la peau.",
-  "Cartographie des zones faciales (front, joues, menton, contour).",
-  "Calcul d'un score multi-facteurs : hydratation, éclat, texture, imperfections.",
-  "Génération de recommandations personnalisées selon vos résultats.",
+  "Un premier scan mesure votre peau zone par zone : c'est votre point de départ.",
+  "Vous introduisez un soin ou un traitement — SKYN le note et ouvre une nouvelle Phase.",
+  "Vous revenez scanner quelques jours plus tard, sur simple rappel.",
+  "SKYN compare les deux mesures et vous montre ce qui a vraiment changé.",
 ];
 
 export function HowItWorksModal({
@@ -23,7 +23,7 @@ export function HowItWorksModal({
       <View style={styles.backdrop}>
         <View style={styles.sheet} testID="how-it-works-sheet">
           <View style={styles.handle} />
-          <Text style={styles.title}>Technologie SKYN.</Text>
+          <Text style={styles.title}>Comment SKYN{"\n"}suit votre peau.</Text>
 
           {STEPS.map((step, i) => (
             <FadeIn key={i} delay={i * 60} distance={8}>

@@ -368,7 +368,9 @@ export default function DashboardScreen() {
         {!loading && scored.length > 0 ? (
           <FadeIn delay={140}>
             <View style={styles.chartCard}>
-              <Text style={styles.chartLabel}>{t("dashboard.chartTitle")}</Text>
+              <Text style={styles.chartLabel}>
+                {t("dashboard.chartTitle", { count: chartScores.length, s: chartScores.length > 1 ? "S" : "" })}
+              </Text>
               <View style={styles.chartWrap}>
                 <ScoreChart scores={chartScores} width={chartW} height={chartH} />
               </View>
