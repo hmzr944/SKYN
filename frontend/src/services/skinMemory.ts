@@ -44,12 +44,20 @@ export function metricLabel(item: Pick<SkinChangeItem, "metric" | "kind">): stri
   return LESION_LABEL[item.metric as LesionType] ?? item.metric;
 }
 
+/**
+ * Doctrine produit SKYN, pas une simple décision d'interface : SKYN
+ * observe, SKYN compare, SKYN n'interprète jamais une évolution cutanée
+ * comme un diagnostic médical. "Amélioration"/"Détérioration" affirment un
+ * jugement de valeur que la mesure ne permet pas — "Évolution observée"
+ * et "À surveiller" décrivent ce qui a été mesuré, jamais s'il fallait
+ * s'en réjouir ou s'en inquiéter.
+ */
 const DIRECTION_WORD: Record<ChangeTone, Record<ChangeDirection, string>> = {
-  calm: { up: "Amélioration", down: "Amélioration", stable: "Stable" },
-  watch: { up: "Variation à surveiller", down: "Variation à surveiller", stable: "Stable" },
+  calm: { up: "Évolution observée", down: "Évolution observée", stable: "Stable" },
+  watch: { up: "À surveiller", down: "À surveiller", stable: "Stable" },
 };
 
-/** "Amélioration" / "Stable" / "Variation à surveiller" — jamais "hausse"/"baisse", qui ne dit rien sans connaître la polarité de la métrique. */
+/** "Évolution observée" / "Stable" / "À surveiller" — jamais "amélioration"/"détérioration", qui affirment un jugement que la mesure ne permet pas ; jamais "hausse"/"baisse", qui ne disent rien sans connaître la polarité de la métrique. */
 export function directionLabel(item: Pick<SkinChangeItem, "kind" | "direction">): string {
   const tone = changeTone(item.kind, item.direction);
   return DIRECTION_WORD[tone][item.direction];
@@ -109,10 +117,11 @@ export function latestScore(scans: MemoryScan[]): number | null {
 }
 
 /**
- * Les zones qui se sont le plus dégagées sur la Phase — pour le Bilan de
- * traitement ("Zones les plus améliorées : front, menton"). Seulement les
- * zones en tonalité "calm" avec un vrai mouvement (jamais "stable"), triées
- * par amplitude, jamais par zone alphabétique — l'ordre porte l'information.
+ * Les zones où le changement observé est le plus net sur la Phase — pour
+ * le Bilan de traitement. Seulement les zones en tonalité "calm" avec un
+ * vrai mouvement (jamais "stable"), triées par amplitude, jamais par zone
+ * alphabétique — l'ordre porte l'information. "calm" ne veut pas dire
+ * "améliorées" : voir la doctrine sur DIRECTION_WORD.
  */
 export function topImprovedZones(changes: SkinChangeItem[], limit = 3): SkinChangeItem[] {
   return changes
@@ -124,13 +133,18 @@ export function topImprovedZones(changes: SkinChangeItem[], limit = 3): SkinChan
 export type PhaseVerdict = "improving" | "watch" | "mixed" | "insufficient";
 
 /**
- * Le verdict global d'une Phase ("Évolution globale : amélioration") — se
- * lit UNIQUEMENT sur les changements assez confiants pour compter comme
- * une vraie tendance (jamais "low", voir `_confidence_for_series` côté
- * serveur). Sans un seul changement medium/high, il n'y a rien à conclure :
- * `"insufficient"`, jamais un verdict optimiste par défaut — c'est la même
- * règle que `phaseAttributionSentence` et `InsufficientPill`, appliquée ici
- * à l'ensemble de la Phase plutôt qu'à une seule métrique.
+ * Le verdict global d'une Phase — se lit UNIQUEMENT sur les changements
+ * assez confiants pour compter comme une vraie tendance (jamais "low",
+ * voir `_confidence_for_series` côté serveur). Sans un seul changement
+ * medium/high, il n'y a rien à conclure : `"insufficient"`, jamais un
+ * verdict optimiste par défaut — c'est la même règle que
+ * `phaseAttributionSentence` et `InsufficientPill`, appliquée ici à
+ * l'ensemble de la Phase plutôt qu'à une seule métrique.
+ *
+ * "improving" ne veut pas dire "va mieux" : il veut dire "la majorité des
+ * changements confiants sont en tonalité calme" — voir PHASE_VERDICT_LABEL,
+ * qui ne dit jamais "amélioration" ni "détérioration" (doctrine SKYN :
+ * observer et comparer, jamais diagnostiquer).
  */
 export function phaseVerdict(changes: SkinChangeItem[]): PhaseVerdict {
   const trustworthy = changes.filter((c) => c.confidence !== "low" && c.direction !== "stable");
@@ -147,8 +161,8 @@ export function phaseVerdict(changes: SkinChangeItem[]): PhaseVerdict {
 }
 
 export const PHASE_VERDICT_LABEL: Record<PhaseVerdict, string> = {
-  improving: "Amélioration globale sur cette période",
-  watch: "Surtout des variations à surveiller sur cette période",
+  improving: "Évolution stable sur cette période",
+  watch: "Des changements à surveiller sur cette période",
   mixed: "Évolution mixte sur cette période",
   insufficient: "Pas assez de données pour conclure",
 };
@@ -190,6 +204,54 @@ export function upcomingCheckpoint(period: Period): UpcomingCheckpoint | null {
     if (date.getTime() > now) return { day, date };
   }
   return null;
+}
+
+export type CheckpointStatus = "done" | "next" | "upcoming" | "missed";
+
+export interface CheckpointMarker {
+  day: 0 | 7 | 14 | 30;
+  date: Date;
+  status: CheckpointStatus;
+}
+
+/** Un scan tombe "sur" un rendez-vous s'il arrive dans cette fenêtre autour
+ * de la date recommandée — personne ne scanne à l'heure pile, et ce n'est
+ * pas ce qu'on mesure. */
+const CHECKPOINT_TOLERANCE_DAYS = 3;
+
+/**
+ * La timeline J0 → J7 → J14 → J30 d'une Phase — où l'utilisateur en est
+ * dans la boucle de suivi, jamais un jugement sur le résultat. "missed" ne
+ * veut pas dire "raté" au sens négatif : juste "cette échéance est passée
+ * sans scan à proximité" — voir la doctrine sur DIRECTION_WORD, la même
+ * règle s'applique ici. `null` pour une Phase sans nom : ces échéances
+ * n'ont jamais été programmées pour elle (voir scheduleTreatmentCheckpoints).
+ */
+export function phaseTimeline(period: Period, scans: MemoryScan[]): CheckpointMarker[] | null {
+  if (!period.label) return null;
+  const start = new Date(period.starts_at);
+  const closed = !!period.ends_at;
+  const now = Date.now();
+  const scanTimes = scans.map((s) => new Date(s.created_at).getTime());
+  const toleranceMs = CHECKPOINT_TOLERANCE_DAYS * 86400000;
+
+  const markers: CheckpointMarker[] = [{ day: 0, date: start, status: "done" }];
+  let nextAssigned = false;
+  for (const day of PHASE_CHECKPOINT_DAYS) {
+    const date = checkpointDate(start, day);
+    const hasScanNear = scanTimes.some((t) => Math.abs(t - date.getTime()) <= toleranceMs);
+    let status: CheckpointStatus;
+    if (hasScanNear) {
+      status = "done";
+    } else if (!closed && date.getTime() > now) {
+      status = nextAssigned ? "upcoming" : "next";
+      nextAssigned = true;
+    } else {
+      status = "missed";
+    }
+    markers.push({ day: day as 7 | 14 | 30, date, status });
+  }
+  return markers;
 }
 
 /**

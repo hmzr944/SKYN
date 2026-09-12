@@ -52,6 +52,13 @@ export default function SkinMapScreen() {
   const goScan = () => router.push("/camera-guided");
   const goHistory = () => router.push("/phase-history");
 
+  // Le contour en pointilles (ZoneOutline) existe deja sur la carte pour
+  // une zone a confiance faible, mais rien n'expliquait ce que ce contour
+  // veut dire — une carte lisible ne devrait pas exiger de deviner sa
+  // propre legende.
+  const zoneConf = zoneConfidenceMap(view?.changes ?? []);
+  const hasLowConfidenceZone = Object.values(zoneConf).some((c) => c === "low");
+
   return (
     <SafeAreaView style={styles.container} edges={["top", "bottom"]}>
       <AmbientBackground />
@@ -101,7 +108,7 @@ export default function SkinMapScreen() {
                     ? view.scans[view.scans.length - 2].zone_scores
                     : undefined
                 }
-                zoneConfidence={zoneConfidenceMap(view.changes)}
+                zoneConfidence={zoneConf}
                 size={220}
               />
               <View style={styles.haloSlot}>
@@ -116,6 +123,13 @@ export default function SkinMapScreen() {
               </View>
             </View>
           </Reveal>
+          {hasLowConfidenceZone ? (
+            <Reveal delay={110}>
+              <Text style={styles.legendNote}>
+                Contour en pointillés : pas encore assez de données pour cette zone.
+              </Text>
+            </Reveal>
+          ) : null}
 
           <Reveal delay={140} style={styles.changesBlock}>
             <Text style={styles.sectionTitle}>Ce qui se dessine</Text>
@@ -171,6 +185,12 @@ const styles = StyleSheet.create({
   kicker: { ...type.kicker, color: colors.fgDim, alignSelf: "flex-start" },
   subline: { ...type.bodySmall, color: colors.fgMuted, alignSelf: "flex-start", marginTop: 4 },
   mapRow: { alignItems: "center" },
+  legendNote: {
+    ...type.bodySmall,
+    color: colors.fgDim,
+    textAlign: "center",
+    marginTop: -spacing.s,
+  },
   mapSlot: { position: "relative" },
   haloSlot: { position: "absolute", top: 4, right: -8 },
   changesBlock: { width: "100%", gap: spacing.s },

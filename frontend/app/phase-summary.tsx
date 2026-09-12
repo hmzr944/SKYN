@@ -4,9 +4,11 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 
 import { AnimatedPressable } from "@/src/components/ui/AnimatedPressable";
+import { Disclosure } from "@/src/components/ui/Disclosure";
 import { Reveal, Stagger } from "@/src/components/ui/Reveal";
 import { SkynLockup } from "@/src/components/brand/SkynLockup";
 import { PhaseHalo } from "@/src/components/skinMemory/PhaseHalo";
+import { PhaseTimeline } from "@/src/components/skinMemory/PhaseTimeline";
 import { SettlingLoader } from "@/src/components/skinMemory/SettlingLoader";
 import { SkinChangePill, InsufficientPill } from "@/src/components/skinMemory/SkinChangePill";
 import { api } from "@/src/services/api";
@@ -15,6 +17,7 @@ import {
   attributionSentence,
   metricLabel,
   phaseAttributionSentence,
+  phaseTimeline,
   phaseVerdict,
   topImprovedZones,
   upcomingCheckpoint,
@@ -103,6 +106,7 @@ export default function PhaseSummaryScreen() {
   const verdict = view.state !== "baseline" ? phaseVerdict(view.changes) : "insufficient";
   const tone = verdict === "watch" ? "watch" : "calm";
   const next = upcomingCheckpoint(view.period);
+  const timeline = phaseTimeline(view.period, view.scans);
 
   return (
     <SafeAreaView style={styles.container} edges={["top", "bottom"]}>
@@ -116,6 +120,12 @@ export default function PhaseSummaryScreen() {
           {view.period.goal ? <Text style={styles.goal}>{view.period.goal}</Text> : null}
           <Text style={styles.duration}>{durationLabel(view.period)}</Text>
         </Reveal>
+
+        {timeline ? (
+          <Reveal delay={30} style={styles.timelineWrap}>
+            <PhaseTimeline markers={timeline} />
+          </Reveal>
+        ) : null}
 
         {next ? (
           <Reveal delay={40}>
@@ -144,6 +154,37 @@ export default function PhaseSummaryScreen() {
           </>
         ) : (
           <>
+            <Reveal delay={60} style={styles.compareRow}>
+              <View>
+                <Text style={styles.compareLabel}>Baseline</Text>
+                <Text style={styles.compareDate}>
+                  {new Date(view.scans[0].created_at).toLocaleDateString("fr-FR", { day: "numeric", month: "short" })}
+                </Text>
+              </View>
+              <View style={styles.compareArrow}>
+                <Text style={styles.compareArrowText}>→</Text>
+              </View>
+              <View style={{ alignItems: "flex-end" }}>
+                <Text style={styles.compareLabel}>Maintenant</Text>
+                <Text style={styles.compareDate}>
+                  J+
+                  {Math.max(
+                    0,
+                    Math.round(
+                      (new Date(view.scans[view.scans.length - 1].created_at).getTime() -
+                        new Date(view.period.starts_at).getTime()) /
+                        86400000,
+                    ),
+                  )}{" "}
+                  ·{" "}
+                  {new Date(view.scans[view.scans.length - 1].created_at).toLocaleDateString("fr-FR", {
+                    day: "numeric",
+                    month: "short",
+                  })}
+                </Text>
+              </View>
+            </Reveal>
+
             <Reveal delay={80} style={styles.verdictRow}>
               <PhaseHalo size={64} tone={tone} />
               <Text style={styles.verdict}>{PHASE_VERDICT_LABEL[verdict]}</Text>
@@ -152,7 +193,7 @@ export default function PhaseSummaryScreen() {
             {improvedZones.length > 0 ? (
               <Reveal delay={120}>
                 <View style={styles.card}>
-                  <Text style={styles.cardEyebrow}>Zones les plus améliorées</Text>
+                  <Text style={styles.cardEyebrow}>Zones où le changement est le plus net</Text>
                   <Text style={styles.zonesText}>
                     {improvedZones.map((c) => metricLabel(c)).join(", ")}
                   </Text>
@@ -176,6 +217,18 @@ export default function PhaseSummaryScreen() {
             </Stagger>
           </>
         )}
+
+        <Reveal delay={200}>
+          <Disclosure testID="phase-summary-why">
+            <Text style={styles.disclosureText}>
+              {"SKYN n'affiche un changement que lorsque plusieurs scans vont dans le même " +
+                "sens, avec une mesure d'assez bonne qualité. Avec un seul scan, il n'y a rien " +
+                "à comparer — c'est pour ça qu'une Phase toute neuve affiche \"pas assez de " +
+                "données\" plutôt qu'un résultat inventé. Avec des mesures qui se contredisent, " +
+                "SKYN attend plutôt que de deviner."}
+            </Text>
+          </Disclosure>
+        </Reveal>
 
         {active ? (
           <>
@@ -211,6 +264,7 @@ const styles = StyleSheet.create({
   title: { ...type.title, color: colors.fg, marginTop: 6 },
   goal: { ...type.bodySmall, color: colors.accent, marginTop: 4 },
   duration: { ...type.bodySmall, color: colors.fgDim, marginTop: 4 },
+  timelineWrap: { marginTop: spacing.l, paddingHorizontal: spacing.xs },
   nextPill: {
     alignSelf: "flex-start",
     backgroundColor: colors.surfaceSunken,
@@ -223,6 +277,13 @@ const styles = StyleSheet.create({
 
   haloRow: { alignItems: "flex-start", marginVertical: spacing.s },
   note: { ...type.bodySmall, color: colors.fgMuted, marginTop: spacing.s },
+  disclosureText: { ...type.bodySmall, color: colors.fgMuted, lineHeight: 19 },
+
+  compareRow: { flexDirection: "row", alignItems: "center", marginTop: spacing.m },
+  compareLabel: { ...type.bodySmall, color: colors.fgDim },
+  compareDate: { fontFamily: fonts.headingMedium, fontSize: 15, color: colors.fg, marginTop: 2 },
+  compareArrow: { flex: 1, alignItems: "center" },
+  compareArrowText: { fontFamily: fonts.body, fontSize: 16, color: colors.fgDim },
 
   verdictRow: { flexDirection: "row", alignItems: "center", gap: spacing.m, marginTop: spacing.m },
   verdict: { ...type.body, color: colors.fg, flex: 1, lineHeight: 22 },

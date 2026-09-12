@@ -4,6 +4,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
 
 import { AnimatedPressable } from "@/src/components/ui/AnimatedPressable";
+import { Disclosure } from "@/src/components/ui/Disclosure";
 import { Reveal, Stagger } from "@/src/components/ui/Reveal";
 import { SkynLockup } from "@/src/components/brand/SkynLockup";
 import { FaceZoneMap } from "@/src/components/analysis/FaceZoneMap";
@@ -17,6 +18,7 @@ import {
   confidenceLabel,
   latestScore,
   phaseAttributionSentence,
+  zoneConfidenceMap,
 } from "@/src/services/skinMemory";
 import { colors, fonts, radius, spacing, type } from "@/src/theme";
 import type { ActivePeriodView } from "@/src/types/skinMemory";
@@ -35,6 +37,10 @@ const productLabel = (id: string) => id;
 
 function periodDateLabel(iso: string): string {
   return new Date(iso).toLocaleDateString("fr-FR", { day: "numeric", month: "long" });
+}
+
+function shortDate(iso: string): string {
+  return new Date(iso).toLocaleDateString("fr-FR", { day: "numeric", month: "short" });
 }
 
 export default function WhatChangedScreen() {
@@ -80,6 +86,8 @@ export default function WhatChangedScreen() {
 
   const worstTone = view.changes.some((c) => changeTone(c.kind, c.direction) === "watch") ? "watch" : "calm";
   const score = latestScore(view.scans);
+  const zoneConf = zoneConfidenceMap(view.changes);
+  const hasLowConfidenceZone = Object.values(zoneConf).some((c) => c === "low");
 
   return (
     <SafeAreaView style={styles.container} edges={["top", "bottom"]}>
@@ -121,6 +129,34 @@ export default function WhatChangedScreen() {
           </>
         ) : (
           <>
+            {/* Baseline vs maintenant, en chiffres avant meme la carte —
+                "J+14" situe la mesure dans la boucle de checkpoints,
+                pas seulement "un jour plus tard". */}
+            <Reveal delay={60} style={styles.compareRow}>
+              <View>
+                <Text style={styles.compareLabel}>Baseline</Text>
+                <Text style={styles.compareDate}>{shortDate(view.scans[0].created_at)}</Text>
+              </View>
+              <View style={styles.compareArrow}>
+                <Text style={styles.compareArrowText}>→</Text>
+              </View>
+              <View style={{ alignItems: "flex-end" }}>
+                <Text style={styles.compareLabel}>Maintenant</Text>
+                <Text style={styles.compareDate}>
+                  J+
+                  {Math.max(
+                    0,
+                    Math.round(
+                      (new Date(view.scans[view.scans.length - 1].created_at).getTime() -
+                        new Date(view.period.starts_at).getTime()) /
+                        86400000,
+                    ),
+                  )}{" "}
+                  · {shortDate(view.scans[view.scans.length - 1].created_at)}
+                </Text>
+              </View>
+            </Reveal>
+
             {/* Le coeur de l'ecran : la carte se resout depuis la baseline
                 de la Phase vers la derniere mesure — le changement EST le
                 visuel, pas une liste a cote d'une forme statique. */}
@@ -129,6 +165,7 @@ export default function WhatChangedScreen() {
                 <FaceZoneMap
                   zoneScores={view.scans[view.scans.length - 1].zone_scores}
                   previousZoneScores={view.scans[0].zone_scores}
+                  zoneConfidence={zoneConf}
                   size={200}
                 />
                 <View style={styles.haloSlot}>
@@ -138,6 +175,11 @@ export default function WhatChangedScreen() {
             </Reveal>
             <Reveal delay={160}>
               <Text style={styles.mapCaption}>Avant → maintenant, sur cette Phase</Text>
+              {hasLowConfidenceZone ? (
+                <Text style={styles.legendNote}>
+                  Contour en pointillés : pas encore assez de données pour cette zone.
+                </Text>
+              ) : null}
             </Reveal>
           </>
         )}
@@ -163,6 +205,15 @@ export default function WhatChangedScreen() {
               {view.scans.length > 1 ? "s" : ""} sur cette Phase.{" "}
               {"Plusieurs facteurs peuvent contribuer à une évolution. SKYN observe, il ne diagnostique pas."}
             </Text>
+            <Disclosure testID="what-changed-why">
+              <Text style={styles.disclosureText}>
+                {"SKYN n'affiche un changement que lorsque plusieurs scans vont dans le même " +
+                  "sens, avec une mesure d'assez bonne qualité. Avec un seul scan, il n'y a rien " +
+                  "à comparer. Avec des mesures qui se contredisent, SKYN attend plutôt que de " +
+                  "deviner — c'est pour ça qu'une zone peut rester \"Stable\" ou qu'un changement " +
+                  "attend encore d'être confirmé."}
+              </Text>
+            </Disclosure>
           </Reveal>
         ) : null}
 
@@ -191,6 +242,16 @@ const styles = StyleSheet.create({
   title: { ...type.title, color: colors.fg, marginTop: 6 },
   phaseLabel: { ...type.bodySmall, color: colors.accent, marginTop: 4 },
   haloRow: { alignItems: "flex-start", marginVertical: spacing.s },
+  compareRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: spacing.m,
+    marginBottom: spacing.s,
+  },
+  compareLabel: { ...type.bodySmall, color: colors.fgDim },
+  compareDate: { fontFamily: fonts.headingMedium, fontSize: 15, color: colors.fg, marginTop: 2 },
+  compareArrow: { flex: 1, alignItems: "center" },
+  compareArrowText: { fontFamily: fonts.body, fontSize: 16, color: colors.fgDim },
   mapRow: { alignItems: "center", marginTop: spacing.s },
   mapSlot: { position: "relative" },
   haloSlot: { position: "absolute", top: 0, right: -6 },
@@ -199,6 +260,12 @@ const styles = StyleSheet.create({
     color: colors.fgDim,
     textAlign: "center",
     marginTop: -spacing.s,
+  },
+  legendNote: {
+    ...type.bodySmall,
+    color: colors.fgDim,
+    textAlign: "center",
+    marginTop: 4,
   },
   note: { ...type.bodySmall, color: colors.fgMuted, marginTop: spacing.s },
   list: { gap: spacing.m },
@@ -216,6 +283,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.s,
     lineHeight: 19,
   },
+  disclosureText: { ...type.bodySmall, color: colors.fgMuted, lineHeight: 19 },
   scoreCaption: { ...type.bodySmall, color: colors.fgDim },
   linkBtn: { paddingVertical: spacing.m, alignItems: "center" },
   linkText: { ...type.bodySmall, color: colors.fgDim, textDecorationLine: "underline" },
