@@ -1,13 +1,11 @@
 /**
- * Le magasin des analyses.
+ * Le magasin des analyses — desormais le residu local du seul flux
+ * /camera (secondaire). La source canonique de l'historique affiche est
+ * skin_memory (backend), alimentee par le scan guide ; voir scanHistory.ts,
+ * qui fusionne les deux pour Dashboard/Suivi sans jamais reecrire ici.
  *
- * Jusqu'ici un scan produisait un ecran, puis disparaissait : seule la routine
- * survivait. L'accueil et l'historique lisaient de leur cote les rapports du
- * moteur v1, que le parcours camera ne cree jamais — d'ou une app qui affichait
- * "pas encore d'analyse" apres chaque analyse.
- *
- * Ce module est desormais la source unique : il garde l'analyse COMPLETE, si
- * bien qu'un scan peut etre rouvert tel quel des semaines plus tard.
+ * Ce module garde l'analyse COMPLETE d'un scan /camera, si bien qu'un tel
+ * scan peut etre rouvert tel quel des semaines plus tard (scan-result.tsx).
  *
  * Tout est local. On plafonne volontairement le nombre d'analyses completes
  * conservees : une analyse porte la liste de ses lesions, et AsyncStorage n'est

@@ -114,6 +114,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ source, analysis }),
     }),
+  /** Tous les scans de l'utilisateur, toutes Phases confondues, le plus
+   * recent d'abord — source canonique de Dashboard/Suivi depuis la
+   * reunification (voir scanStore.ts pour le residu local historique du
+   * flux /camera, fusionne a l'affichage mais jamais reecrit). */
+  listMemoryScans: () => request<MemoryScan[]>("/api/scans"),
   /** La Phase en cours, ou `null` si aucun scan n'a encore ete ingere. */
   getActivePeriod: () => request<ActivePeriodView | null>("/api/periods/active"),
   /** Historique des Phases, la plus recente (active ou non) en tete. */

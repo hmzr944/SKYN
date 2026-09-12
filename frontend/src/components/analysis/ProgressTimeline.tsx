@@ -3,7 +3,7 @@ import { LayoutChangeEvent, View, Text, StyleSheet } from "react-native";
 import Svg, { Path, Circle, Defs, LinearGradient, Stop, Line } from "react-native-svg";
 
 import { colors, fonts, spacing, radius, shadow } from "@/src/theme";
-import { listScans, type ScanSummary } from "@/src/services/scanStore";
+import { listUnifiedScans } from "@/src/services/scanHistory";
 import { scoreColor } from "./FaceZoneMap";
 
 /**
@@ -14,19 +14,33 @@ import { scoreColor } from "./FaceZoneMap";
  * rien ne bouge alors que rien n'a encore ete mesure deux fois.
  */
 
+/** Uniquement ce dont ce graphe a besoin — un scan sans score (second
+ * calcul de /analyze/guided en echec, tres rare) n'a rien a y tracer. */
+interface TimelineScan {
+  date: string;
+  global_score: number;
+  lesion_total: number;
+}
+
 interface Props {
-  /** Scans injectes (sinon lus depuis le stockage local). */
-  scans?: ScanSummary[];
+  /** Scans injectes (sinon lus depuis skin_memory + le residu local). */
+  scans?: TimelineScan[];
 }
 
 export function ProgressTimeline({ scans: injected }: Props) {
 
-  const [scans, setScans] = useState<ScanSummary[]>(injected ?? []);
+  const [scans, setScans] = useState<TimelineScan[]>(injected ?? []);
 
   useEffect(() => {
     if (injected) return;
     let alive = true;
-    listScans().then((s) => alive && setScans([...s].reverse()));
+    listUnifiedScans().then((s) => {
+      if (!alive) return;
+      const scored = s
+        .filter((x): x is typeof x & { global_score: number } => x.global_score !== null)
+        .reverse();
+      setScans(scored);
+    });
     return () => {
       alive = false;
     };

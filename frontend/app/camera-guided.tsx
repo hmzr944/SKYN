@@ -1,5 +1,6 @@
 import { CameraView, useCameraPermissions } from "expo-camera";
 import * as Haptics from "expo-haptics";
+import * as ImagePicker from "expo-image-picker";
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Platform, StyleSheet, Text, useWindowDimensions, View } from "react-native";
@@ -25,13 +26,19 @@ import { useOnline } from "@/src/hooks/useOnline";
 import { storage } from "@/src/utils/storage";
 
 /**
- * Scan guide (v0, EXPERIMENTAL) — parallele au scan 3 angles de camera.tsx,
- * qui reste intact et reste le parcours par defaut.
+ * Scan guide — le parcours principal (voir _layout.tsx/dashboard.tsx).
+ * L'ancien scan 3 angles (camera.tsx) reste dans le code comme mode
+ * secondaire, accessible depuis les reglages.
  *
  * Ce que cet ecran fait : collecte jusqu'a MAX_FRAMES vues pendant que la
  * personne tourne la tete, puis envoie tout en un seul appel a
  * /api/analyze/guided, qui decide lui-meme cote serveur combien de vues
  * etaient exploitables et quand la mesure est jugee stable.
+ *
+ * Le guidage automatique (MediaPipe, web uniquement) est un confort, pas
+ * une condition : la capture manuelle et la galerie restent toujours
+ * disponibles en repli, sur toutes les plateformes — memes filets de
+ * securite que camera.tsx (voir sa note sur faceGuide.ts).
  *
  * Ce que cet ecran NE fait PAS : verifier que les vues captees sont
  * reellement des poses differentes. Le texte de guidage propose un
@@ -165,6 +172,36 @@ export default function CameraGuidedScreen() {
       /* on retentera a l'image suivante */
     } finally {
       busyRef.current = false;
+    }
+  }, [finish]);
+
+  /**
+   * Repli si la camera en direct ne mene nulle part (guidage automatique en
+   * echec sur web, ou simplement une preference) : selectionner plusieurs
+   * photos depuis la galerie plutot que de rester bloque sur cet ecran.
+   */
+  const pickFromGallery = useCallback(async () => {
+    if (doneRef.current) return;
+    try {
+      const remaining = MAX_FRAMES - capturesRef.current.length;
+      if (remaining <= 0) return;
+      const res = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ["images"],
+        base64: true,
+        quality: 0.55,
+        allowsMultipleSelection: true,
+        selectionLimit: remaining,
+      });
+      if (res.canceled) return;
+      for (const asset of res.assets ?? []) {
+        if (capturesRef.current.length >= MAX_FRAMES) break;
+        const clean = cleanB64(asset.base64 ?? null);
+        if (clean) capturesRef.current.push(clean);
+      }
+      setCount(capturesRef.current.length);
+      if (capturesRef.current.length >= MAX_FRAMES) await finish();
+    } catch {
+      /* l'utilisateur garde la main : rien a capturer ne bloque pas l'ecran */
     }
   }, [finish]);
 
@@ -338,6 +375,11 @@ export default function CameraGuidedScreen() {
                 <Text style={styles.permBtnText}>Autoriser</Text>
               </AnimatedPressable>
             ) : null}
+            {/* Sans camera du tout (refus definitif), la galerie reste le
+                seul chemin vers un scan — jamais un ecran sans issue. */}
+            <AnimatedPressable style={styles.permBtn} haptic="medium" onPress={pickFromGallery}>
+              <Text style={styles.permBtnText}>Choisir depuis la galerie</Text>
+            </AnimatedPressable>
           </View>
         )}
       </View>
@@ -353,17 +395,27 @@ export default function CameraGuidedScreen() {
         </View>
 
         <View style={styles.controls}>
-          {Platform.OS !== "web" ? (
-            <AnimatedPressable
-              onPress={capture}
-              style={styles.secondaryBtn}
-              disabled={!canUseCamera || !ready || count >= MAX_FRAMES}
-              haptic="medium"
-              squash
-            >
-              <Text style={styles.secondaryText}>Capturer une vue</Text>
-            </AnimatedPressable>
-          ) : null}
+          {/* Le guidage automatique (web) est un confort, pas une condition :
+              la capture manuelle reste toujours accessible, memes filets de
+              securite que camera.tsx (voir la note en tete de fichier). */}
+          <AnimatedPressable
+            onPress={capture}
+            style={styles.secondaryBtn}
+            disabled={!canUseCamera || !ready || count >= MAX_FRAMES}
+            haptic="medium"
+            squash
+          >
+            <Text style={styles.secondaryText}>Capturer une vue</Text>
+          </AnimatedPressable>
+
+          <AnimatedPressable
+            onPress={pickFromGallery}
+            style={styles.secondaryBtn}
+            disabled={count >= MAX_FRAMES}
+            haptic="medium"
+          >
+            <Text style={styles.secondaryText}>Galerie</Text>
+          </AnimatedPressable>
 
           <AnimatedPressable
             onPress={finish}

@@ -78,6 +78,36 @@ class TestIngestAndPeriodLifecycle:
         with pytest.raises(ValueError):
             _run(sm.ingest_scan(db, "u1", "v1", {}))
 
+    def test_display_fields_are_persisted_from_the_source_analysis(self):
+        """Dashboard/Suivi (chantier de reunification) affichent diagnostic,
+        type de peau, severite et priorites depuis skin_memory — jusqu'ici
+        ScanRecord ne les conservait pas du tout, alors que /analyze/v2 et
+        /analyze/guided les calculent deja."""
+        db = _fresh_db()
+        analysis = {
+            **V2_HIGH_QUALITY,
+            "diagnosis": "Peau grasse — acné modérée",
+            "skin_type": "grasse",
+            "severity_level": 2,
+            "top_concerns": ["acne_active", "sebum"],
+        }
+        scan = _run(sm.ingest_scan(db, "u1", "v2", analysis))
+        assert scan.diagnosis == "Peau grasse — acné modérée"
+        assert scan.skin_type == "grasse"
+        assert scan.severity_level == 2
+        assert scan.top_concerns == ["acne_active", "sebum"]
+
+    def test_display_fields_default_gracefully_when_absent(self):
+        """Le second calcul de /analyze/guided peut echouer sans faire
+        echouer le scan (voir server.py) — ScanRecord ne doit pas planter,
+        et ne doit surtout rien deviner a la place."""
+        db = _fresh_db()
+        scan = _run(sm.ingest_scan(db, "u1", "v2", V2_HIGH_QUALITY))
+        assert scan.diagnosis is None
+        assert scan.skin_type is None
+        assert scan.severity_level is None
+        assert scan.top_concerns == []
+
 
 class TestCaptureQuality:
     def test_v2_unusable_is_low(self):
@@ -435,6 +465,26 @@ class TestGetPeriodView:
         db = _fresh_db()
         s1 = _run(sm.ingest_scan(db, "u1", "v2", V2_HIGH_QUALITY))
         assert _run(sm.get_period_view(db, "u2", s1.period_id)) is None
+
+
+class TestListScans:
+    """list_scans — la lecture qui manquait pour que Dashboard/Suivi
+    affichent l'historique complet d'un utilisateur, toutes Phases
+    confondues, plutot que seulement la Phase active."""
+
+    def test_lists_scans_across_periods_most_recent_first(self):
+        db = _fresh_db()
+        s1 = _run(sm.ingest_scan(db, "u1", "v2", V2_HIGH_QUALITY))
+        _run(sm.start_treatment_phase(db, "u1", "Traitement X"))
+        s2 = _run(sm.ingest_scan(db, "u1", "v2", V2_HIGH_QUALITY))
+
+        scans = _run(sm.list_scans(db, "u1"))
+        assert [s["id"] for s in scans] == [s2.id, s1.id]
+
+    def test_does_not_leak_another_users_scans(self):
+        db = _fresh_db()
+        _run(sm.ingest_scan(db, "u1", "v2", V2_HIGH_QUALITY))
+        assert _run(sm.list_scans(db, "u2")) == []
 
 
 if __name__ == "__main__":

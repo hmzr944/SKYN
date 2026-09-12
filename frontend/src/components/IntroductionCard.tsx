@@ -5,6 +5,7 @@ import { AnimatedPressable } from "@/src/components/ui/AnimatedPressable";
 import { Chip } from "@/src/components/ui/Chip";
 import { Disclosure } from "@/src/components/ui/Disclosure";
 import { Reveal } from "@/src/components/ui/Reveal";
+import { api } from "@/src/services/api";
 import { track } from "@/src/services/analytics";
 import {
   activeTracking,
@@ -20,6 +21,7 @@ import {
   type Signal,
   type Tracking,
 } from "@/src/services/introduction";
+import { scheduleTreatmentCheckpoints } from "@/src/services/reminders";
 import type { StoredRoutine } from "@/src/services/routineStore";
 import { colors, fonts, radius, spacing, type } from "@/src/theme";
 import type { ProductPick } from "@/src/types/analysis";
@@ -73,6 +75,22 @@ export function IntroductionCard({ routine }: { routine: StoredRoutine | null })
 }
 
 /* ------------------------------------------------------------------ */
+/**
+ * "Nouveau produit ?" declenchait jusqu'ici un suivi purement local (voir
+ * introduction.ts) : aucune Phase, aucun ProductEvent, jamais rattache a
+ * la memoire de peau — un traitement introduit ici n'apparaissait ni dans
+ * What Changed?, ni dans un Bilan. C'est desormais le meme mecanisme que
+ * start-treatment.tsx (POST /api/treatments + rappels J+7/14/30).
+ *
+ * Deux temps, pas un tap direct : choisir PUIS confirmer, avec une
+ * confirmation explicite apres coup ("Suivi créé — baseline enregistrée,
+ * prochain scan dans 7 jours"). Sans ca, demarrer une Phase reste un tap
+ * de chip parmi d'autres — rien ne dit a l'utilisateur qu'il vient de
+ * poser le point de depart d'une comparaison qui arrivera dans une
+ * semaine. Le suivi quotidien local (signaux/verdict) ne demarre qu'APRES
+ * confirmation du serveur — une Phase qui n'a pas pu s'ouvrir ne doit
+ * jamais laisser une trace locale que la memoire de peau ignore.
+ */
 function Idle({
   products,
   onStarted,
@@ -80,23 +98,82 @@ function Idle({
   products: ProductPick[];
   onStarted: () => void;
 }) {
+  const [selected, setSelected] = useState<ProductPick | null>(null);
+  const [starting, setStarting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [justStarted, setJustStarted] = useState<string | null>(null);
+
+  const confirm = async () => {
+    if (!selected || starting) return;
+    setStarting(true);
+    setError(null);
+    try {
+      await api.startTreatment(selected.name);
+      await scheduleTreatmentCheckpoints(selected.name);
+      await startTracking(selected);
+      setJustStarted(selected.name);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "";
+      setError(
+        msg.startsWith("400")
+          ? "Faites d'abord un scan pour démarrer un suivi de traitement."
+          : "Connexion impossible. Réessayez.",
+      );
+    } finally {
+      setStarting(false);
+    }
+  };
+
+  if (justStarted) {
+    return (
+      <Reveal distance={8}>
+        <View style={styles.verdict}>
+          <Text style={styles.verdictTitle}>Suivi créé</Text>
+          <Text style={styles.verdictBody}>
+            Baseline enregistrée aujourd&apos;hui pour {justStarted}. Prochain scan recommandé dans 7 jours.
+          </Text>
+        </View>
+        <AnimatedPressable testID="intro-confirm-continue" style={styles.submit} haptic="medium" onPress={onStarted}>
+          <Text style={styles.submitText}>Voir mon suivi</Text>
+        </AnimatedPressable>
+      </Reveal>
+    );
+  }
+
   return (
     <>
-      <Text style={styles.lede}>Vous venez d&apos;introduire un produit ?</Text>
+      <Text style={styles.lede}>Nouveau produit ?</Text>
+      <Text style={styles.helper}>Dites-nous lequel. SKYN suivra son évolution sur votre peau.</Text>
+      {error ? (
+        <Text style={styles.error} testID="intro-start-error">
+          {error}
+        </Text>
+      ) : null}
       <View style={styles.chips}>
         {products.slice(0, 4).map((p) => (
           <Chip
             key={p.id}
             testID={`intro-start-${p.id}`}
             label={p.name}
-            on={false}
-            onPress={async () => {
-              await startTracking(p);
-              onStarted();
+            on={selected?.id === p.id}
+            onPress={() => {
+              setError(null);
+              setSelected(p);
             }}
           />
         ))}
       </View>
+      {selected ? (
+        <AnimatedPressable
+          testID="intro-confirm-start"
+          style={[styles.submit, starting && styles.submitOff]}
+          disabled={starting}
+          haptic="medium"
+          onPress={confirm}
+        >
+          <Text style={styles.submitText}>{starting ? "Démarrage…" : "Commencer le suivi"}</Text>
+        </AnimatedPressable>
+      ) : null}
       <Disclosure testID="intro-why">
         <Text style={styles.helper}>
           {"Quand vous commencez un actif, la peau peut réagir les premières " +
@@ -221,6 +298,7 @@ const styles = StyleSheet.create({
   },
   eyebrow: { ...type.kicker, color: colors.accent },
   lede: { ...type.subtitle, color: colors.fg },
+  error: { ...type.bodySmall, color: colors.accent },
   helper: { ...type.bodySmall, color: colors.fgMuted },
   head: { flexDirection: "row", alignItems: "center", gap: spacing.m },
   // Le jour de suivi est LE chiffre de cette carte : il dit ou l'on en est

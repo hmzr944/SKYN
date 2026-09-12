@@ -530,6 +530,15 @@ async def ingest_scan(payload: skin_memory.ScanIngestRequest,
     return scan.model_dump()
 
 
+@api_router.get("/scans")
+async def get_scans(authorization: Optional[str] = Header(None)):
+    """Tous les scans de l'utilisateur, toutes Phases confondues — ce que
+    Dashboard/Suivi lisaient jusqu'ici depuis le stockage local scanStore
+    (alimente par le seul flux /camera). Lecture seule."""
+    user = await get_current_user(authorization)
+    return await skin_memory.list_scans(db, user.user_id)
+
+
 @api_router.get("/periods/active")
 async def get_active_period(authorization: Optional[str] = Header(None)):
     """La Phase en cours : son etat (baseline/tracking/understanding), ses

@@ -63,6 +63,15 @@ class ScanRecord(BaseModel):
     lesion_counts: Dict[str, int] = Field(default_factory=dict)
     lesions: List[dict] = Field(default_factory=list)
     capture_quality: str = "low"                   # "low" | "medium" | "high"
+    # Passthrough pur de ce que /analyze/v2 et /analyze/guided calculent deja
+    # (voir _extract_scan_fields) — aucun nouveau calcul. Sans ces 4 champs,
+    # Dashboard/Suivi ne pouvaient pas se relire depuis skin_memory : ils
+    # affichaient le diagnostic, le type de peau, la severite et les
+    # priorites d'un scan, des champs que ScanRecord ne conservait jamais.
+    diagnosis: Optional[str] = None
+    skin_type: Optional[str] = None
+    severity_level: Optional[int] = None
+    top_concerns: List[str] = Field(default_factory=list)
 
 
 class Period(BaseModel):
@@ -165,6 +174,21 @@ def compute_capture_quality(source: str, analysis: Dict[str, Any]) -> str:
     return "low"
 
 
+def _display_fields(analysis: Dict[str, Any]) -> Dict[str, Any]:
+    """Champs affiches par Dashboard/Suivi (diagnostic, type de peau,
+    severite, priorites) — purement descriptifs, jamais utilises pour un
+    calcul de tendance (voir _skin_changes, qui ne lit que concerns/
+    zone_scores/lesion_counts). Absents si le calcul source ne les a pas
+    produits (voir la note sur le second calcul de /analyze/guided
+    ci-dessous) plutot que devines."""
+    return {
+        "diagnosis": analysis.get("diagnosis"),
+        "skin_type": analysis.get("skin_type"),
+        "severity_level": analysis.get("severity_level"),
+        "top_concerns": analysis.get("top_concerns") or [],
+    }
+
+
 def _extract_scan_fields(source: str, analysis: Dict[str, Any]) -> Dict[str, Any]:
     if source == "v2":
         return {
@@ -173,6 +197,7 @@ def _extract_scan_fields(source: str, analysis: Dict[str, Any]) -> Dict[str, Any
             "zone_scores": analysis.get("zone_scores") or {},
             "lesion_counts": analysis.get("lesion_counts") or {},
             "lesions": analysis.get("lesions") or [],
+            **_display_fields(analysis),
         }
     # source == "guided" — zone_scores/lesion_counts viennent du suivi
     # multi-vue (skyn_engine.v2.zone_scoring, calcule sur les lesions
@@ -193,6 +218,7 @@ def _extract_scan_fields(source: str, analysis: Dict[str, Any]) -> Dict[str, Any
         "zone_scores": analysis.get("zone_scores") or {},
         "lesion_counts": counts,
         "lesions": lesions,
+        **_display_fields(analysis),
     }
 
 
@@ -520,3 +546,13 @@ async def list_periods(db, user_id: str, limit: int = 50) -> List[dict]:
 
     periods.sort(key=lambda p: (p["ends_at"] is not None, -_ts(p)))
     return periods[:limit]
+
+
+async def list_scans(db, user_id: str, limit: int = 200) -> List[dict]:
+    """Tous les scans de l'utilisateur, toutes Phases confondues, le plus
+    recent d'abord — ce que Dashboard/Suivi affichaient jusqu'ici depuis
+    scanStore (local, alimente par le seul flux /camera). Lecture seule :
+    ne cree rien, ne modifie aucune Phase."""
+    return await db.scans.find(
+        {"user_id": user_id}, {"_id": 0}
+    ).sort("created_at", -1).to_list(length=limit)

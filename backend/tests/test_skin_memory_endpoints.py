@@ -168,6 +168,19 @@ class TestSkinMemoryEndpoints:
         r = client.get("/api/periods/not-a-real-id", headers=auth_headers)
         assert r.status_code == 404
 
+    def test_get_scans_requires_auth(self, client):
+        r = client.get("/api/scans")
+        assert r.status_code in (401, 403)
+
+    def test_get_scans_lists_across_periods(self, client, auth_headers):
+        client.post("/api/scans", json={"source": "v2", "analysis": V2_ANALYSIS}, headers=auth_headers)
+        client.post("/api/treatments", json={"name": "Traitement X"}, headers=auth_headers)
+        client.post("/api/scans", json={"source": "v2", "analysis": V2_ANALYSIS}, headers=auth_headers)
+
+        r = client.get("/api/scans", headers=auth_headers)
+        assert r.status_code == 200
+        assert len(r.json()) == 2
+
 
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))

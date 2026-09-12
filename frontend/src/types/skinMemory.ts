@@ -24,6 +24,13 @@ export interface MemoryScan {
   lesion_counts: Record<string, number>;
   lesions: unknown[];
   capture_quality: Confidence;
+  /** Passthrough de ce que /analyze/v2 ou /analyze/guided a calcule — voir
+   * skin_memory.py::_display_fields. `null`/vide si ce calcul a echoue pour
+   * ce scan precis, jamais devine. */
+  diagnosis: string | null;
+  skin_type: string | null;
+  severity_level: number | null;
+  top_concerns: string[];
 }
 
 export interface Period {

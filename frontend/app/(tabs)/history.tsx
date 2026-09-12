@@ -6,7 +6,7 @@ import * as Haptics from "expo-haptics";
 
 import { colors, fonts, spacing, radius, shadow } from "@/src/theme";
 import { syncPendingReports } from "@/src/services/api";
-import { listScans, type ScanSummary } from "@/src/services/scanStore";
+import { listUnifiedScans, type UnifiedScan } from "@/src/services/scanHistory";
 import { FadeIn } from "@/src/components/ui/FadeIn";
 import { Swap } from "@/src/components/ui/Swap";
 import { AnimatedPressable } from "@/src/components/ui/AnimatedPressable";
@@ -22,7 +22,7 @@ const FILTERS = [
 
 export default function HistoryScreen() {
   const router = useRouter();
-  const [scans, setScans] = useState<ScanSummary[]>([]);
+  const [scans, setScans] = useState<UnifiedScan[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState(FILTERS[2].days);
@@ -30,7 +30,10 @@ export default function HistoryScreen() {
   const load = useCallback(async () => {
     try {
       await syncPendingReports();
-      setScans(await listScans());
+      // skin_memory (le scan guide) est la source canonique, fusionnee au
+      // residu local du flux /camera — voir scanHistory.ts. C'est ce qui
+      // fait de "Suivi" le vrai centre du suivi, pas seulement l'ancien flux.
+      setScans(await listUnifiedScans());
     } catch {
       /* ignore */
     } finally {
@@ -99,7 +102,11 @@ export default function HistoryScreen() {
                   style={styles.card}
                   scaleTo={0.98}
                   disabled={!item.detailed}
-                  onPress={() => router.push(`/scan-result?id=${item.id}`)}
+                  onPress={() =>
+                    router.push(
+                      item.origin === "memory" ? `/phase-summary?id=${item.period_id}` : `/scan-result?id=${item.id}`,
+                    )
+                  }
                 >
                   <View style={styles.cardLeft}>
                     <Text style={styles.cardDate}>
@@ -110,16 +117,19 @@ export default function HistoryScreen() {
                       })}
                     </Text>
                     <View style={styles.metaRow}>
-                      <View style={styles.metaPill}>
-                        <Text style={styles.metaText}>{SEVERITY_LABEL[item.severity_level]}</Text>
-                      </View>
+                      {item.severity_level !== null ? (
+                        <View style={styles.metaPill}>
+                          <Text style={styles.metaText}>{SEVERITY_LABEL[item.severity_level]}</Text>
+                        </View>
+                      ) : null}
                       <View style={styles.metaPill}>
                         <Text style={styles.metaText}>
                           {item.lesion_total} lésion{item.lesion_total > 1 ? "s" : ""}
                         </Text>
                       </View>
-                      {/* Le detail est elague au-dela des douze dernieres analyses :
-                          on le dit plutot que d'ouvrir un ecran vide. */}
+                      {/* Le detail est elague au-dela des douze dernieres analyses
+                          (uniquement pour un scan de l'ancien flux /camera) : on
+                          le dit plutot que d'ouvrir un ecran vide. */}
                       {!item.detailed ? (
                         <View style={styles.metaPill}>
                           <Text style={styles.metaText}>Résumé seul</Text>
@@ -127,7 +137,7 @@ export default function HistoryScreen() {
                       ) : null}
                     </View>
                   </View>
-                  <Text style={styles.cardScore}>{item.global_score}</Text>
+                  <Text style={styles.cardScore}>{item.global_score ?? "—"}</Text>
                 </AnimatedPressable>
               </FadeIn>
             )}

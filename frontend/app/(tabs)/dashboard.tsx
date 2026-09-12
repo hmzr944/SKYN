@@ -15,8 +15,8 @@ import Svg, { Polyline, Circle, Defs, LinearGradient as SvgLinearGradient, Stop,
 import { colors, fonts, spacing, radius, shadow } from "@/src/theme";
 import { useTranslation } from "@/src/i18n";
 import { api, syncPendingReports } from "@/src/services/api";
+import { listUnifiedScans, type UnifiedScan } from "@/src/services/scanHistory";
 import { isTreatmentCheckpointOverdue } from "@/src/services/skinMemory";
-import { listScans, type ScanSummary } from "@/src/services/scanStore";
 import { CONCERN_LABEL, SEVERITY_LABEL, SKIN_TYPE_LABEL } from "@/src/types/analysis";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { AmbientBackground } from "@/src/components/ui/AmbientBackground";
@@ -111,7 +111,7 @@ export default function DashboardScreen() {
     t("dashboard.tip1"), t("dashboard.tip2"), t("dashboard.tip3"),
     t("dashboard.tip4"), t("dashboard.tip5"), t("dashboard.tip6"),
   ];
-  const [scans, setScans] = useState<ScanSummary[]>([]);
+  const [scans, setScans] = useState<UnifiedScan[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
   const [overdueTreatment, setOverdueTreatment] = useState<string | null>(null);
@@ -123,9 +123,9 @@ export default function DashboardScreen() {
         setSyncMsg(t("dashboard.synced", { count: synced, s: synced > 1 ? "s" : "" }));
         setTimeout(() => setSyncMsg(null), 3000);
       }
-      // Les scans locaux sont la source unique : le miroir serveur peut etre
-      // en retard ou absent, l'accueil ne doit pas en dependre pour exister.
-      setScans(await listScans());
+      // skin_memory (le scan guide) est la source canonique, fusionnee a
+      // l'affichage avec le residu local du flux /camera — voir scanHistory.ts.
+      setScans(await listUnifiedScans());
     } catch {
       /* ignore */
     } finally {
@@ -192,10 +192,15 @@ export default function DashboardScreen() {
     };
   });
 
-  const last = scans[0];
-  const previous = scans[1];
+  // La carte "dernier scan" a besoin d'un score : un scan memoire dont le
+  // second calcul (analyze_multi) a echoue n'en porte pas (voir server.py)
+  // — rarissime, mais on saute proprement a l'entree suivante plutot que
+  // d'afficher un score invente.
+  const scored = scans.filter((s): s is UnifiedScan & { global_score: number } => s.global_score !== null);
+  const last = scored[0];
+  const previous = scored[1];
   const delta = last && previous ? last.global_score - previous.global_score : null;
-  const chartScores = [...scans].reverse().slice(-4).map((r) => r.global_score);
+  const chartScores = [...scored].reverse().slice(-4).map((r) => r.global_score);
   const firstName = (user?.name || t("common.you")).split(" ")[0];
   const greeting = t("dashboard.greeting", { name: firstName });
   const dayIndex = new Date().getDate();
@@ -290,7 +295,11 @@ export default function DashboardScreen() {
               testID="dashboard-last-scan-card"
               style={styles.scoreCard}
               scaleTo={0.985}
-              onPress={() => router.push(`/scan-result?id=${last.id}`)}
+              onPress={() =>
+                router.push(
+                  last.origin === "memory" ? `/phase-summary?id=${last.period_id}` : `/scan-result?id=${last.id}`,
+                )
+              }
             >
               <Text style={styles.scoreLabel}>
                 {t("dashboard.lastScan")} ·{" "}
@@ -327,15 +336,19 @@ export default function DashboardScreen() {
                 delay={220}
                 amount={140}
               >
-                <View style={styles.pill}>
-                  <View style={styles.pillDot} />
-                  <Text style={styles.pillLabel}>{SEVERITY_LABEL[last.severity_level]}</Text>
-                </View>
-                <View style={styles.pill}>
-                  <View style={styles.pillDot} />
-                  <Text style={styles.pillLabel}>{t("dashboard.skinLabel")}</Text>
-                  <Text style={styles.pillValue}>{SKIN_TYPE_LABEL[last.skin_type]}</Text>
-                </View>
+                {last.severity_level !== null ? (
+                  <View style={styles.pill}>
+                    <View style={styles.pillDot} />
+                    <Text style={styles.pillLabel}>{SEVERITY_LABEL[last.severity_level]}</Text>
+                  </View>
+                ) : null}
+                {last.skin_type ? (
+                  <View style={styles.pill}>
+                    <View style={styles.pillDot} />
+                    <Text style={styles.pillLabel}>{t("dashboard.skinLabel")}</Text>
+                    <Text style={styles.pillValue}>{SKIN_TYPE_LABEL[last.skin_type]}</Text>
+                  </View>
+                ) : null}
                 <View style={styles.pill}>
                   <View style={styles.pillDot} />
                   <Text style={styles.pillLabel}>{t("dashboard.lesionsLabel")}</Text>
@@ -352,7 +365,7 @@ export default function DashboardScreen() {
         </Swap>
 
         {/* Chart */}
-        {!loading && scans.length > 0 ? (
+        {!loading && scored.length > 0 ? (
           <FadeIn delay={140}>
             <View style={styles.chartCard}>
               <Text style={styles.chartLabel}>{t("dashboard.chartTitle")}</Text>
