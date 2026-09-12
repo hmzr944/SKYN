@@ -8,7 +8,7 @@
     "scheme": "skyn",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
-    "description": "Analyse de peau et routine construite sur ce que l'analyse mesure.",
+    "description": "La mémoire de votre peau pour suivre l'évolution de vos soins.",
     "primaryColor": "#FF4D6D",
     "ios": {
       "bundleIdentifier": "com.skyn.app",

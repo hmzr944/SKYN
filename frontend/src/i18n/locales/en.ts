@@ -59,7 +59,7 @@ const en = {
       "SKYN is a measurement and tracking tool. It is not a medical device and does not diagnose anything.\n\nThe readings it offers describe what's common or unusual, never a certainty. They don't replace a dermatologist's opinion.\n\nSeek care promptly for pain, swelling, spreading lesions, or a reaction after a new product.",
     foldMinorsTitle: "Use by a minor",
     foldMinorsBody:
-      "Acne mostly affects teenagers, and the app is meant for them.\n\nUnder 15, a parent's consent is required for data processing in France. Since data stays on the device, no profile is built on our side.",
+      "SKYN may include features related to skin tracking. To protect minors, some uses require parental consent under applicable rules.\n\nUnder 15, a parent's consent is required for data processing in France. Since data stays on the device, no profile is built on our side.",
     foldRightsTitle: "Your rights",
     foldRightsBody:
       "Access, correction, erasure, portability: these rights are exercised directly from the \"Your data\" section above, without having to write to us or take our word for it.\n\nThe export gives you everything that's kept.\n\n\"Delete my data\" erases what's on this device. \"Delete my account\" also closes the account and erases the online copy of your scores. The app then tells you what was actually deleted, including if something failed.",

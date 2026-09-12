@@ -60,7 +60,7 @@ const fr = {
       "SKYN est un outil de mesure et de suivi. Ce n'est pas un dispositif médical et il ne pose aucun diagnostic.\n\nLes lectures qu'il propose décrivent ce qui est fréquent ou inhabituel, jamais une certitude. Elles ne remplacent pas l'avis d'un dermatologue.\n\nConsultez sans attendre en cas de douleur, de gonflement, de lésions qui s'étendent, ou si une réaction apparaît après un nouveau produit.",
     foldMinorsTitle: "Utilisation par un mineur",
     foldMinorsBody:
-      "L'acné touche surtout les adolescents, et l'app leur est destinée.\n\nEn dessous de 15 ans, le consentement d'un parent est requis pour le traitement des données en France. Les données restant sur l'appareil, aucun profil n'est constitué de notre côté.",
+      "SKYN peut contenir des fonctionnalités liées au suivi de la peau. Pour protéger les mineurs, certaines utilisations nécessitent un consentement parental conformément aux règles applicables.\n\nEn dessous de 15 ans, le consentement d'un parent est requis pour le traitement des données en France. Les données restant sur l'appareil, aucun profil n'est constitué de notre côté.",
     foldRightsTitle: "Vos droits",
     foldRightsBody:
       "Accès, rectification, effacement, portabilité : ces droits s'exercent directement depuis la section « Vos données » ci-dessus, sans avoir à nous écrire ni à nous croire sur parole.\n\nL'export vous rend l'intégralité de ce qui est conservé.\n\n« Supprimer mes données » efface ce qui est sur cet appareil. « Supprimer mon compte » ferme en plus le compte et efface la copie en ligne de vos scores. L'app vous dit ensuite ce qui a réellement été supprimé, y compris si quelque chose a échoué.",
