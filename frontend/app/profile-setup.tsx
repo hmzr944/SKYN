@@ -17,6 +17,7 @@ import Animated, { useAnimatedStyle, useSharedValue, withSpring } from "react-na
 
 import { colors, fonts, spacing, radius, shadow } from "@/src/theme";
 import { api } from "@/src/services/api";
+import { track } from "@/src/services/analytics";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { FadeIn } from "@/src/components/ui/FadeIn";
 import { AnimatedPressable } from "@/src/components/ui/AnimatedPressable";
@@ -61,6 +62,17 @@ const ENV_OPTIONS = [
   { label: "Variable", value: "Variable" },
 ];
 const PRIORITY_OPTIONS = ["Éclat", "Ridules", "Imperfections", "Sensibilité"];
+// Wedge acne adulte/hormonale : un contexte facultatif, jamais une donnee
+// de sante persistee (voir son usage dans finish() — analytics locale
+// uniquement, jamais envoye au profil serveur). "Pas de lien identifie"
+// et "Je prefere ne pas dire" existent au meme titre que les autres : ne
+// pas savoir, ou ne pas vouloir dire, sont des reponses aussi valables.
+const ACNE_CONTEXT_OPTIONS = [
+  { label: "Cycle menstruel", value: "cycle" },
+  { label: "Stress ou fatigue", value: "stress" },
+  { label: "Pas de lien identifié", value: "none" },
+  { label: "Je préfère ne pas dire", value: "skip" },
+];
 const SKIN_OPTIONS = [
   { label: "Normale", value: "Normale" },
   { label: "Mixte (zone T brillante)", value: "Mixte" },
@@ -136,6 +148,7 @@ export default function ProfileSetupScreen() {
   const [environment, setEnvironment] = useState<string | null>(null);
   const [skinType, setSkinType] = useState<string | null>(null);
   const [priority, setPriority] = useState<string | null>(null);
+  const [acneContext, setAcneContext] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [howItWorksVisible, setHowItWorksVisible] = useState(false);
@@ -180,6 +193,10 @@ export default function ProfileSetupScreen() {
         priority,
         onboarded: true,
       });
+      // Jamais envoyé au profil serveur : un contexte facultatif, lu
+      // uniquement dans le journal local (voir analytics.ts) pour savoir
+      // si le wedge acné/hormonal a du sens — pas une donnée de santé.
+      if (acneContext) await track("onboarding_acne_context", { context: acneContext });
       await refreshProfile();
       router.replace("/dashboard");
     } catch (e: any) {
@@ -286,6 +303,21 @@ export default function ProfileSetupScreen() {
             "priority",
             false,
           )}
+          {/* Wedge acne adulte/hormonale : une question de plus, pas une page
+              de plus (voir la note sur QUESTION_COUNT) — se revele sans
+              deplacer ni la barre de progression ni "Terminer", et reste
+              facultative : elle ne conditionne jamais canNext(). */}
+          {priority === "Imperfections" ? (
+            <FadeIn distance={10} style={styles.contextBlock}>
+              <Text style={styles.contextLede}>
+                Vos poussées semblent-elles liées à un rythme particulier ?
+              </Text>
+              <Text style={styles.contextHelper}>
+                Facultatif — SKYN ne diagnostique rien, il observe ce qui change dans le temps.
+              </Text>
+              {renderOptions(ACNE_CONTEXT_OPTIONS, acneContext, setAcneContext, "acne-context", false)}
+            </FadeIn>
+          ) : null}
           <TouchableOpacity
             testID="profile-how-it-works-link"
             onPress={() => setHowItWorksVisible(true)}
@@ -530,6 +562,24 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.fgDim,
     textDecorationLine: "underline",
+  },
+  contextBlock: {
+    marginTop: spacing.xl,
+    paddingTop: spacing.l,
+    borderTopWidth: 1,
+    borderTopColor: colors.borderSubtle,
+  },
+  contextLede: {
+    fontFamily: fonts.headingMedium,
+    fontSize: 16,
+    color: colors.fg,
+    marginBottom: 4,
+  },
+  contextHelper: {
+    fontFamily: fonts.body,
+    fontSize: 13,
+    color: colors.fgMuted,
+    marginBottom: spacing.m,
   },
   errorText: {
     fontFamily: fonts.body,

@@ -5,7 +5,6 @@ import { AnimatedPressable } from "@/src/components/ui/AnimatedPressable";
 import { Chip } from "@/src/components/ui/Chip";
 import { Disclosure } from "@/src/components/ui/Disclosure";
 import { Reveal } from "@/src/components/ui/Reveal";
-import { api } from "@/src/services/api";
 import { track } from "@/src/services/analytics";
 import {
   activeTracking,
@@ -23,6 +22,7 @@ import {
 } from "@/src/services/introduction";
 import { scheduleTreatmentCheckpoints } from "@/src/services/reminders";
 import type { StoredRoutine } from "@/src/services/routineStore";
+import { startTreatmentTracked } from "@/src/services/skinMemory";
 import { colors, fonts, radius, spacing, type } from "@/src/theme";
 import type { ProductPick } from "@/src/types/analysis";
 
@@ -108,7 +108,7 @@ function Idle({
     setStarting(true);
     setError(null);
     try {
-      await api.startTreatment(selected.name);
+      await startTreatmentTracked(selected.name);
       await scheduleTreatmentCheckpoints(selected.name);
       await startTracking(selected);
       setJustStarted(selected.name);

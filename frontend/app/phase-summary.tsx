@@ -17,6 +17,7 @@ import {
   phaseAttributionSentence,
   phaseVerdict,
   topImprovedZones,
+  upcomingCheckpoint,
 } from "@/src/services/skinMemory";
 import { colors, fonts, radius, shadow, spacing, type } from "@/src/theme";
 import type { ActivePeriodView } from "@/src/types/skinMemory";
@@ -101,6 +102,7 @@ export default function PhaseSummaryScreen() {
   const improvedZones = topImprovedZones(view.changes);
   const verdict = view.state !== "baseline" ? phaseVerdict(view.changes) : "insufficient";
   const tone = verdict === "watch" ? "watch" : "calm";
+  const next = upcomingCheckpoint(view.period);
 
   return (
     <SafeAreaView style={styles.container} edges={["top", "bottom"]}>
@@ -114,6 +116,17 @@ export default function PhaseSummaryScreen() {
           {view.period.goal ? <Text style={styles.goal}>{view.period.goal}</Text> : null}
           <Text style={styles.duration}>{durationLabel(view.period)}</Text>
         </Reveal>
+
+        {next ? (
+          <Reveal delay={40}>
+            <View style={styles.nextPill}>
+              <Text style={styles.nextPillText}>
+                Prochain scan conseillé · J+{next.day} ·{" "}
+                {next.date.toLocaleDateString("fr-FR", { day: "numeric", month: "long" })}
+              </Text>
+            </View>
+          </Reveal>
+        ) : null}
 
         {view.state === "baseline" ? (
           <>
@@ -198,6 +211,15 @@ const styles = StyleSheet.create({
   title: { ...type.title, color: colors.fg, marginTop: 6 },
   goal: { ...type.bodySmall, color: colors.accent, marginTop: 4 },
   duration: { ...type.bodySmall, color: colors.fgDim, marginTop: 4 },
+  nextPill: {
+    alignSelf: "flex-start",
+    backgroundColor: colors.surfaceSunken,
+    borderRadius: radius.pill,
+    paddingVertical: 8,
+    paddingHorizontal: spacing.m,
+    marginTop: spacing.m,
+  },
+  nextPillText: { fontFamily: fonts.bodyMedium, fontSize: 12, color: colors.fg },
 
   haloRow: { alignItems: "flex-start", marginVertical: spacing.s },
   note: { ...type.bodySmall, color: colors.fgMuted, marginTop: spacing.s },

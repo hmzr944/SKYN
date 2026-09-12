@@ -89,7 +89,25 @@ export default function AnalysisGuidedScreen() {
         // baseline) avant de montrer quoi que ce soit — l'ecran de resultat
         // lit la Phase a jour pour "Ce qui a change", pas cette reponse
         // brute seule.
-        await api.ingestScan("guided", data as unknown as Record<string, unknown>);
+        const scanRecord = await api.ingestScan("guided", data as unknown as Record<string, unknown>);
+        // Prepare le KPI "baseline -> scan J+7/14/30" (voir
+        // analytics.ts::phaseFunnel) — une lecture de plus, jamais attendue
+        // avant de continuer : l'instrumentation ne doit jamais ralentir le
+        // parcours qu'elle observe.
+        api
+          .getActivePeriod()
+          .then((view) => {
+            if (!view) return;
+            const days = Math.round(
+              (Date.now() - new Date(view.period.starts_at).getTime()) / 86400000,
+            );
+            track("phase_scan_logged", {
+              period_id: view.period.id,
+              days_since_phase_start: days,
+              is_baseline: scanRecord.is_baseline,
+            });
+          })
+          .catch(() => {});
         // L'onglet "Ma routine" ne lisait jusqu'ici que ce que l'ancien flux
         // (/camera) y deposait : pour quiconque n'utilise que le scan guide
         // desormais principal, il restait vide malgre le second calcul de

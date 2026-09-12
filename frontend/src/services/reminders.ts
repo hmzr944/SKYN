@@ -233,7 +233,13 @@ export async function cancelIntroReminder(): Promise<void> {
  */
 const CHECKPOINT_HOUR = 20;
 
-function checkpointDate(start: Date, daysAfter: number): Date {
+/** Les trois échéances d'une Phase de traitement — partagé avec l'affichage
+ * du prochain rendez-vous (phase-summary.tsx, dashboard.tsx), pour ne
+ * jamais faire dériver la date montrée à l'écran de celle du rappel
+ * effectivement programmé. */
+export const PHASE_CHECKPOINT_DAYS = [7, 14, 30] as const;
+
+export function checkpointDate(start: Date, daysAfter: number): Date {
   const d = new Date(start);
   d.setDate(d.getDate() + daysAfter);
   d.setHours(CHECKPOINT_HOUR, 0, 0, 0);

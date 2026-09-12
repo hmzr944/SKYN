@@ -16,8 +16,14 @@ import { colors, fonts, spacing, radius, shadow } from "@/src/theme";
 import { useTranslation } from "@/src/i18n";
 import { api, syncPendingReports } from "@/src/services/api";
 import { listUnifiedScans, type UnifiedScan } from "@/src/services/scanHistory";
-import { isTreatmentCheckpointOverdue } from "@/src/services/skinMemory";
+import {
+  isTreatmentCheckpointOverdue,
+  phaseVerdict,
+  PHASE_VERDICT_LABEL,
+  upcomingCheckpoint,
+} from "@/src/services/skinMemory";
 import { CONCERN_LABEL, SEVERITY_LABEL, SKIN_TYPE_LABEL } from "@/src/types/analysis";
+import type { ActivePeriodView } from "@/src/types/skinMemory";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { AmbientBackground } from "@/src/components/ui/AmbientBackground";
 import { FadeIn } from "@/src/components/ui/FadeIn";
@@ -26,6 +32,8 @@ import { Reveal, Stagger } from "@/src/components/ui/Reveal";
 import { AnimatedPressable } from "@/src/components/ui/AnimatedPressable";
 import { SkynLockup } from "@/src/components/brand/SkynLockup";
 import { SkynMarkStill } from "@/src/components/brand/SkynMark";
+import { PhaseHalo } from "@/src/components/skinMemory/PhaseHalo";
+import { SkinChangePill } from "@/src/components/skinMemory/SkinChangePill";
 import { AnimatedNumber } from "@/src/components/ui/AnimatedNumber";
 import { accord, useGenre } from "@/src/services/gender";
 
@@ -114,7 +122,7 @@ export default function DashboardScreen() {
   const [scans, setScans] = useState<UnifiedScan[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
-  const [overdueTreatment, setOverdueTreatment] = useState<string | null>(null);
+  const [activePeriod, setActivePeriod] = useState<ActivePeriodView | null | undefined>(undefined);
 
   const load = useCallback(async () => {
     try {
@@ -139,20 +147,21 @@ export default function DashboardScreen() {
     useCallback(() => { load(); }, [load]),
   );
 
-  // Relance in-app si un checkpoint J+7/14/30 a ete ignore — le rappel
-  // local ne s'envoie qu'une fois (voir scheduleTreatmentCheckpoints), donc
-  // sans ceci quelqu'un qui l'a manque ne serait jamais repris. Silencieux
-  // en cas d'echec : ce bandeau est un plus, pas une donnee dont le reste
-  // du tableau de bord depend.
+  // Une seule lecture de la Phase active nourrit a la fois la relance de
+  // checkpoint manque et la carte "memoire de peau" ci-dessous — deux
+  // lectures separees du meme /api/periods/active auraient pu diverger
+  // (l'une chargee, l'autre pas) sans jamais rien apporter de plus.
+  // Silencieux en cas d'echec : ni l'un ni l'autre n'est une donnee dont le
+  // reste du tableau de bord depend.
   useFocusEffect(
     useCallback(() => {
       let cancelled = false;
       (async () => {
         try {
           const view = await api.getActivePeriod();
-          if (!cancelled) setOverdueTreatment(view && isTreatmentCheckpointOverdue(view) ? view.period.label : null);
+          if (!cancelled) setActivePeriod(view);
         } catch {
-          if (!cancelled) setOverdueTreatment(null);
+          if (!cancelled) setActivePeriod(null);
         }
       })();
       return () => {
@@ -160,6 +169,9 @@ export default function DashboardScreen() {
       };
     }, []),
   );
+
+  const overdueTreatment = activePeriod && isTreatmentCheckpointOverdue(activePeriod) ? activePeriod.period.label : null;
+  const nextCheckpoint = activePeriod && !overdueTreatment ? upcomingCheckpoint(activePeriod.period) : null;
 
   // Le scan guide est desormais LE parcours principal, pas une variante
   // beta a cote : c'est le seul qui alimente la Memoire de peau (Phases,
@@ -261,6 +273,67 @@ export default function DashboardScreen() {
               <Text style={styles.overdueText}>
                 Vous n&apos;avez pas encore refait de scan sur cette Phase. Faites le point.
               </Text>
+            </AnimatedPressable>
+          </FadeIn>
+        ) : null}
+
+        {/* Le centre de la mémoire : ce que la Phase active raconte,
+            au-dessus du score isolé — SKYN se souvient, il ne se contente
+            pas de mesurer une fois. Rien de nouveau ici : mêmes données
+            (/api/periods/active), mêmes composants (SkinChangePill,
+            PhaseHalo) que skin-map.tsx et phase-summary.tsx. */}
+        {activePeriod ? (
+          <FadeIn delay={60}>
+            <AnimatedPressable
+              testID="dashboard-memory-card"
+              style={styles.memoryCard}
+              scaleTo={0.99}
+              onPress={() => router.push(`/phase-summary?id=${activePeriod.period.id}`)}
+            >
+              <View style={styles.memoryHead}>
+                <PhaseHalo
+                  size={40}
+                  tone={
+                    activePeriod.state !== "baseline" && phaseVerdict(activePeriod.changes) === "watch"
+                      ? "watch"
+                      : "calm"
+                  }
+                />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.memoryTitle}>{activePeriod.period.label ?? "Votre Phase actuelle"}</Text>
+                  <Text style={styles.memorySub}>
+                    Depuis le{" "}
+                    {new Date(activePeriod.period.starts_at).toLocaleDateString(
+                      locale === "en" ? "en-US" : "fr-FR",
+                      { day: "numeric", month: "long" },
+                    )}
+                  </Text>
+                </View>
+              </View>
+
+              {activePeriod.state === "baseline" ? (
+                <Text style={styles.memoryNote}>Pas encore assez de données pour comparer.</Text>
+              ) : activePeriod.changes.length > 0 ? (
+                <View style={styles.memoryPills}>
+                  {activePeriod.changes.slice(0, 2).map((c) => (
+                    <SkinChangePill key={`${c.kind}-${c.metric}`} item={c} />
+                  ))}
+                </View>
+              ) : (
+                <Text style={styles.memoryNote}>{PHASE_VERDICT_LABEL.insufficient}</Text>
+              )}
+
+              {nextCheckpoint ? (
+                <Text style={styles.memoryNext}>
+                  Prochain scan conseillé · J+{nextCheckpoint.day} ·{" "}
+                  {nextCheckpoint.date.toLocaleDateString(locale === "en" ? "en-US" : "fr-FR", {
+                    day: "numeric",
+                    month: "long",
+                  })}
+                </Text>
+              ) : null}
+
+              <Text style={styles.memoryLink}>Voir le Bilan</Text>
             </AnimatedPressable>
           </FadeIn>
         ) : null}
@@ -511,6 +584,29 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 17,
     color: colors.fg,
+  },
+  memoryCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.borderSubtle,
+    padding: spacing.l,
+    marginBottom: spacing.l,
+    gap: spacing.s,
+    ...shadow.card,
+  },
+  memoryHead: { flexDirection: "row", alignItems: "center", gap: spacing.m },
+  memoryTitle: { fontFamily: fonts.headingMedium, fontSize: 16, color: colors.fg },
+  memorySub: { fontFamily: fonts.body, fontSize: 12, color: colors.fgDim, marginTop: 2 },
+  memoryNote: { fontFamily: fonts.body, fontSize: 13, color: colors.fgMuted },
+  memoryPills: { flexDirection: "row", flexWrap: "wrap", gap: spacing.s },
+  memoryNext: { fontFamily: fonts.body, fontSize: 12, color: colors.fgDim },
+  memoryLink: {
+    fontFamily: fonts.bodyMedium,
+    fontSize: 12,
+    color: colors.accent,
+    textDecorationLine: "underline",
+    marginTop: 2,
   },
   heroCard: {
     backgroundColor: colors.accent,

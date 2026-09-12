@@ -37,7 +37,18 @@ export type EventName =
   // l'appareil, meme regle que le reste de ce journal.
   | "guided_scan_started"
   | "guided_scan_completed"
-  | "guided_scan_failed";
+  | "guided_scan_failed"
+  // Contexte d'acne saisi a l'onboarding (voir profile-setup.tsx) — jamais
+  // envoye au profil serveur (pas une donnee de sante persistee), seulement
+  // ce journal local, pour savoir si le wedge acne/hormonal a du sens.
+  | "onboarding_acne_context"
+  // Boucle de Phase (chantier "SKYN se souvient") — prepare les KPI produit
+  // (baseline -> J+7/14/30, Phases completees) sans nouvelle table ni envoi
+  // reseau : ce sont les memes evenements locaux que le reste de ce journal,
+  // lus par phaseFunnel() ci-dessous.
+  | "phase_started"
+  | "phase_closed"
+  | "phase_scan_logged";
 
 export interface Event {
   name: EventName;
@@ -149,5 +160,49 @@ export async function funnel(): Promise<Funnel> {
     d7: seenOn(days(7), days(8)),
     d30: seenOn(days(30), days(31)),
     abandoned: now - last > 3 * 86400000,
+  };
+}
+
+export interface PhaseFunnel {
+  /** Nombre de Phases nommees demarrees (start-treatment.tsx ou IntroductionCard). */
+  phasesStarted: number;
+  /** Nombre de Phases fermees par un nouveau traitement — voir phase_closed. */
+  phasesCompleted: number;
+  /** Nombre de Phases distinctes ayant recu un scan autour de J+7/14/30. */
+  scansAtD7: number;
+  scansAtD14: number;
+  scansAtD30: number;
+}
+
+/**
+ * Le meme principe que `funnel()`, applique a la boucle de Phase plutot
+ * qu'au suivi d'introduction : prepare les KPI produit demandes (baseline
+ * -> J+7/14, Phase -> bilan J+30, Phases completees) a partir des
+ * evenements deja journalises localement, sans nouvelle table ni envoi
+ * reseau. Les fenetres (6-8j, 12-16j, 27-33j) tolerent le decalage normal
+ * entre "jour recommande" et "jour ou la personne a reellement scanne".
+ */
+export async function phaseFunnel(): Promise<PhaseFunnel> {
+  const events = await allEvents();
+  const started = events.filter((e) => e.name === "phase_started");
+  const closed = events.filter((e) => e.name === "phase_closed");
+  const scans = events.filter((e) => e.name === "phase_scan_logged");
+
+  const distinctPhasesInRange = (lo: number, hi: number) => {
+    const ids = new Set<string>();
+    for (const e of scans) {
+      const days = Number(e.meta?.days_since_phase_start ?? -1);
+      const periodId = e.meta?.period_id;
+      if (days >= lo && days <= hi && periodId) ids.add(String(periodId));
+    }
+    return ids.size;
+  };
+
+  return {
+    phasesStarted: started.length,
+    phasesCompleted: closed.length,
+    scansAtD7: distinctPhasesInRange(6, 8),
+    scansAtD14: distinctPhasesInRange(12, 16),
+    scansAtD30: distinctPhasesInRange(27, 33),
   };
 }

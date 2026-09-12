@@ -14,8 +14,8 @@ import { useRouter } from "expo-router";
 import { AnimatedPressable } from "@/src/components/ui/AnimatedPressable";
 import { Reveal } from "@/src/components/ui/Reveal";
 import { SkynLockup } from "@/src/components/brand/SkynLockup";
-import { api } from "@/src/services/api";
 import { scheduleTreatmentCheckpoints } from "@/src/services/reminders";
+import { startTreatmentTracked } from "@/src/services/skinMemory";
 import { colors, fonts, radius, spacing, type } from "@/src/theme";
 
 /**
@@ -44,7 +44,7 @@ export default function StartTreatmentScreen() {
     setError(null);
     try {
       const treatmentName = name.trim();
-      await api.startTreatment(treatmentName, goal.trim());
+      await startTreatmentTracked(treatmentName, goal.trim());
       // N'attend jamais l'autorisation notifications pour continuer : un
       // refus, ou l'absence de support (web), ne doit jamais bloquer le
       // debut de la Phase elle-meme — voir scheduleTreatmentCheckpoints.

@@ -1,3 +1,6 @@
+import { api } from "@/src/services/api";
+import { track } from "@/src/services/analytics";
+import { checkpointDate, PHASE_CHECKPOINT_DAYS } from "@/src/services/reminders";
 import { CONCERN_LABEL, LESION_LABEL, ZONE_LABEL } from "@/src/types/analysis";
 import type { ConcernKey, LesionType, ZoneKey } from "@/src/types/analysis";
 import type {
@@ -163,4 +166,55 @@ export function isTreatmentCheckpointOverdue(view: ActivePeriodView): boolean {
   if (!view.period.label || view.period.ends_at) return false;
   const daysSince = (Date.now() - new Date(view.period.starts_at).getTime()) / 86400000;
   return daysSince >= 7 && view.scans.length === 0;
+}
+
+export interface UpcomingCheckpoint {
+  day: 7 | 14 | 30;
+  date: Date;
+}
+
+/**
+ * Le prochain rendez-vous J+7/14/30 d'un traitement en cours — le pendant
+ * "positif" de `isTreatmentCheckpointOverdue` : montrer ce qui arrive,
+ * pas seulement relancer quand c'est déjà en retard. `null` pour une Phase
+ * sans nom (changement de routine anonyme, ou baseline), déjà close, ou
+ * dont les trois échéances sont déjà passées — la boucle passe alors la
+ * main au Bilan, pas à un quatrième rendez-vous inventé.
+ */
+export function upcomingCheckpoint(period: Period): UpcomingCheckpoint | null {
+  if (!period.label || period.ends_at) return null;
+  const start = new Date(period.starts_at);
+  const now = Date.now();
+  for (const day of PHASE_CHECKPOINT_DAYS) {
+    const date = checkpointDate(start, day);
+    if (date.getTime() > now) return { day, date };
+  }
+  return null;
+}
+
+/**
+ * Démarre un traitement nommé et journalise la fermeture de la Phase
+ * précédente (si elle existe) — un seul point d'entrée pour
+ * start-treatment.tsx et IntroductionCard.tsx, pour que le calcul de durée
+ * ne puisse jamais diverger de l'appel réel à POST /api/treatments.
+ * Prépare les KPI "Phases complétées" (voir analytics.ts::phaseFunnel) —
+ * aucune donnée n'est envoyée au serveur au-delà de l'appel déjà existant.
+ */
+export async function startTreatmentTracked(name: string, goal?: string): Promise<void> {
+  let previous: ActivePeriodView | null = null;
+  try {
+    previous = await api.getActivePeriod();
+  } catch {
+    /* best effort — l'instrumentation ne doit jamais bloquer le vrai appel */
+  }
+  await api.startTreatment(name, goal);
+  if (previous) {
+    const days = Math.round((Date.now() - new Date(previous.period.starts_at).getTime()) / 86400000);
+    await track("phase_closed", {
+      period_id: previous.period.id,
+      duration_days: days,
+      scan_count: previous.scans.length,
+    });
+  }
+  await track("phase_started", { has_label: true });
 }
