@@ -1,5 +1,6 @@
 import { CameraView, useCameraPermissions } from "expo-camera";
 import * as Haptics from "expo-haptics";
+import { ImageManipulator, SaveFormat } from "expo-image-manipulator";
 import * as ImagePicker from "expo-image-picker";
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -58,6 +59,34 @@ const cleanB64 = (b?: string | null) =>
  * (backend/skyn_engine/v2/multiview.py::ScanConfig). */
 const MIN_FRAMES = 5;
 const MAX_FRAMES = 9;
+
+/** Largeur cible avant stockage local : la photo native (souvent 3000px+ de
+ * large sur telephone recent) n'a jamais besoin d'etre conservee a cette
+ * resolution pour l'analyse (voir skyn_engine, qui travaille deja sur des
+ * images redimensionnees cote serveur). Sans ce redimensionnement, 9 photos
+ * base64 en pleine resolution peuvent depasser le quota de stockage local du
+ * navigateur, ce qui a cause une perte silencieuse de captures en
+ * production (voir `finish` ci-dessous). */
+const CAPTURE_MAX_WIDTH = 1024;
+
+/** Redimensionne et recompresse une photo avant de la garder en memoire —
+ * jamais l'original plein format. Ne touche a rien cote analyse : le
+ * backend recoit toujours une image, juste plus legere. */
+async function compressForStorage(uri: string): Promise<string> {
+  try {
+    const rendered = await ImageManipulator.manipulate(uri)
+      .resize({ width: CAPTURE_MAX_WIDTH })
+      .renderAsync();
+    const saved = await rendered.saveAsync({
+      compress: 0.7,
+      format: SaveFormat.JPEG,
+      base64: true,
+    });
+    return cleanB64(saved.base64);
+  } catch {
+    return "";
+  }
+}
 
 /** Cadence de capture automatique (web) quand le cadrage est bon. Plus lent
  * que le guidage 3-angles : ici on vise plusieurs vues d'affilee, pas une
@@ -120,6 +149,7 @@ export default function CameraGuidedScreen() {
   const online = useOnline();
 
   const [count, setCount] = useState(0);
+  const [saveError, setSaveError] = useState(false);
   const capturesRef = useRef<string[]>([]);
   const busyRef = useRef(false);
   const doneRef = useRef(false);
@@ -142,8 +172,26 @@ export default function CameraGuidedScreen() {
   const finish = useCallback(async () => {
     if (doneRef.current) return;
     doneRef.current = true;
+    const payload = JSON.stringify(capturesRef.current);
+    // On verifie reellement le resultat de l'ecriture : storage.setItem
+    // avale ses erreurs (quota depasse, etc.) et renvoie `false` sans
+    // jamais lever d'exception (voir storage-base.ts::setItem). Naviguer
+    // sans ce controle envoyait vers analysis-guided.tsx avec un stockage
+    // en realite vide — d'ou "Aucune vue capturee" malgre un scan reussi.
+    const saved = await storage.setItem("skyn_guided_captures", payload);
+    if (!saved) {
+      doneRef.current = false;
+      track("guided_scan_failed", {
+        reason: "storage_save_failed",
+        frames_proposed: capturesRef.current.length,
+        frames_sent: capturesRef.current.length,
+        payload_kb: Math.round(payload.length / 1024),
+      });
+      setSaveError(true);
+      return;
+    }
+    setSaveError(false);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    await storage.setItem("skyn_guided_captures", JSON.stringify(capturesRef.current));
     await storage.setItem(
       "skyn_guided_capture_ms",
       String(Date.now() - startedAtRef.current),
@@ -157,11 +205,10 @@ export default function CameraGuidedScreen() {
     busyRef.current = true;
     try {
       const photo = await cameraRef.current?.takePictureAsync({
-        base64: true,
         quality: 0.55,
         skipProcessing: true,
       });
-      const clean = cleanB64(photo?.base64 ?? null);
+      const clean = photo?.uri ? await compressForStorage(photo.uri) : "";
       if (clean) {
         capturesRef.current.push(clean);
         setCount(capturesRef.current.length);
@@ -187,7 +234,6 @@ export default function CameraGuidedScreen() {
       if (remaining <= 0) return;
       const res = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ["images"],
-        base64: true,
         quality: 0.55,
         allowsMultipleSelection: true,
         selectionLimit: remaining,
@@ -195,7 +241,7 @@ export default function CameraGuidedScreen() {
       if (res.canceled) return;
       for (const asset of res.assets ?? []) {
         if (capturesRef.current.length >= MAX_FRAMES) break;
-        const clean = cleanB64(asset.base64 ?? null);
+        const clean = await compressForStorage(asset.uri);
         if (clean) capturesRef.current.push(clean);
       }
       setCount(capturesRef.current.length);
@@ -341,6 +387,16 @@ export default function CameraGuidedScreen() {
           <View style={styles.notice}>
             <Text style={styles.noticeText}>
               {"Pas de connexion. L'analyse a besoin du réseau."}
+            </Text>
+          </View>
+        </Reveal>
+      ) : null}
+
+      {saveError ? (
+        <Reveal distance={6} style={[styles.noticeWrap, { top: insets.top + 62 }]}>
+          <View style={styles.notice}>
+            <Text style={styles.noticeText}>
+              {"L'enregistrement des vues a échoué. Réessayez, ou libérez de l'espace sur l'appareil."}
             </Text>
           </View>
         </Reveal>
